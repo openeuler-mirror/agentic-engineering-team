@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{TITLE}}</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    :root {
+      --theme-color: {{THEME_COLOR}};
+      --theme-rgb: {{THEME_RGB}};
+      --bg-primary: #0A0A1A;
+      --bg-secondary: #1A1A2E;
+      --bg-card: #232338;
+      --accent: #00D4FF;
+      --success: #34C759;
+      --danger: #FF3B30;
+      --text-primary: #FFFFFF;
+      --text-secondary: #A0A0B0;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      width: 540px;
+      min-height: 1920px;
+      line-height: 1.6;
+    }
+
+    .container {
+      padding: 32px 28px;
+      display: flex;
+      flex-direction: column;
+      gap: 28px;
+    }
+
+    /* Header Section */
+    .header {
+      text-align: center;
+      padding: 40px 20px;
+      background: linear-gradient(135deg, rgba(var(--theme-rgb), 0.15) 0%, transparent 60%);
+      border-radius: 24px;
+      border: 1px solid rgba(var(--theme-rgb), 0.3);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .header::before {
+      content: '';
+      position: absolute;
+      top: -50%;
+      left: -50%;
+      width: 200%;
+      height: 200%;
+      background: radial-gradient(circle, rgba(var(--theme-rgb), 0.1) 0%, transparent 50%);
+      animation: pulse 4s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); opacity: 0.5; }
+      50% { transform: scale(1.1); opacity: 0.8; }
+    }
+
+    .header-content {
+      position: relative;
+      z-index: 1;
+    }
+
+    .title {
+      font-size: 42px;
+      font-weight: 700;
+      margin-bottom: 12px;
+      background: linear-gradient(135deg, var(--text-primary) 0%, var(--theme-color) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .subtitle {
+      font-size: 20px;
+      color: var(--text-secondary);
+    }
+
+    /* Section Common Styles */
+    .section {
+      background: var(--bg-secondary);
+      border-radius: 20px;
+      padding: 24px;
+    }
+
+    .section-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 18px;
+      padding-bottom: 14px;
+      border-bottom: 2px solid rgba(255, 255, 255, 0.08);
+    }
+
+    .section-icon {
+      font-size: 24px;
+      width: 44px;
+      height: 44px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: linear-gradient(135deg, var(--theme-color), var(--accent));
+      border-radius: 12px;
+    }
+
+    .section-title {
+      font-size: 22px;
+      font-weight: 600;
+    }
+
+    /* Background & Problem */
+    .background-text {
+      font-size: 18px;
+      color: var(--text-secondary);
+      line-height: 1.8;
+      padding: 16px;
+      background: var(--bg-card);
+      border-radius: 12px;
+      border-left: 4px solid var(--theme-color);
+    }
+
+    /* Core Concept Cards */
+    .concepts-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 16px;
+    }
+
+    .concept-card {
+      display: flex;
+      gap: 16px;
+      padding: 18px;
+      background: var(--bg-card);
+      border-radius: 16px;
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      transition: transform 0.2s;
+    }
+
+    .concept-icon {
+      font-size: 32px;
+      width: 56px;
+      height: 56px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: linear-gradient(135deg, rgba(var(--theme-rgb), 0.2), rgba(var(--theme-rgb), 0.05));
+      border-radius: 14px;
+      flex-shrink: 0;
+    }
+
+    .concept-content {
+      flex: 1;
+    }
+
+    .concept-name {
+      font-size: 18px;
+      font-weight: 600;
+      margin-bottom: 6px;
+      color: var(--theme-color);
+    }
+
+    .concept-desc {
+      font-size: 15px;
+      color: var(--text-secondary);
+      line-height: 1.6;
+    }
+
+    /* How It Works */
+    .workflow-container {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      align-items: center;
+      padding: 20px;
+      background: var(--bg-card);
+      border-radius: 16px;
+    }
+
+    .workflow-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+
+    .workflow-step {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .step-number {
+      width: 36px;
+      height: 36px;
+      background: linear-gradient(135deg, var(--theme-color), var(--accent));
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 16px;
+      font-weight: 700;
+    }
+
+    .step-text {
+      padding: 10px 16px;
+      background: var(--bg-secondary);
+      border-radius: 10px;
+      font-size: 14px;
+      border: 1px solid rgba(var(--theme-rgb), 0.3);
+    }
+
+    .workflow-arrow {
+      font-size: 24px;
+      color: var(--theme-color);
+      font-weight: bold;
+    }
+
+    /* Pros & Cons */
+    .pros-cons {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+
+    .pros-section, .cons-section {
+      padding: 18px;
+      border-radius: 16px;
+    }
+
+    .pros-section {
+      background: linear-gradient(135deg, rgba(52, 199, 89, 0.15), rgba(52, 199, 89, 0.05));
+      border: 1px solid rgba(52, 199, 89, 0.3);
+    }
+
+    .cons-section {
+      background: linear-gradient(135deg, rgba(255, 59, 48, 0.15), rgba(255, 59, 48, 0.05));
+      border: 1px solid rgba(255, 59, 48, 0.3);
+    }
+
+    .pros-cons-title {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 18px;
+      font-weight: 600;
+      margin-bottom: 14px;
+    }
+
+    .pros-section .pros-cons-title {
+      color: var(--success);
+    }
+
+    .cons-section .pros-cons-title {
+      color: var(--danger);
+    }
+
+    .pros-cons ul {
+      list-style: none;
+    }
+
+    .pros-section li, .cons-section li {
+      font-size: 14px;
+      padding: 8px 0;
+      padding-left: 20px;
+      position: relative;
+      color: var(--text-secondary);
+    }
+
+    .pros-section li::before {
+      content: '✓';
+      position: absolute;
+      left: 0;
+      color: var(--success);
+      font-weight: bold;
+    }
+
+    .cons-section li::before {
+      content: '✗';
+      position: absolute;
+      left: 0;
+      color: var(--danger);
+      font-weight: bold;
+    }
+
+    /* Analogy */
+    .analogy {
+      padding: 24px;
+      background: linear-gradient(135deg, rgba(var(--theme-rgb), 0.1), transparent);
+      border-radius: 16px;
+      border: 1px dashed rgba(var(--theme-rgb), 0.4);
+      position: relative;
+    }
+
+    .analogy::before {
+      content: '"';
+      position: absolute;
+      top: 10px;
+      left: 20px;
+      font-size: 60px;
+      color: var(--theme-color);
+      opacity: 0.3;
+      font-family: Georgia, serif;
+    }
+
+    .analogy-text {
+      font-size: 17px;
+      line-height: 1.9;
+      color: var(--text-secondary);
+      padding-left: 30px;
+      font-style: italic;
+    }
+
+    .analogy-label {
+      display: inline-block;
+      margin-top: 14px;
+      padding: 6px 14px;
+      background: var(--theme-color);
+      border-radius: 20px;
+      font-size: 13px;
+      font-style: normal;
+      color: white;
+    }
+
+    /* Use Cases */
+    .scenarios-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 12px;
+    }
+
+    .scenario-item {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 16px;
+      background: var(--bg-card);
+      border-radius: 12px;
+      font-size: 15px;
+    }
+
+    .scenario-icon {
+      font-size: 24px;
+      width: 44px;
+      height: 44px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(var(--theme-rgb), 0.15);
+      border-radius: 10px;
+    }
+
+    /* Key Takeaways */
+    .takeaways-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 14px;
+    }
+
+    .takeaway-card {
+      display: flex;
+      align-items: flex-start;
+      gap: 16px;
+      padding: 20px;
+      background: linear-gradient(135deg, rgba(var(--theme-rgb), 0.2), rgba(var(--theme-rgb), 0.05));
+      border-radius: 16px;
+      border: 1px solid rgba(var(--theme-rgb), 0.3);
+    }
+
+    .takeaway-number {
+      width: 40px;
+      height: 40px;
+      background: var(--theme-color);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18px;
+      font-weight: 700;
+      flex-shrink: 0;
+    }
+
+    .takeaway-text {
+      font-size: 16px;
+      line-height: 1.7;
+      padding-top: 6px;
+    }
+
+    /* Footer */
+    .footer {
+      text-align: center;
+      padding: 20px;
+      color: var(--text-secondary);
+      font-size: 13px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <!-- Header -->
+    <div class="header">
+      <div class="header-content">
+        <h1 class="title">{{TITLE}}</h1>
+        <p class="subtitle">{{SUBTITLE}}</p>
+      </div>
+    </div>
+
+    <!-- Background & Problem -->
+    <div class="section">
+      <div class="section-header">
+        <div class="section-icon">💡</div>
+        <h2 class="section-title">Background & Problem</h2>
+      </div>
+      <div class="background-text">{{BACKGROUND}}</div>
+    </div>
+
+    <!-- Core Concepts -->
+    <div class="section">
+      <div class="section-header">
+        <div class="section-icon">🎯</div>
+        <h2 class="section-title">Core Concepts</h2>
+      </div>
+      <div class="concepts-grid">
+        {{CONCEPT_CARDS}}
+      </div>
+    </div>
+
+    <!-- How It Works -->
+    <div class="section">
+      <div class="section-header">
+        <div class="section-icon">⚙️</div>
+        <h2 class="section-title">How It Works</h2>
+      </div>
+      <div class="workflow-container">
+        <div class="workflow-row">
+          {{WORKFLOW_STEPS}}
+        </div>
+      </div>
+    </div>
+
+    <!-- Pros & Cons -->
+    <div class="section">
+      <div class="section-header">
+        <div class="section-icon">📊</div>
+        <h2 class="section-title">Pros & Cons</h2>
+      </div>
+      <div class="pros-cons">
+        <div class="pros-section">
+          <div class="pros-cons-title">✓ Pros</div>
+          <ul>{{PROS}}</ul>
+        </div>
+        <div class="cons-section">
+          <div class="pros-cons-title">✗ Cons</div>
+          <ul>{{CONS}}</ul>
+        </div>
+      </div>
+    </div>
+
+    <!-- Analogy -->
+    {{#if ANALOGY}}
+    <div class="section">
+      <div class="section-header">
+        <div class="section-icon">🎨</div>
+        <h2 class="section-title">Analogy</h2>
+      </div>
+      <div class="analogy">
+        <p class="analogy-text">{{ANALOGY}}</p>
+        <span class="analogy-label">💡 Real-Life Analogy</span>
+      </div>
+    </div>
+    {{/if}}
+
+    <!-- Use Cases -->
+    {{#if SCENARIO_ITEMS}}
+    <div class="section">
+      <div class="section-header">
+        <div class="section-icon">🎯</div>
+        <h2 class="section-title">Use Cases</h2>
+      </div>
+      <div class="scenarios-grid">
+        {{SCENARIO_ITEMS}}
+      </div>
+    </div>
+    {{/if}}
+
+    <!-- Key Takeaways -->
+    <div class="section">
+      <div class="section-header">
+        <div class="section-icon">🚀</div>
+        <h2 class="section-title">Key Takeaways</h2>
+      </div>
+      <div class="takeaways-grid">
+        {{TAKEAWAY_CARDS}}
+      </div>
+    </div>
+
+    <div class="footer">One Picture to Understand the Technology</div>
+  </div>
+</body>
+</html>

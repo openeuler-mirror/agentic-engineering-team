@@ -1,0 +1,1006 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Interactive HTML Presentation</title>
+  
+  <!-- Load distinctive fonts for characterful typography -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;600;700;800&family=Source+Sans+Pro:wght@300;400;600&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+  
+  <style>
+    /* CSS Custom Properties for cohesive aesthetic */
+    :root {
+      /* Color palette - Modern Tech with bold accents */
+      --primary: #e94560;
+      --secondary: #0f3460;
+      --accent: #533483;
+      --background: #1a1a2e;
+      --surface: #16213e;
+      --surface-1: rgba(255, 255, 255, 0.05);
+      --surface-2: rgba(255, 255, 255, 0.08);
+      --surface-3: rgba(255, 255, 255, 0.12);
+      --text: #ffffff;
+      --text-muted: #a8a8a8;
+      
+      /* Typography - Distinctive font choices */
+      --font-display: 'Montserrat', -apple-system, sans-serif;
+      --font-body: 'Source Sans Pro', -apple-system, sans-serif;
+      --font-mono: 'Fira Code', 'Consolas', monospace;
+      
+      /* Spacing system */
+      --space-xs: 0.5rem;
+      --space-sm: 1rem;
+      --space-md: 2rem;
+      --space-lg: 4rem;
+      --space-xl: 6rem;
+      
+      /* Border radius */
+      --radius-sm: 8px;
+      --radius-md: 12px;
+      --radius-lg: 20px;
+      --radius-full: 50px;
+      --controls-height: 72px;
+    }
+
+    /* Reset and base styles */
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: var(--font-body);
+      background: var(--background);
+      color: var(--text);
+      overflow: hidden;
+      line-height: 1.6;
+    }
+
+    /* Create atmospheric background with gradient and subtle pattern */
+    body::before {
+      content: '';
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: 
+        repeating-linear-gradient(
+          45deg,
+          transparent,
+          transparent 10px,
+          rgba(255, 255, 255, 0.02) 10px,
+          rgba(255, 255, 255, 0.02) 20px
+        ),
+        linear-gradient(135deg, var(--background) 0%, var(--surface) 100%);
+      z-index: -1;
+    }
+
+    /* Presentation container */
+    .presentation {
+      width: 100vw;
+      height: 100vh;
+      position: relative;
+      overflow: hidden;
+    }
+
+    /* Slide styles with sophisticated transitions — clip to viewport; scroll inside .slide-inner */
+    .slide {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      max-height: 100%;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      padding: clamp(0.75rem, 2.5vh, var(--space-lg)) clamp(0.75rem, 3vw, var(--space-lg));
+      overflow: hidden;
+      opacity: 0;
+      transform: translateX(100%) scale(0.95);
+      transition: all 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+      background: linear-gradient(135deg, var(--background) 0%, var(--surface) 100%);
+    }
+
+    .slide.active {
+      opacity: 1;
+      transform: translateX(0) scale(1);
+      z-index: 1;
+    }
+
+    .slide.prev {
+      transform: translateX(-100%) scale(0.95);
+      opacity: 0;
+    }
+
+    /* Layout modifiers: title/cover vs dense content (reduces empty viewport) */
+    .slide.slide--title {
+      justify-content: flex-start;
+      align-items: stretch;
+      text-align: center;
+    }
+
+    .slide.slide--title .slide-inner {
+      flex: 1 1 auto;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      gap: clamp(0.5rem, 2vh, 1.5rem);
+      width: 100%;
+      max-width: min(960px, 94vw);
+      min-height: 0;
+      max-height: 100%;
+      margin: 0 auto;
+      overflow-x: hidden;
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    .slide.slide--content {
+      justify-content: flex-start;
+      align-items: stretch;
+      padding: clamp(1rem, 3vh, 2.5rem) clamp(1rem, 4vw, 3rem);
+    }
+
+    /* overflow-y: auto = safety net while editing; final decks should fit 100vh via extra slides / layout, not scroll */
+    .slide.slide--content .slide-inner {
+      flex: 1 1 auto;
+      width: 100%;
+      max-width: 100%;
+      max-height: 100%;
+      margin: 0;
+      display: flex;
+      flex-direction: column;
+      gap: clamp(0.45rem, 1.6vh, 1.1rem);
+      align-items: stretch;
+      justify-content: flex-start;
+      min-height: 0;
+      box-sizing: border-box;
+      overflow-x: hidden;
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    .slide-inner::-webkit-scrollbar {
+      width: 8px;
+      height: 8px;
+    }
+
+    .slide-inner::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.22);
+      border-radius: 6px;
+    }
+
+    .slide-inner::-webkit-scrollbar-track {
+      background: rgba(0, 0, 0, 0.15);
+      border-radius: 6px;
+    }
+
+    .vision-keywords {
+      display: flex;
+      flex-wrap: wrap;
+      gap: clamp(0.35rem, 1.5vw, 0.75rem);
+      justify-content: center;
+      margin-top: clamp(0.25rem, 1vh, 0.75rem);
+    }
+
+    .vision-keywords .kw {
+      font-family: var(--font-display);
+      font-size: clamp(0.85rem, 2vw, 1.15rem);
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      padding: 0.35rem 0.85rem;
+      border-radius: var(--radius-full);
+      border: 1px solid var(--surface-3);
+      background: var(--surface-2);
+      color: var(--text);
+    }
+
+    .tech-deemphasis {
+      font-size: clamp(0.8rem, 1.6vw, 1rem) !important;
+      color: var(--text-muted) !important;
+      max-width: min(640px, 90vw);
+      line-height: 1.45;
+    }
+
+    .slide--content h2 {
+      text-align: left;
+      align-self: stretch;
+      margin-bottom: clamp(0.15rem, 0.8vh, 0.5rem);
+    }
+
+    .slide--content .two-columns {
+      flex: 1;
+      min-height: 0;
+    }
+
+    /* Rectangular canvas: strict left title, full-width table & single-row bands */
+    /* Same: prefer split slides / layout; auto only fallback */
+    .slide-canvas {
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+      width: 100%;
+      flex: 1 1 auto;
+      min-height: 0;
+      max-height: 100%;
+      gap: clamp(0.45rem, 1.4vh, 1rem);
+      box-sizing: border-box;
+      overflow-x: hidden;
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    .slide-heading {
+      text-align: left;
+      width: 100%;
+      align-self: stretch;
+      margin: 0 0 clamp(0.2rem, 0.9vh, 0.45rem) 0;
+      box-sizing: border-box;
+      font-family: var(--font-display);
+      font-size: clamp(1.2rem, 2.8vw, 2.25rem);
+      font-weight: 700;
+      color: var(--secondary);
+      line-height: 1.2;
+    }
+
+    .slide--content table.layout-table {
+      width: 100%;
+      max-width: 100%;
+      border-collapse: collapse;
+      table-layout: fixed;
+      font-size: clamp(0.74rem, 1.25vw, 0.98rem);
+      box-sizing: border-box;
+    }
+
+    .slide--content table.layout-table th,
+    .slide--content table.layout-table td {
+      border: 1px solid rgba(255, 255, 255, 0.22);
+      padding: clamp(0.32rem, 0.9vh, 0.6rem) clamp(0.4rem, 1.1vw, 0.7rem);
+      text-align: left;
+      vertical-align: top;
+      word-break: break-word;
+    }
+
+    .slide--content table.layout-table thead th {
+      background: var(--surface-2);
+      color: var(--text);
+      font-weight: 700;
+    }
+
+    .slide--content table.layout-table tbody tr:nth-child(even) td {
+      background: rgba(255, 255, 255, 0.05);
+    }
+
+    .layout-card-row {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: clamp(0.35rem, 1.1vw, 0.8rem);
+      width: 100%;
+      box-sizing: border-box;
+    }
+
+    @media (max-width: 900px) {
+      .layout-card-row {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+
+    @media (max-width: 480px) {
+      .layout-card-row {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .layout-card {
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      border-radius: var(--radius-md);
+      padding: clamp(0.4rem, 1.1vh, 0.7rem);
+      background: var(--surface-1);
+      text-align: left;
+      min-width: 0;
+    }
+
+    .layout-card h4 {
+      font-size: clamp(0.78rem, 1.35vw, 0.98rem);
+      color: var(--primary);
+      margin: 0 0 0.3rem 0;
+      font-weight: 700;
+      font-family: var(--font-display);
+    }
+
+    .layout-card p {
+      font-size: clamp(0.7rem, 1.1vw, 0.88rem) !important;
+      margin: 0 !important;
+      line-height: 1.45 !important;
+      color: var(--text);
+    }
+
+    .layout-band {
+      width: 100%;
+      max-width: 100%;
+      box-sizing: border-box;
+      align-self: stretch;
+      padding: clamp(0.5rem, 1.3vh, 0.8rem) clamp(0.6rem, 1.6vw, 1rem);
+      border-radius: var(--radius-md);
+      text-align: left;
+      font-size: clamp(0.82rem, 1.45vw, 1.05rem);
+      font-weight: 600;
+      line-height: 1.45;
+      background: linear-gradient(90deg, #059669, #7c3aed);
+      color: #fff;
+      margin-top: auto;
+    }
+
+    .slide--content .code-block {
+      max-width: 100%;
+      width: 100%;
+      box-sizing: border-box;
+    }
+
+    /* Slide content with distinctive typography */
+    .slide h1 {
+      font-family: var(--font-display);
+      font-size: 4.5rem;
+      font-weight: 800;
+      margin-bottom: var(--space-md);
+      text-align: center;
+      color: var(--primary);
+      letter-spacing: -0.02em;
+      line-height: 1.1;
+      text-shadow: 3px 3px 6px rgba(0, 0, 0, 0.4);
+    }
+
+    .slide.slide--title h1 {
+      font-size: clamp(1.85rem, 5.5vw, 4.25rem);
+      margin-bottom: clamp(0.35rem, 1.5vh, var(--space-md));
+    }
+
+    .slide h2 {
+      font-family: var(--font-display);
+      font-size: clamp(1.35rem, 3.5vw, 3rem);
+      font-weight: 700;
+      margin-bottom: var(--space-md);
+      text-align: center;
+      color: var(--secondary);
+      letter-spacing: -0.01em;
+      line-height: 1.2;
+    }
+
+    .slide h3 {
+      font-family: var(--font-display);
+      font-size: 2rem;
+      font-weight: 600;
+      margin-bottom: var(--space-sm);
+      color: var(--accent);
+      letter-spacing: 0.01em;
+      line-height: 1.3;
+    }
+
+    .slide p {
+      font-size: 1.4rem;
+      line-height: 1.8;
+      margin-bottom: var(--space-sm);
+      text-align: center;
+      max-width: 900px;
+      font-weight: 300;
+    }
+
+    /* Bullet points with custom styling */
+    .slide ul {
+      list-style: none;
+      text-align: left;
+      max-width: 800px;
+    }
+
+    .slide ul li {
+      font-size: 1.5rem;
+      margin: var(--space-sm) 0;
+      padding-left: 2.5rem;
+      position: relative;
+      line-height: 1.7;
+      font-weight: 300;
+    }
+
+    .slide ul li::before {
+      content: '→';
+      position: absolute;
+      left: 0;
+      color: var(--primary);
+      font-weight: 700;
+      font-size: 1.3rem;
+    }
+
+    /* Two column layout with atmospheric surfaces */
+    .two-columns {
+      display: flex;
+      gap: var(--space-md);
+      width: 100%;
+      max-width: 100%;
+      margin: clamp(0.35rem, 1vh, var(--space-md)) 0;
+      align-self: stretch;
+    }
+
+    .column {
+      flex: 1;
+      padding: var(--space-md);
+      background: var(--surface-1);
+      border-radius: var(--radius-md);
+      border: 1px solid rgba(233, 69, 96, 0.3);
+      backdrop-filter: blur(10px);
+      transition: all 0.3s ease;
+    }
+
+    .column:hover {
+      background: var(--surface-2);
+      transform: translateY(-4px);
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+    }
+
+    /* Code blocks with distinctive styling */
+    .code-block {
+      background: #0d1117;
+      border: 1px solid #30363d;
+      border-radius: var(--radius-sm);
+      padding: var(--space-md);
+      margin: var(--space-md) 0;
+      max-width: 900px;
+      overflow-x: auto;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+    }
+
+    .code-block pre {
+      font-family: var(--font-mono);
+      font-size: 1.1rem;
+      color: #c9d1d9;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+      line-height: 1.6;
+    }
+
+    /* Quote slide with dramatic typography */
+    .quote-slide {
+      font-style: italic;
+      font-size: 2.2rem;
+      text-align: center;
+      max-width: 800px;
+      line-height: 1.7;
+    }
+
+    .quote-slide .quote {
+      color: var(--primary);
+      margin-bottom: var(--space-md);
+      font-weight: 400;
+      font-family: var(--font-display);
+    }
+
+    .quote-slide .attribution {
+      font-size: 1.3rem;
+      color: var(--text-muted);
+      font-weight: 300;
+    }
+
+    /* Navigation controls with glassmorphism */
+    .controls {
+      position: fixed;
+      bottom: var(--space-md);
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      align-items: center;
+      gap: var(--space-md);
+      background: rgba(0, 0, 0, 0.7);
+      padding: var(--space-sm) var(--space-md);
+      border-radius: var(--radius-full);
+      z-index: 100;
+      backdrop-filter: blur(20px);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+      transition: transform 0.28s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.2s ease;
+    }
+
+    .controls.is-hidden {
+      transform: translate(-50%, calc(100% + var(--space-md) + 0.5rem));
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .controls button {
+      background: var(--primary);
+      color: white;
+      border: none;
+      padding: 0.8rem var(--space-md);
+      border-radius: 25px;
+      font-size: 1rem;
+      cursor: pointer;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      font-weight: 600;
+      font-family: var(--font-display);
+      letter-spacing: 0.02em;
+    }
+
+    .controls button:hover:not(:disabled) {
+      background: #ff6b6b;
+      transform: translateY(-2px) scale(1.05);
+      box-shadow: 0 10px 20px rgba(233, 69, 96, 0.4);
+    }
+
+    .controls button:disabled {
+      background: #666;
+      cursor: not-allowed;
+      transform: none;
+      opacity: 0.5;
+    }
+
+    .controls .progress {
+      font-size: 1.2rem;
+      color: white;
+      min-width: 80px;
+      text-align: center;
+      font-weight: 400;
+      font-family: var(--font-display);
+    }
+
+    .controls .fullscreen {
+      background: var(--secondary);
+    }
+
+    .controls-toggle {
+      position: fixed;
+      left: 50%;
+      width: 34px;
+      height: 34px;
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      border-radius: 50%;
+      background: rgba(0, 0, 0, 0.72);
+      color: #fff;
+      font-size: 1rem;
+      line-height: 1;
+      cursor: pointer;
+      z-index: 110;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
+      backdrop-filter: blur(14px);
+      transition: bottom 0.28s cubic-bezier(0.4, 0, 0.2, 1), transform 0.28s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.2s ease;
+    }
+
+    .controls-toggle:not(.collapsed) {
+      bottom: calc(var(--space-md) + var(--controls-height) - 0.4rem);
+      transform: translateX(-50%) rotate(0deg);
+    }
+
+    .controls-toggle.collapsed {
+      bottom: -17px; /* leave half of the circle visible */
+      transform: translateX(-50%) rotate(180deg);
+    }
+
+    .controls-toggle:hover {
+      opacity: 1;
+      transform: translateX(-50%) scale(1.05);
+    }
+
+    .controls-toggle.collapsed:hover {
+      transform: translateX(-50%) rotate(180deg) scale(1.05);
+    }
+
+    /* Slide counter in corner */
+    .slide-counter {
+      position: fixed;
+      top: var(--space-md);
+      right: var(--space-md);
+      background: rgba(0, 0, 0, 0.7);
+      padding: 0.5rem var(--space-sm);
+      border-radius: 20px;
+      font-size: 1rem;
+      color: white;
+      z-index: 100;
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      font-family: var(--font-display);
+      font-weight: 600;
+    }
+
+    /* Responsive design */
+    @media (max-width: 768px) {
+      .slide {
+        padding: var(--space-md) var(--space-sm);
+      }
+
+      .slide h1 {
+        font-size: 2.5rem;
+      }
+
+      .slide h2 {
+        font-size: 2rem;
+      }
+
+      .slide h3 {
+        font-size: 1.5rem;
+      }
+
+      .slide p {
+        font-size: 1.1rem;
+      }
+
+      .slide ul li {
+        font-size: 1.1rem;
+      }
+
+      .two-columns {
+        flex-direction: column;
+        gap: var(--space-sm);
+      }
+
+      .controls {
+        padding: 0.8rem var(--space-sm);
+        gap: var(--space-sm);
+      }
+
+      .controls button {
+        padding: 0.6rem var(--space-sm);
+        font-size: 0.9rem;
+      }
+
+      .controls-toggle {
+        width: 30px;
+        height: 30px;
+      }
+
+      .controls-toggle:not(.collapsed) {
+        bottom: calc(var(--space-sm) + var(--controls-height) - 0.35rem);
+      }
+    }
+
+    /* Sophisticated animations */
+    @keyframes fadeInUp {
+      from {
+        opacity: 0;
+        transform: translateY(30px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    @keyframes fadeInScale {
+      from {
+        opacity: 0;
+        transform: scale(0.9);
+      }
+      to {
+        opacity: 1;
+        transform: scale(1);
+      }
+    }
+
+    .slide.active .animate-in {
+      animation: fadeInUp 0.8s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+    }
+
+    .slide.active .animate-in:nth-child(1) { animation-delay: 0.1s; }
+    .slide.active .animate-in:nth-child(2) { animation-delay: 0.2s; }
+    .slide.active .animate-in:nth-child(3) { animation-delay: 0.3s; }
+    .slide.active .animate-in:nth-child(4) { animation-delay: 0.4s; }
+    .slide.active .animate-in:nth-child(5) { animation-delay: 0.5s; }
+  </style>
+</head>
+<body>
+  <div class="presentation">
+    <!-- Slide 1: Title — vision-forward cover (use .slide--title) -->
+    <div class="slide active slide--title" data-slide="1">
+      <div class="slide-inner">
+        <h1 class="animate-in">Your Presentation Title</h1>
+        <div class="animate-in vision-keywords" aria-label="Vision keywords">
+          <span class="kw">Trustworthy</span>
+          <span class="kw">Efficient</span>
+          <span class="kw">Composable</span>
+        </div>
+        <p class="animate-in tech-deemphasis">Optional one-line technical positioning (keep small; expand in later slides).</p>
+        <p class="animate-in" style="margin-top: clamp(0.5rem, 2vh, var(--space-md)); color: var(--text-muted); font-size: clamp(0.85rem, 1.8vw, 1rem);">Your Name | Date</p>
+      </div>
+    </div>
+
+    <!-- Slide 2: Agenda — dense content layout (use .slide--content + .slide-inner) -->
+    <div class="slide slide--content" data-slide="2">
+      <div class="slide-inner">
+        <h2 class="animate-in">Agenda</h2>
+        <ul class="animate-in" style="columns: 2; column-gap: clamp(1.5rem, 4vw, 3rem); margin-top: 0.25rem;">
+          <li>Topic 1: Introduction</li>
+          <li>Topic 2: Main Content</li>
+          <li>Topic 3: Key Points</li>
+          <li>Topic 4: Conclusion</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- Slide 3: Content with bullets -->
+    <div class="slide slide--content" data-slide="3">
+      <div class="slide-inner">
+        <h2 class="animate-in">Key Concepts</h2>
+        <ul class="animate-in">
+          <li>First important point with clear explanation and enough text to avoid a sparse slide.</li>
+          <li>Second key concept with supporting details; pair bullets with metrics only when you cite the <strong>data source</strong>.</li>
+          <li>Third main idea with relevant examples and why it matters for the narrative arc.</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- Slide 4: Rectangular canvas — left title, full-width table, card row, full-width band -->
+    <div class="slide slide--content" data-slide="4">
+      <div class="slide-inner">
+        <div class="slide-canvas animate-in">
+          <h2 class="slide-heading">技术壁垒与可绕过性分析 · Layout pattern</h2>
+          <table class="layout-table">
+            <thead>
+              <tr>
+                <th>创新点</th>
+                <th>绕过条件</th>
+                <th>绕过时间</th>
+                <th>绕过成本</th>
+                <th>可绕过性评级</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>示例创新 A</td>
+                <td>需等价数据与算力</td>
+                <td>12–24 月</td>
+                <td>中高</td>
+                <td>中</td>
+              </tr>
+              <tr>
+                <td>示例创新 B</td>
+                <td>合规与客户信任</td>
+                <td>18–36 月</td>
+                <td>高</td>
+                <td>低</td>
+              </tr>
+            </tbody>
+          </table>
+          <div class="layout-card-row">
+            <div class="layout-card">
+              <h4>流程知识壁垒</h4>
+              <p>典型需 2–3 年领域流程沉淀（示例文案）。</p>
+            </div>
+            <div class="layout-card">
+              <h4>合规认证壁垒</h4>
+              <p>SOC2 / ISO27001 等，成本约 $100K–$300K（示例）。</p>
+            </div>
+            <div class="layout-card">
+              <h4>角色 Prompt 壁垒</h4>
+              <p>有效提示词需 1–2 年轮迭代（示例）。</p>
+            </div>
+            <div class="layout-card">
+              <h4>客户信任壁垒</h4>
+              <p>安全与可靠性验证常需 2–3 年（示例）。</p>
+            </div>
+          </div>
+          <div class="layout-band">核心技术壁垒：18–36 个月绕过周期 — 全宽条带（<code>.layout-band</code>）与表格同画布左右对齐</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Slide 5: Code example -->
+    <div class="slide slide--content" data-slide="5">
+      <div class="slide-inner">
+        <h2 class="animate-in">Code Example</h2>
+        <p class="animate-in">Here's how to implement the solution:</p>
+        <div class="code-block animate-in" style="flex: 1; min-height: 0;">
+          <pre>
+function example() {
+  // Your code here
+  const result = processData(data);
+  return result;
+}
+          </pre>
+        </div>
+      </div>
+    </div>
+
+    <!-- Slide 6: Quote -->
+    <div class="slide slide--title" data-slide="6">
+      <div class="slide-inner">
+        <div class="quote-slide animate-in">
+          <div class="quote">"Innovation distinguishes between a leader and a follower."</div>
+          <div class="attribution">— Steve Jobs</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Slide 7: Conclusion -->
+    <div class="slide slide--content" data-slide="7">
+      <div class="slide-inner">
+        <h2 class="animate-in">Key Takeaways</h2>
+        <ul class="animate-in">
+          <li>Summary point 1: Main conclusion</li>
+          <li>Summary point 2: Important insight</li>
+          <li>Summary point 3: Action item</li>
+        </ul>
+        <p class="animate-in" style="margin-top: auto; color: var(--primary); font-size: clamp(1.25rem, 3vw, 2rem); font-weight: 700;">Thank You!</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Slide counter -->
+  <div class="slide-counter">
+    <span id="currentSlide">1</span> / <span id="totalSlides">7</span>
+  </div>
+
+  <!-- Navigation controls -->
+  <div class="controls" id="controlsPanel">
+    <button class="prev" id="prevBtn">← Previous</button>
+    <span class="progress" id="progress">1 / 7</span>
+    <button class="next" id="nextBtn">Next →</button>
+    <button class="fullscreen" id="fullscreenBtn">⛶ Fullscreen</button>
+  </div>
+  <button
+    class="controls-toggle"
+    id="controlsToggle"
+    aria-label="隐藏翻页控件"
+    aria-expanded="true"
+    title="隐藏翻页控件"
+  >⌄</button>
+
+  <script>
+    // Slide management
+    let currentSlide = 0;
+    const slides = document.querySelectorAll('.slide');
+    const totalSlides = slides.length;
+    const controlsPanel = document.getElementById('controlsPanel');
+    const controlsToggle = document.getElementById('controlsToggle');
+    let controlsHidden = false;
+
+    function syncControlsMetrics() {
+      const height = controlsPanel?.offsetHeight || 72;
+      document.documentElement.style.setProperty('--controls-height', `${height}px`);
+    }
+
+    function updateControlsVisibility() {
+      if (!controlsPanel || !controlsToggle) return;
+      controlsPanel.classList.toggle('is-hidden', controlsHidden);
+      controlsToggle.classList.toggle('collapsed', controlsHidden);
+      controlsToggle.setAttribute('aria-expanded', String(!controlsHidden));
+      controlsToggle.setAttribute('aria-label', controlsHidden ? '显示翻页控件' : '隐藏翻页控件');
+      controlsToggle.setAttribute('title', controlsHidden ? '显示翻页控件' : '隐藏翻页控件');
+      controlsToggle.textContent = controlsHidden ? '⌃' : '⌄';
+    }
+
+    function toggleControlsVisibility() {
+      controlsHidden = !controlsHidden;
+      updateControlsVisibility();
+    }
+
+    // Update slide counter and progress
+    function updateProgress() {
+      document.getElementById('currentSlide').textContent = currentSlide + 1;
+      document.getElementById('totalSlides').textContent = totalSlides;
+      document.getElementById('progress').textContent = `${currentSlide + 1} / ${totalSlides}`;
+
+      // Update button states
+      document.getElementById('prevBtn').disabled = currentSlide === 0;
+      document.getElementById('nextBtn').disabled = currentSlide === totalSlides - 1;
+    }
+
+    // Show specific slide
+    function showSlide(index) {
+      if (index < 0 || index >= totalSlides) return;
+
+      slides.forEach((slide, i) => {
+        slide.classList.remove('active', 'prev');
+        if (i === index) {
+          slide.classList.add('active');
+        } else if (i < index) {
+          slide.classList.add('prev');
+        }
+      });
+
+      currentSlide = index;
+      updateProgress();
+    }
+
+    // Navigate to next slide
+    function nextSlide() {
+      if (currentSlide < totalSlides - 1) {
+        showSlide(currentSlide + 1);
+      }
+    }
+
+    // Navigate to previous slide
+    function prevSlide() {
+      if (currentSlide > 0) {
+        showSlide(currentSlide - 1);
+      }
+    }
+
+    // Toggle fullscreen
+    function toggleFullscreen() {
+      if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen().catch(err => {
+          console.log('Fullscreen error:', err);
+        });
+      } else {
+        document.exitFullscreen();
+      }
+    }
+
+    // Event listeners
+    document.getElementById('nextBtn').addEventListener('click', nextSlide);
+    document.getElementById('prevBtn').addEventListener('click', prevSlide);
+    document.getElementById('fullscreenBtn').addEventListener('click', toggleFullscreen);
+    controlsToggle?.addEventListener('click', toggleControlsVisibility);
+
+    // Keyboard controls
+    document.addEventListener('keydown', (e) => {
+      switch(e.key) {
+        case 'ArrowRight':
+        case ' ':
+        case 'Enter':
+          e.preventDefault();
+          nextSlide();
+          break;
+        case 'ArrowLeft':
+          e.preventDefault();
+          prevSlide();
+          break;
+        case 'f':
+        case 'F':
+          toggleFullscreen();
+          break;
+        case 'Home':
+          e.preventDefault();
+          showSlide(0);
+          break;
+        case 'End':
+          e.preventDefault();
+          showSlide(totalSlides - 1);
+          break;
+      }
+    });
+
+    // Touch/swipe support for mobile
+    let touchStartX = 0;
+    let touchEndX = 0;
+
+    document.addEventListener('touchstart', (e) => {
+      touchStartX = e.changedTouches[0].screenX;
+    });
+
+    document.addEventListener('touchend', (e) => {
+      touchEndX = e.changedTouches[0].screenX;
+      handleSwipe();
+    });
+
+    function handleSwipe() {
+      const swipeThreshold = 50;
+      const diff = touchStartX - touchEndX;
+
+      if (Math.abs(diff) > swipeThreshold) {
+        if (diff > 0) {
+          nextSlide();
+        } else {
+          prevSlide();
+        }
+      }
+    }
+
+    // Initialize
+    syncControlsMetrics();
+    updateControlsVisibility();
+    updateProgress();
+    window.addEventListener('resize', syncControlsMetrics);
+  </script>
+</body>
+</html>
