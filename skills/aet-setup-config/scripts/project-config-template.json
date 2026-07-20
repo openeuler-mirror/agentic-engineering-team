@@ -1,0 +1,44 @@
+{
+  "version": "1.0",
+  "_comment": "项目级配置模板 - 仅包含项目特有的配置项",
+  "_note": "Token 和工作流模板在全局配置中管理：",
+  "_note_secrets": "  - 密钥配置: ~/.aet/config.json (存储 Token，永不覆盖)",
+  "_note_workflow": "  - 工作流模板: ~/.aet/templates/workflow.json (可覆盖更新)",
+  "_note_merge": "系统自动合并：项目配置 → 工作流模板 → 密钥配置",
+
+  "codePlatform": {
+    "_comment": "项目代码托管平台配置：包含模式、平台类型、代码同步、仓库信息",
+
+    "mode": "issue",
+    "_mode_comment": "工作模式：issue（基于 Issue）或 其他模式",
+
+    "platform": {
+      "_comment": "平台配置：指定使用的平台类型（对应密钥配置中的 platforms）",
+      "type": "gitcode",
+      "_type_comment": "平台类型：gitcode、github、gitlab，从密钥配置 platforms 中读取对应 token"
+    },
+
+    "codebaseSync": {
+      "_comment": "代码同步配置：控制本地代码与上游仓库的同步行为",
+      "enabled": false,
+      "autoSyncOnClaim": false,
+      "autoSyncOnCreate": false,
+      "localMainBranch": "main",
+      "upstreamBranch": "main",
+      "syncStrategy": "merge",
+      "requireCleanWorkingDir": false
+    },
+
+    "upstream": {
+      "_comment": "上游仓库信息",
+      "owner": "<upstream-owner>",
+      "repository": "<upstream-repo>"
+    },
+
+    "fork": {
+      "_comment": "Fork 仓库信息",
+      "owner": "<fork-owner>",
+      "repository": "<fork-repo>"
+    }
+  }
+}
