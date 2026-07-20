@@ -1,0 +1,312 @@
+{
+  "version": "1.0",
+  "_comment": "工作流模板 - 随 AET 版本更新可覆盖",
+  "scenarios": {
+    "_comment": "场景定义：定义不同的工作流程，每个场景包含一系列 agent 执行步骤",
+    "feature": {
+      "name": "功能开发流程",
+      "description": "从设计到实现、验证、PR 提交的完整开发流程",
+      "workflow": [
+        {
+          "agent_id": "aet-design",
+          "before": null,
+          "after": "confirm"
+        },
+        {
+          "agent_id": "aet-implement",
+          "before": null,
+          "after": "null"
+        }
+      ]
+    },
+    "bugfix": {
+      "name": "Bug修复流程",
+      "description": "从问题诊断到修复、验证、发布的bug修复流程",
+      "workflow": [
+        {
+          "agent_id": "aet-bugfix",
+          "before": null,
+          "after": null
+        }
+      ]
+    },
+    "project-analysis": {
+      "name": "项目分析流程",
+      "description": "分析项目架构、模块结构和开发原则，生成项目文档",
+      "workflow": [
+        {
+          "agent_id": "aet-project-analysis",
+          "before": null,
+          "after": null
+        }
+      ]
+    },
+    "design-refine": {
+      "name": "需求变更流程",
+      "description": "基于现有设计文档进行需求变更、设计变更或开发计划变更",
+      "workflow": [
+        {
+          "agent_id": "aet-design-refine",
+          "before": null,
+          "after": null
+        }
+      ]
+    },
+    "config-setup": {
+      "name": "配置初始化流程",
+      "description": "初始化项目配置，设置平台凭证和仓库信息",
+      "workflow": [
+        {
+          "agent_id": "aet-config-setup",
+          "before": null,
+          "after": null
+        }
+      ]
+    },
+    "release": {
+      "name": "Release发布流程",
+      "description": "根据代码/文档变更自动生成release版本，支持模版化发布说明",
+      "workflow": [
+        {
+          "agent_id": "aet-release",
+          "before": null,
+          "after": null
+        }
+      ]
+    },
+    "design": {
+      "name": "设计阶段流程",
+      "description": "需求澄清、架构设计、开发计划编写的完整设计流程",
+      "workflow": [
+        {
+          "agent_id": "aet-design",
+          "before": null,
+          "after": null
+        }
+      ]
+    },
+    "doc": {
+      "name": "文档生成流程",
+      "description": "生成或更新项目文档（README、用户手册、发布说明等）",
+      "workflow": [
+        {
+          "agent_id": "aet-doc",
+          "before": null,
+          "after": null
+        }
+      ]
+    },
+    "implement": {
+      "name": "实现阶段流程",
+      "description": "基于设计文档执行代码开发、单元测试、开发验证",
+      "workflow": [
+        {
+          "agent_id": "aet-implement",
+          "before": null,
+          "after": "confirm"
+        }
+      ]
+    }
+  },
+  "hooks": {
+    "_comment": "钩子配置：定义工作流中 agent 之间的过渡行为",
+    "auto": {
+      "description": "自动进入下一阶段",
+      "promptTemplate": null,
+      "options": null
+    },
+    "confirm": {
+      "description": "请用户确认是该阶段任务是否完成",
+      "promptTemplate": "你已结束输出，请确认当前阶段pipeline是否全部执行完成。\n\n- **执行意外中断**：请继续执行pipeline直至当前step完成\n\n- **提问用户**：请直接必须使用 question 工具向用户提问，不得中断。\n\n- **执行完毕**：问题：\"{description}\"\n{options}\n",
+      "options": [
+        {
+          "label": "完成",
+          "value": "approve"
+        },
+        {
+          "label": "需要修改",
+          "value": "reject"
+        }
+      ]
+    },
+    "stage_review": {
+      "description": "自动进入评审阶段",
+      "promptTemplate": null,
+      "options": null
+    }
+  },
+  "agents": {
+    "_comment": "Agent 配置：定义每个 agent 的执行步骤",
+    "aet-router": {
+      "name": "aet-router",
+      "description": "AET入口 - 根据用户意图路由到合适的工作流程",
+      "workflow": []
+    },
+    "aet-project-analysis": {
+      "name": "aet-general",
+      "description": "负责项目架构分析、模块边界划分、开发原则提炼",
+      "workflow": [
+        {
+          "step_id": "project_analysis_overview",
+          "name": "项目分析概述",
+          "description": "<workflow_context>\n    <workflow_name>projectAnalysis</workflow_name>\n    <stages>\n      <stage id=\"systemAnalysis\"/>\n      <stage id=\"componentAnalysis\"/>\n    </stages>\n    <curr_stage id=\"systemAnalysis\"/>\n    <instruction>\n      This is a specific stage within the workflow. DO NOT perform any tasks outside of the curr_stage and prohibited from executing any subsequent steps. Upon completion, provide a summary (within 50 words) and terminate the output immediately.\n    </instruction>\n</workflow_context>\n\n## Task\n\nPerform in-depth analysis of each module/component identified in Stage 1, and generate separate component detail files.\n\n## Execution Steps\n\n- [Proc1.1] Confirm the target project path\n- [Proc1.2] Use the aet-analyzing-project skill and route to `project-overview`\n- [Proc2] Execute according to `references/phase1-project-overview.md`, and skipping steps is prohibited\n- [Proc3] Use the question tool to Confirm the user's intent (continue to component analysis or end the workflow)\n- [Proc4.1] Use the `step_handover` tool: if user wants to continue, call `step_handover({ context: \"Overview analysis completed, proceeding to component analysis.\" })`; if user wants to end, call `step_handover({ context: \"Overview analysis completed, workflow ended by user choice.\" }, end: true)`.\n- [Proc4.2] Stop\n\n## Output\n\n**output path**: `<projectDir>/.aet/project-analysis/` (output directly to the analysis project directory)\n\n现在请遵照执行",
+          "before": null,
+          "after": null
+        },
+        {
+          "step_id": "project_analysis_detail",
+          "name": "项目分析详细",
+          "description": "<workflow_context>\n    <workflow_name>projectAnalysis</workflow_name>\n    <stages>\n      <stage id=\"systemAnalysis\"/>\n      <stage id=\"componentAnalysis\"/>\n    </stages>\n    <curr_stage id=\"componentAnalysis\"/>\n    <instruction>\n      This is a specific stage within the workflow. DO NOT perform any tasks outside of the curr_stage and prohibited from executing any subsequent steps. Upon completion, provide a summary (within 50 words) and terminate the output immediately.\n    </instruction>\n</workflow_context>\n\n## Task\n\nPerform in-depth analysis of each module/component identified in Stage 1, and generate separate component detail files.\n\n## Execution Steps\n\n- [Proc1.1] Confirm the target project path\n- [Proc1.2] Use the aet-analyzing-project skill and route to `component-analysis`\n- [Proc1.3] Load `Overview.md`, `Architecture.md`, and `Modules.md` to obtain the component list and related information\n- [Proc2] Execute according to `references/phase2-component-analysis.md`, and skipping steps is prohibited\n- [Proc3.1] Use the `step_handover` tool to end the workflow: call `step_handover({ context: \"Component analysis completed, workflow finished.\" }, end: true)`.\n- [Proc3.2] Stop (Only stopping the orchestration layer will help you truly hand over)\n\n## Output\n\n**output path**: `<projectDir>/.aet/project-analysis/` (output directly to the analysis project directory)\n\n现在请遵照执行",
+          "before": null,
+          "after": null
+        }
+      ]
+    },
+    "aet-design-refine": {
+      "name": "aet-general",
+      "description": "负责需求变更、设计变更和开发计划变更处理",
+      "workflow": [
+        {
+          "step_id": "refine_analysis",
+          "name": "需求变更处理",
+          "description": "## Task\n\n当前用户希望对已经输出完成的需求相关文档进行变更。基于现有文档和用户变更意图执行需求变更处理。\n\n### Core Skill\n\n- **Skill**: `aet-req-refine`\n\n## Input\n\n- `./ai_assistance/features/{feature-name}/design/需求分析说明书.md`\n- `./ai_assistance/features/{feature-name}/design/功能设计说明书.md`\n- `./ai_assistance/features/{feature-name}/implementation/dev-plan.md`\n\n现在请遵照执行",
+          "before": null,
+          "after": null
+        }
+      ]
+    },
+    "aet-config-setup": {
+      "name": "aet-general",
+      "description": "负责项目配置初始化和凭证设置",
+      "workflow": [
+        {
+          "step_id": "config_init",
+          "name": "配置初始化",
+          "description": "使用 aet-setup-config skill，初始化项目配置，设置平台凭证和仓库信息",
+          "before": null,
+          "after": null
+        }
+      ]
+    },
+    "aet-design": {
+      "name": "aet-design",
+      "description": "负责需求澄清、架构设计、和具体开发计划编写",
+      "workflow": [
+        {
+          "step_id": "requirements_analysis",
+          "name": "需求分析",
+          "description": "<workflow_context>\n    <workflow_name>SDD</workflow_name>\n    <stages>\n      <stage id=\"requirementAnalysis\"/>\n      <stage id=\"requirementDesign\"/>\n    </stages>\n    <curr_stage id=\"requirementAnalysis\"/>\n    <instruction>\n      This is a specific stage within the workflow. DO NOT perform any tasks outside of the curr_stage and are prohibited from executing any subsequent steps. Upon completion, provide a summary (within 50 words) and terminate the output immediately.\n    </instruction>\n</workflow_context>\n\n## Task\n\nGuide users through requirement clarification, transforming requirements into structured requirement descriptions.\n\n### Core\n\n- **Process Skill**: `aet-req-analysis`\n\n## Notes\n\n- Before executing any operation, you must load the Process Skill. If the skill fails to load, you must report the error to the user.\n- The key stages of the process include: requirement clarification, deliverable generation, and deliverable review (unless the user explicitly requests to skip the review).\n- When asking questions to the user, you MUST use the Question tool. Do not terminate the output until the pipeline has completed execution.\n- Keep the output precise and concise.\n\n## Output\n\n- `./ai_assistance/features/{feature-name}/design/需求分析说明书.md`\n\n现在请遵照执行",
+          "before": null,
+          "after": "confirm",
+          "clear": true
+        },
+        {
+          "step_id": "requirements_design",
+          "name": "需求设计",
+          "description": "<workflow_context>\n    <workflow_name>SDD</workflow_name>\n    <stages>\n      <stage id=\"requirementAnalysis\"/>\n      <stage id=\"requirementDesign\"/>\n      <stage id=\"developmentPlan\"/>\n    </stages>\n    <curr_stage id=\"requirementDesign\"/>\n    <instruction>\n      This is a specific stage within the workflow. DO NOT perform any tasks outside of the curr_stage and are prohibited from executing any subsequent steps. Upon completion, provide a summary (within 50 words) and terminate the output immediately.\n    </instruction>\n</workflow_context>\n\n## Task\n\nConduct design activities at varying levels of depth based on Effort (Low/Medium/High). Low effort focuses on rapid task completion, while High effort emphasizes deeper exploration, design, and validation to ensure high-quality outcomes. \n\n### Core\n\n- **Process Skill**: `aet-req-design`\n\n## Notes\n\n- Before executing any operation, you must load the Process Skill. If the skill fails to load, you must report the error to the user.\n- The key stages of the process include: codebase and reference content exploration, initial design draft, feasibility analysis (as needed), deliverable generation, and deliverable review (unless the user explicitly requests to skip the review).\n- When asking questions to the user, you MUST use the Question tool. Do not terminate the output until the pipeline has completed execution.\n- Keep the output precise and concise.\n\n## Input\n\n- `./ai_assistance/features/{feature-name}/design/需求分析说明书.md`\n\n## Output\n\n- `./ai_assistance/features/{feature-name}/design/功能设计说明书.md`\n\n现在请遵照执行\n",
+          "before": null,
+          "after": "confirm",
+          "clear": true
+        },
+        {
+          "step_id": "commit",
+          "name": "提交文档",
+          "description": "提交设计文档到 git",
+          "before": null,
+          "after": null
+        }
+      ]
+    },
+    "aet-implement": {
+      "name": "aet-implement",
+      "description": "负责代码开发、单元测试、集成测试、开发验证及 PR 提交",
+      "workflow": [
+        {
+          "step_id": "development_plan",
+          "name": "开发计划",
+          "description": "<workflow_context>\n    <workflow_name>Implementation</workflow_name>\n    <stages>\n      <stage id=\"developmentPlan\"/>\n      <stage id=\"codeImplementation\"/>\n      <stage id=\"devValidation\"/>\n    </stages>\n    <curr_stage id=\"developmentPlan\"/>\n    <instruction>\n      This is a specific stage within the workflow. DO NOT perform any tasks outside of the curr_stage and are prohibited from executing any subsequent steps. Upon completion, provide a summary (within 50 words) and terminate the output immediately.\n    </instruction>\n</workflow_context>\n\n## Task\n\nAs the FIRST step of the implementation phase, transform the approved design documents into a development plan tailored for Agent-oriented programming: concrete, executable coding tasks with acceptance criteria, organized into execution waves and grounded in the CURRENT state of the codebase.\n\n### Core\n\n- **Process Skill**: `aet-req-dev-plan`\n\n## Notes\n\n- Before executing any operation, you must load the Process Skill. If the skill fails to load, you must report the error to the user.\n- The key stages of the process include: codebase and design exploration, task decomposition with upstream gap analysis, execution wave organization, deliverable generation, and deliverable review (unless the user explicitly requests to skip the review).\n- If `./ai_assistance/features/{feature-name}/implementation/dev-plan.md` already exists and is still consistent with the design docs, you MAY reuse it after a brief consistency check (skip regeneration); otherwise continue.\n- When asking questions to the user, you MUST use the Question tool. Do not terminate the output until the pipeline has completed execution.\n- Keep the output precise and concise.\n\n## Input\n\n- `./ai_assistance/features/{feature-name}/design/需求分析说明书.md`\n- `./ai_assistance/features/{feature-name}/design/需求设计说明书.md`\n\n## Output\n\n- `./ai_assistance/features/{feature-name}/implementation/dev-plan.md`\n\n现在请遵照执行",
+          "before": null,
+          "after": "confirm"
+        },
+        {
+          "step_id": "code_implementation",
+          "name": "代码实现",
+          "description": "使用 aet-implementing-requirement skill，执行代码开发和单元测试",
+          "before": null,
+          "after": "confirm"
+        },
+        {
+          "step_id": "dev_validation",
+          "name": "开发验证",
+          "description": "使用 aet-checking-implementation skill，验证代码通过 lint、tests 和 build",
+          "before": null,
+          "after": null
+        }
+      ]
+    },
+    "aet-test": {
+      "name": "aet-test",
+      "description": "负责集成测试、性能测试、安全测试（待扩展）",
+      "workflow": []
+    },
+    "aet-bugfix": {
+      "name": "aet-bugfix",
+      "description": "负责问题诊断、修复计划、代码修复、验证和PR提交",
+      "workflow": [
+        {
+          "step_id": "diagnosis",
+          "name": "问题诊断",
+          "description": "使用 aet-diagnosing-bug skill，系统化分析bug原因，定位根因，识别受影响文件",
+          "before": null,
+          "after": "confirm"
+        },
+        {
+          "step_id": "planning",
+          "name": "修复计划",
+          "description": "使用 aet-implementing-requirement skill，基于诊断报告制定修复计划",
+          "before": null,
+          "after": "confirm"
+        },
+        {
+          "step_id": "aet-implementing-requirement",
+          "name": "修复实现",
+          "description": "使用 aet-implementing-requirement skill，按计划修复代码",
+          "before": null,
+          "after": "confirm"
+        },
+        {
+          "step_id": "validation",
+          "name": "修复验证",
+          "description": "使用验证流程，验证修复效果",
+          "before": null,
+          "after": "confirm"
+        },
+        {
+          "step_id": "aet-operating-pr-submit",
+          "name": "提交PR",
+          "description": "使用 aet-operating-pr skill，提交修复PR",
+          "before": null,
+          "after": null
+        }
+      ]
+    },
+    "aet-release": {
+      "name": "aet-release",
+      "description": "Release管理入口 - 处理所有release相关操作（创建/删除/查询/上传/下载/完整发布流程）",
+      "workflow": [
+        {
+          "step_id": "dispatch",
+          "name": "任务分发",
+          "description": "使用 aet-operating-release skill，根据用户输入识别意图（创建release/删除release/查询release/上传附件/下载附件/完整发布流程），执行相应操作或引导用户完成完整流程",
+          "before": null,
+          "after": null
+        }
+      ]
+    },
+    "aet-doc": {
+      "name": "aet-doc",
+      "description": "文档生成统一路由入口 - 智能识别用户需求并路由到对应的文档生成 skill",
+      "workflow": []
+    }
+  }
+}
