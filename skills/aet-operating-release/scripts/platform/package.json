@@ -1,0 +1,22 @@
+{
+  "name": "@aet/release-api-scripts",
+  "version": "1.0.0",
+  "description": "Release API 命令行工具 - 管理 AtomGit/GitHub Release",
+  "main": "src/index.js",
+  "bin": {
+    "release-api": "./bin/release-api.js"
+  },
+  "scripts": {
+    "start": "node src/index.js"
+  },
+  "dependencies": {
+    "axios": "^1.6.0",
+    "commander": "^11.0.0",
+    "chalk": "^4.1.2",
+    "fs-extra": "^11.2.0",
+    "winston": "^3.11.0"
+  },
+  "engines": {
+    "node": ">=14.0.0"
+  }
+}
