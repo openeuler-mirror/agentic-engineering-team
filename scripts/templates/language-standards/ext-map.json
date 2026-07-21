@@ -1,0 +1,33 @@
+{
+  "_comment": "扩展名 → 语言规范 key 映射。resolve-standards.mjs 用它从文件列表识别语言。",
+  "_note": "框架变体(django/react/angular/nestjs/qt)无法仅凭扩展名判定,需调用方用 --langs 显式指定。",
+  "ext": {
+    ".ts": "typescript",
+    ".tsx": "typescript",
+    ".js": "typescript",
+    ".jsx": "typescript",
+    ".mjs": "typescript",
+    ".cjs": "typescript",
+    ".py": "python",
+    ".go": "go",
+    ".rs": "rust",
+    ".java": "java",
+    ".kt": "kotlin",
+    ".kts": "kotlin",
+    ".cs": "csharp",
+    ".cpp": "cpp",
+    ".cc": "cpp",
+    ".cxx": "cpp",
+    ".hpp": "cpp",
+    ".hh": "cpp",
+    ".c": "c",
+    ".h": "c",
+    ".vue": "vue",
+    ".svelte": "svelte",
+    ".css": "css-less-sass",
+    ".scss": "css-less-sass",
+    ".sass": "css-less-sass",
+    ".less": "css-less-sass"
+  },
+  "_frameworks": ["django", "react", "angular", "nestjs", "qt"]
+}

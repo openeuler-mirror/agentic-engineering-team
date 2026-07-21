@@ -1,0 +1,7 @@
+# Lock line endings for Windows install scripts.
+#   .cmd: cmd.exe parses if-else blocks incorrectly under LF (else branch skipped)
+#   .ps1: pairs with UTF-8 BOM to avoid PowerShell 5.x ANSI-decode issues
+# Force CRLF regardless of contributor platform / core.autocrlf setting.
+*.cmd text eol=crlf
+*.bat text eol=crlf
+*.ps1 text eol=crlf
