@@ -3,7 +3,6 @@
 ![Version](https://img.shields.io/badge/version-1.1.0-blue)
 ![License](https://img.shields.io/badge/license-MulanPSL--2.0-green)
 ![Node](https://img.shields.io/badge/node-%3E%3D14.0.0-brightgreen)
-![Skills](https://img.shields.io/badge/skills-44-orange)
 ![Platform](https://img.shields.io/badge/platform-OpenCode-lightgrey)
 
 > AET (Agentic Engineering Team) 全流程 AI 辅助研发底座/引擎：通过多个专用 AI 智能体有序协作，覆盖从需求分析、设计、编码、测试到发布、运维的软件研发全生命周期。
@@ -51,7 +50,7 @@ AET 通过多智能体编排、断点恢复和可配置工作流解决上述问�
 
 - **断点恢复 (Checkpoint)** — 任务快照记录各阶段完整状态。长程任务中断后从最新断点恢复，无需从头执行，降低计算资源重复消耗。
 
-- **42 个原子技能** — 模块化 Skill 体系覆盖分析、设计、实现、测试、代码审查、发布管理、文档生成、安全与 CVE 分析。技能采用渐进式披露模式，按需展示复杂度。
+- **原子技能** — 模块化 Skill 体系覆盖分析、设计、实现、测试、代码审查、发布管理、文档生成、安全与 CVE 分析。技能采用渐进式披露模式，按需展示复杂度。
 
 - **自动化版本发布** — 检测上次 Release 后的代码变更，分析 commit 类型（feat/fix/docs/refactor），推断版本号（major/minor/patch），生成 Release Notes 并自动创建平台 Release。
 
@@ -256,7 +255,7 @@ AET 采用四层分层架构，依赖方向严格自上而下：
 │   ├── doc/                # Aet-Doc：README、手册、技术分析、API 文档、翻译、检查、mdbook 构建
 │   ├── general/            # Aet-General：通用任务处理
 │   └── release/            # Aet-Release：版本管理
-├── skills/                  # SKILL定义
+├── skills/                  # SKILL.md 定义
 │   ├── aet-req-analysis/
 │   ├── aet-req-design/
 │   ├── aet-implementing-requirement/
