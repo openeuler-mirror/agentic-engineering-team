@@ -1,7 +1,7 @@
 ---
 name: aet-req-review
 description: |
-  Gate pipeline for requirement deliverables — enforces automated quality gates and interactive user validation before handover. Trigger when: (1) structured PRD/spec/SDD reviews are required, (2) executing a Stage demanding review-then-revision cycles, (3) workflows necessitate HCritic automated checks coupled with user-in-the-loop revision.
+  Gate pipeline for requirement deliverables — enforces automated quality gates and interactive user validation before handover. Trigger when: (1) structured PRD/spec/DPS reviews are required, (2) executing a Stage demanding review-then-revision cycles, (3) workflows necessitate HCritic automated checks coupled with user-in-the-loop revision.
 disable-model-invocation: true
 metadata:
   pattern: pipeline

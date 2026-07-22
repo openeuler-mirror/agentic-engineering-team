@@ -13,8 +13,8 @@ AET 预置了以下 Agent：
 | Agent | 职责 | 目录 |
 | :--- | :--- | :--- |
 | **Aet-Router** | 核心协调者 — 理解需求、认领 Feature、路由工作流、管理 Checkpoint | `agents/router/` |
-| **Aet-Design** | 设计智能体 — 需求分析 (RAS)、需求设计 (RDS)、开发计划 (SDD) | `agents/design/` |
-| **Aet-Implement** | 实现智能体 — TDD 驱动开发、代码实现、功能验证 | `agents/implement/` |
+| **Aet-Design** | 设计智能体 — 需求分析 (RAS)、需求设计 (RDS) | `agents/design/` |
+| **Aet-Implement** | 实现智能体 — 开发计划 (DPS)、TDD 驱动开发、代码实现、功能验证 | `agents/implement/` |
 | **Aet-Test** | 测试智能体 — 集成测试、性能测试（待扩展） | `agents/test/` |
 | **Aet-Bugfix** | 修复智能体 — Bug 诊断、修复规划 | `agents/bugfix/` |
 | **Aet-Doc** | 文档生成 — README、用户手册、技术分析、幻灯片、信息图、实践案例 | `agents/doc/` |
@@ -58,37 +58,45 @@ AET 预置了以下 Agent：
 | 2 | 需求评审 | 通过/不通过 |
 | 3 | 需求设计 | RDS 文档（需求设计规范） |
 | 4 | 需求设计评审 | 通过/不通过 |
-| 5 | 开发计划 | SDD 文档（详细设计文档） |
-| 6 | 计划评审 | 通过/不通过 |
-| 7 | 提交文档 | Git 提交 |
+| 5 | 提交文档 | Git 提交 |
 
-**三份核心设计文档：**
+**两份核心设计文档：**
 
 | 文档 | 全称 | 说明 |
 | :--- | :--- | :--- |
 | **RAS** | Requirements Analysis Specification | 需求分析规范 — 需求背景、目标、范围、详细需求 |
 | **RDS** | Requirements Design Specification | 需求设计规范 — 模块划分、接口设计、DFX 策略、SR-AR 分解 |
-| **SDD** | Software Design Document | 软件设计文档 — 开发任务分解、围栏配置、具体实现步骤 |
 
 ### Aet-Implement（实现智能体）
 
-**职责：** 根据设计文档执行 TDD 开发并完成功能验证。
+**职责：** 根据设计文档执行开发计划生成、TDD 开发并完成功能验证。
+
+**执行步骤（按顺序）：**
+
+| # | 步骤 | 输出 |
+| :--- | :--- | :--- |
+| 1 | 开发计划 | DPS 文档（开发任务分解、围栏配置、具体实现步骤） |
+| 2 | 计划评审 | 通过/不通过 |
+| 3 | TDD 开发 | 测试代码 + 实现代码 |
+| 4 | 功能验证 | 验证报告 |
+| 5 | 提示提交 PR | 提示用户执行 `/aet-pr` |
 
 **执行流程：**
 
-1. 读取设计文档和实现计划
-2. 对每个任务执行 TDD 循环：
+1. 生成开发计划（如已存在且与设计一致可复用）
+2. 读取设计文档和实现计划
+3. 对每个任务执行 TDD 循环：
    - 编写失败的测试
    - 验证测试失败
    - 编写最简代码通过测试
    - 验证测试通过
    - 提交代码
-3. 功能验证：
+4. 功能验证：
    - 检查所有必需功能是否已实现
    - 验证接口是否符合设计
    - 将每个需求映射到实现代码
    - 生成验证报告
-4. 提示用户使用 `/aet-pr` 提交 PR
+5. 提示用户使用 `/aet-pr` 提交 PR
 
 **TDD 铁律：**
 
@@ -100,7 +108,7 @@ NO PRODUCTION CODE WITHOUT A FAILING TEST FIRST
 
 **当前状态：** 框架保留，职责待扩展。
 
-**功能验证职责：** 已迁移至 Aet-Implement。
+**功能验证职责：** 由 Aet-Implement 承担。
 
 **未来扩展方向：**
 
@@ -158,15 +166,13 @@ Agent 通过 `agents/index.js` 注册表统一管理：
 {
   agent_id: "aet-design",
   name: "Aet-Design",
-  description: "设计智能体 — 需求分析、架构设计、开发计划",
+  description: "设计智能体 — 需求分析、架构设计",
   prompt: "prompts/main.md",
   steps: [
     "requirements_analysis",
     "requirements_analysis_review",
     "requirements_design",
     "requirements_design_review",
-    "development_plan",
-    "development_plan_review",
     "commit"
   ]
 }
@@ -198,10 +204,10 @@ Agent 通过 `agents/index.js` 注册表统一管理：
 Aet-Router：认领 Feature → 检查 Checkpoint → 意图识别
        │
        ▼
-Aet-Design：需求分析 → 评审 → 需求设计 → 评审 → 开发计划 → 评审
+Aet-Design：需求分析 → 评审 → 需求设计 → 评审 → 提交文档
        │
        ▼
-Aet-Implement：TDD 开发 → 功能验证 → 提示提交 PR
+Aet-Implement：开发计划 → 评审 → TDD 开发 → 功能验证 → 提示提交 PR
        │
        ▼
 用户手动执行 /aet-pr 提交 PR

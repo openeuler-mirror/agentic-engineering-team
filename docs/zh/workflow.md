@@ -182,8 +182,20 @@ AET 支持灵活的工作流配置，允许用户自定义 Agent 执行顺序、
           "after": "confirm"
         },
         {
+          "step_id": "commit",
+          "description": "提交设计文档",
+          "before": null,
+          "after": null
+        }
+      ]
+    },
+    "aet-implement": {
+      "name": "Aet-Implement",
+      "description": "实现智能体",
+      "workflow": [
+        {
           "step_id": "development_plan",
-          "description": "开发计划 (SDD)",
+          "description": "开发计划 (DPS)",
           "before": null,
           "after": null
         },
@@ -194,8 +206,14 @@ AET 支持灵活的工作流配置，允许用户自定义 Agent 执行顺序、
           "after": "confirm"
         },
         {
-          "step_id": "commit",
-          "description": "提交设计文档",
+          "step_id": "code_implementation",
+          "description": "代码实现 (TDD)",
+          "before": null,
+          "after": null
+        },
+        {
+          "step_id": "dev_validation",
+          "description": "开发验证",
           "before": null,
           "after": null
         }
@@ -382,7 +400,7 @@ skills/
 | :--- | :--- |
 | 快速验证想法 | 使用 `auto` 跳过所有确认点 |
 | 正式项目开发 | 保留 `confirm` 确认点，在设计评审和实现完成时确认 |
-| 团队协作 | 在关键阶段交付物（RAS、RDS、SDD）处设置确认点 |
+| 团队协作 | 在关键阶段交付物（RAS、RDS、DPS）处设置确认点 |
 | 新手使用 | 保留默认配置，充分理解流程后再自定义 |
 
 ### 调试建议
