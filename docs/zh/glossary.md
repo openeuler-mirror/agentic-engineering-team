@@ -20,16 +20,16 @@
 | :--- | :--- |
 | **Checkpoint（检查点）** | 任务状态快照机制，存储在 `.aet/checkpoint/` 目录。支持长程任务中断后从断点继续执行。 |
 | **Fence（围栏）** | 模块依赖保护机制。通过 ✅ 允许修改 / ❌ 禁止修改 / 🔵 条件修改 三种配置，限定 AI 的修改范围。 |
-| **SDD（规范驱动开发）** | Specification-Driven Development，强制 AI 在设计阶段输出结构化文档，将设计方法最佳实践作为基准上下文。 |
+| **SDD（规范驱动开发）** | Specification-Driven Development，强制 AI 输出结构化设计文档，将设计方法最佳实践作为基准上下文。 |
 | **TDD（测试驱动开发）** | Test-Driven Development，实现阶段强制遵循"红（写失败测试）→ 绿（写最简代码）→ 重构（优化代码）"循环。 |
 
 ## 设计文档
 
 | 术语 | 全称 | 说明 |
 | :--- | :--- | :--- |
-| **RAS** | Requirements Analysis Specification | 需求分析规范。包含需求背景、目标、范围、详细需求。 |
-| **RDS** | Requirements Design Specification | 需求设计规范。包含模块划分、接口设计、DFX 策略、SR-AR 分解。 |
-| **SDD** | Software Design Document | 软件设计文档。包含开发任务分解、围栏配置、具体实现步骤。 |
+| **RAS** | Requirements Analysis Specification | 需求分析规范。包含需求背景、目标、范围、详细需求。由 Aet-Design 在设计阶段生成。 |
+| **RDS** | Requirements Design Specification | 需求设计规范。包含模块划分、接口设计、DFX 策略、SR-AR 分解。由 Aet-Design 在设计阶段生成。 |
+| **DPS** | Development Plan Specification | 开发计划规范。对应 `dev-plan.md`。包含开发任务分解、围栏配置、具体实现步骤。由 Aet-Implement 在实现阶段首步生成。 |
 
 ## 平台与集成
 
