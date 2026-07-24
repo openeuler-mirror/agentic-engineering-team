@@ -51,7 +51,7 @@ AET 通过多智能体编排、断点恢复和可配置工作流解决上述问�
 
 - **断点恢复 (Checkpoint)** — 任务快照记录各阶段完整状态。长程任务中断后从最新断点恢复，无需从头执行，降低计算资源重复消耗。
 
-- **37 个原子技能** — 模块化 Skill 体系覆盖分析、设计、实现、测试、代码审查、发布管理、文档生成、安全与 CVE 分析。技能采用渐进式披露模式，按需展示复杂度。
+- **42 个原子技能** — 模块化 Skill 体系覆盖分析、设计、实现、测试、代码审查、发布管理、文档生成、安全与 CVE 分析。技能采用渐进式披露模式，按需展示复杂度。
 
 - **自动化版本发布** — 检测上次 Release 后的代码变更，分析 commit 类型（feat/fix/docs/refactor），推断版本号（major/minor/patch），生成 Release Notes 并自动创建平台 Release。
 
@@ -132,6 +132,10 @@ AET 自动完成以下流程：
 /aet-doc 生成幻灯片          # 生成 HTML 幻灯片
 /aet-doc 生成信息图          # 生成技术信息图
 /aet-doc 生成实践案例        # 生成实践案例/教程
+/aet-doc 生成 Python API 文档  # 生成 API 文档/docstring
+/aet-doc 翻译 docs/            # 文档翻译（中译英等）
+/aet-doc 检查文档质量 docs/     # 文档质量检查
+/aet-doc 构建 mdbook 文档      # 从 Markdown 构建 HTML 文档
 ```
 
 ---
@@ -157,7 +161,7 @@ AET 采用四层分层架构，依赖方向严格自上而下：
 └─────────────┬───────────────┘
               │
 ┌─────────────▼───────────────┐
-│    原子 Skill 层             │  44 个单一职责技能
+│    原子 Skill 层             │  42 个单一职责技能
 │   (最小功能单元)             │
 └─────────────────────────────┘
 ```
@@ -180,7 +184,7 @@ AET 采用四层分层架构，依赖方向严格自上而下：
 | `/aet-pr` | PR 管理（创建、更新、查询） | 是 |
 | `/aet-issue` | Issue 管理（创建、认领、查询） | 是 |
 | `/aet-release` | Release 管理（创建、删除、列出、查询） | 是 |
-| `/aet-doc` | 文档生成（README、用户手册、技术分析、幻灯片、信息图、实践案例） | 否 |
+| `/aet-doc` | 文档生成（README、用户手册、技术分析、幻灯片、信息图、实践案例、Python API 文档、翻译、质量检查、mdbook 构建） | 否 |
 | `/aet-design` | 直接进入设计智能体 | 否 |
 | `/aet-implement` | 直接进入实现智能体 | 否 |
 
@@ -249,10 +253,10 @@ AET 采用四层分层架构，依赖方向严格自上而下：
 │   ├── implement/          # Aet-Implement：TDD + 编码 + 验证
 │   ├── test/               # Aet-Test：集成测试（扩展中）
 │   ├── bugfix/             # Aet-Bugfix：诊断与修复规划
-│   ├── doc/                # Aet-Doc：README、手册、技术分析
+│   ├── doc/                # Aet-Doc：README、手册、技术分析、API 文档、翻译、检查、mdbook 构建
 │   ├── general/            # Aet-General：通用任务处理
 │   └── release/            # Aet-Release：版本管理
-├── skills/                  # 37 个 SKILL.md 定义
+├── skills/                  # 42 个 SKILL.md 定义
 │   ├── aet-req-analysis/
 │   ├── aet-req-design/
 │   ├── aet-implementing-requirement/
@@ -264,7 +268,7 @@ AET 采用四层分层架构，依赖方向严格自上而下：
 │   ├── aet-reviewing-code/
 │   ├── aet-diagnosing-bug/
 │   ├── test-driven-development/
-│   └── ... (35 个)
+│   └── ... (31 个)
 ├── commands/               # 9 个命令定义
 ├── scripts/                # 安装和配置脚本
 │   ├── install.sh          # 一键安装（远程/本地模式）

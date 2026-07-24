@@ -87,7 +87,7 @@
     },
     "doc": {
       "name": "文档生成流程",
-      "description": "生成或更新项目文档（README、用户手册、发布说明等）",
+      "description": "生成或更新项目文档（README、用户手册、技术分析、Python API 文档、文档翻译、文档质量检查、mdbook 构建等）",
       "workflow": [
         {
           "agent_id": "aet-doc",

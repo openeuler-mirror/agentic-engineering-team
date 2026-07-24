@@ -23,6 +23,10 @@ Analyze the user's input to determine their intent:
 | **HTML Slides** | 幻灯片、slides、PPT、演示、网页PPT | slides、presentation、PPT、HTML slides | `aet-generating-html-slides` |
 | **Tech Infographic** | 信息图、一图理解、技术图解 | infographic、one-picture、tech diagram | `aet-generating-technical-infographic` |
 | **Practice Case** | 实践案例、demo、教程、示例 | practice case、demo、tutorial、example | `aet-generating-practice-case` |
+| **Python API Doc** | API文档、API参考、Python API、docstring、接口文档 | API documentation、API docs、API reference、docstring | `aet-generating-python-api` |
+| **Doc Translation** | 翻译、文档翻译、中译英、英译中、本地化 | translate、translation、localization、i18n | `aet-doc-translator` |
+| **Doc Quality Check** | 检查文档、审查文档、文档检查、文档审查、lint文档、文档质量 | check docs、lint docs、review docs、doc quality | `aet-checking-docs` |
+| **mdbook Build** | 构建文档、生成HTML文档、编译文档、mdbook、book.toml、SUMMARY.md | build docs、mdbook、book.toml、SUMMARY.md | `aet-building-doc-mdbook` |
 
 ### Special Input Patterns
 
@@ -33,6 +37,10 @@ Analyze the user's input to determine their intent:
 | **PPT/Slides** | Contains "幻灯片"、"PPT"、"slides"、"演示" keyword | `aet-generating-html-slides` |
 | **Infographic** | Contains "信息图"、"一图理解"、"技术图解" keyword | `aet-generating-technical-infographic` |
 | **Practice Case** | Contains "实践案例"、"demo"、"教程"、"示例" keyword | `aet-generating-practice-case` |
+| **Python API Doc** | Contains "API文档"、"API参考"、"docstring"、"Python API" keyword | `aet-generating-python-api` |
+| **PR/URL + Check** | Contains URL/PR link + "检查"/"审查"/"lint" keyword | `aet-checking-docs` |
+| **mdbook Reference** | Contains "book.toml"、"SUMMARY.md"、"mdbook" | `aet-building-doc-mdbook` |
+| **Path + Translate** | Contains file/folder path + "翻译" keyword | `aet-doc-translator` |
 
 ### Multi-Intent Detection
 
@@ -82,6 +90,10 @@ If intent cannot be identified (no matching keywords or patterns):
    - "用户手册 / User Manual"
    - "技术分析 / Technical Analysis"
    - "实践案例 / Practice Case"
+   - "Python API 文档 / Python API Documentation"
+   - "文档翻译 / Document Translation"
+   - "文档质量检查 / Doc Quality Check"
+   - "mdbook 文档构建 / mdbook Doc Build"
    ```
 
 2. After user selection:
@@ -165,3 +177,39 @@ User input: `/aet-doc 生成 README 和用户手册`
    - Report: "用户手册已生成"
 3. Summary: "已完成 README 和用户手册的生成"
 4. **STOP** - All documents generated
+
+### Example 5: Python API Documentation Generation
+
+User input: `/aet-doc 生成 Python API 文档`
+
+1. Detect intent: Python API Doc (keyword "API文档"/"Python API" found)
+2. Target skill: `aet-generating-python-api`
+3. Invoke skill: `Skill({ skill: "aet-generating-python-api", args: "生成 Python API 文档" })`
+4. **STOP** - Skill generates API docstrings and references
+
+### Example 6: Document Translation
+
+User input: `/aet-doc 翻译 docs/ 中译英`
+
+1. Detect intent: Doc Translation (keyword "翻译" found)
+2. Target skill: `aet-doc-translator`
+3. Invoke skill: `Skill({ skill: "aet-doc-translator", args: "翻译 docs/ 中译英" })`
+4. **STOP** - Skill translates documents to English
+
+### Example 7: Doc Quality Check (Special Pattern - Path/URL)
+
+User input: `/aet-doc 检查文档质量 docs/`
+
+1. Detect intent: Doc Quality Check (keyword "检查文档"/"文档质量" found)
+2. Target skill: `aet-checking-docs`
+3. Invoke skill: `Skill({ skill: "aet-checking-docs", args: "检查文档质量 docs/" })`
+4. **STOP** - Skill runs quality checks and reports issues
+
+### Example 8: mdbook Build (Special Pattern - Reference)
+
+User input: `/aet-doc 构建 mdbook 文档`
+
+1. Detect intent: mdbook Build (keyword "构建文档"/"mdbook" found)
+2. Target skill: `aet-building-doc-mdbook`
+3. Invoke skill: `Skill({ skill: "aet-building-doc-mdbook", args: "构建 mdbook 文档" })`
+4. **STOP** - Skill builds HTML documentation site from Markdown
