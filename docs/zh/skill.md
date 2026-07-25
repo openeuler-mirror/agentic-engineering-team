@@ -4,7 +4,7 @@
 
 ## 概述
 
-Skill（技能）是 AET 的核心功能单元。每个 Skill 定义为 `SKILL.md` 文件，描述其用途、触发场景和工作流程。AET 提供 37 个 Skill，分为三个层级。
+Skill（技能）是 AET 的核心功能单元。每个 Skill 定义为 `SKILL.md` 文件，描述其用途、触发场景和工作流程。AET 提供 42 个 Skill，分为三个层级。
 
 ## Skill 层级结构
 
@@ -56,6 +56,10 @@ Skill（技能）是 AET 的核心功能单元。每个 Skill 定义为 `SKILL.m
 | `aet-generating-html-slides` | 原子 | 生成 HTML 幻灯片 |
 | `aet-generating-technical-infographic` | 原子 | 生成技术信息图 |
 | `aet-generating-practice-case` | 编排 | 生成实践案例/教程 |
+| `aet-generating-python-api` | 编排 | 生成 Python API 文档/docstring |
+| `aet-doc-translator` | 原子 | 文档翻译（中英互译，全量/增量/同步） |
+| `aet-checking-docs` | 原子 | 文档质量检查 |
+| `aet-building-doc-mdbook` | 原子 | mdbook 文档构建 |
 | `aet-generating-gif` | 原子 | GIF 动画处理 |
 
 ### PR/Issue/Release
@@ -181,4 +185,4 @@ skills/{skill-name}/
 | 代码审查 | `aet-reviewing-code` skill |
 | TDD 开发 | `test-driven-development` skill |
 | 管理 Issue/PR | `aet-operating-issues` / `aet-operating-pr` skill |
-| 生成文档 | `aet-generating-readme` / `aet-generating-manual` skill |
+| 生成文档 | `aet-generating-readme` / `aet-generating-manual` / `aet-generating-python-api` / `aet-doc-translator` / `aet-checking-docs` / `aet-building-doc-mdbook` skill |

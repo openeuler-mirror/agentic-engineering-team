@@ -82,7 +82,7 @@ Agent 是 AET 中专门负责特定开发阶段的 AI 智能体，通过多 Agen
 | **Aet-Implement** | 实现智能体，TDD 驱动开发、代码实现、功能验证 |
 | **Aet-Test** | 测试智能体（待扩展），集成测试、性能测试 |
 | **Aet-Bugfix** | 修复智能体，Bug 诊断、修复规划 |
-| **Aet-Doc** | 文档生成，README、用户手册、技术分析、幻灯片、信息图、实践案例 |
+| **Aet-Doc** | 文档生成，README、用户手册、技术分析、幻灯片、信息图、实践案例、Python API 文档、文档翻译、文档质量检查、mdbook 文档构建 |
 | **Aet-Release** | Release 管理，版本发布、Release Notes 生成 |
 
 ### Skill 层
@@ -252,7 +252,7 @@ AET 在项目中创建以下目录结构：
 │   ├── doc/                     # Aet-Doc
 │   ├── release/                 # Aet-Release
 │   └── general/                 # Aet-General
-├── skills/                      # 34 个 Skill 定义
+├── skills/                      # 42 个 Skill 定义
 ├── commands/                    # 9 个命令定义
 ├── docs/                        # 项目文档
 ├── scripts/                     # 安装和配置脚本
