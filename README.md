@@ -157,7 +157,7 @@ AET 采用四层分层架构，依赖方向严格自上而下：
 └─────────────┬───────────────┘
               │
 ┌─────────────▼───────────────┐
-│    原子 Skill 层             │  44 个单一职责技能
+│    原子 Skill 层             │  单一职责技能
 │   (最小功能单元)             │
 └─────────────────────────────┘
 ```
@@ -243,7 +243,7 @@ AET 采用四层分层架构，依赖方向严格自上而下：
 
 ```
 .
-├── agents/                  # 9 个 Agent 定义（含系统提示词）
+├── agents/                  # Agent 定义（含系统提示词）
 │   ├── router/             # Aet-Router：协调入口、Feature 认领
 │   ├── design/             # Aet-Design：RAS、RDS、SDD 生成
 │   ├── implement/          # Aet-Implement：TDD + 编码 + 验证
@@ -252,7 +252,7 @@ AET 采用四层分层架构，依赖方向严格自上而下：
 │   ├── doc/                # Aet-Doc：README、手册、技术分析
 │   ├── general/            # Aet-General：通用任务处理
 │   └── release/            # Aet-Release：版本管理
-├── skills/                  # 37 个 SKILL.md 定义
+├── skills/                  # SKILL定义
 │   ├── aet-req-analysis/
 │   ├── aet-req-design/
 │   ├── aet-implementing-requirement/
@@ -265,7 +265,7 @@ AET 采用四层分层架构，依赖方向严格自上而下：
 │   ├── aet-diagnosing-bug/
 │   ├── test-driven-development/
 │   └── ... (35 个)
-├── commands/               # 9 个命令定义
+├── commands/               # 命令定义
 ├── scripts/                # 安装和配置脚本
 │   ├── install.sh          # 一键安装（远程/本地模式）
 │   ├── init-global-config.sh
