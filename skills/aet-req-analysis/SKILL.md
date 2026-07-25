@@ -92,6 +92,30 @@ Transform raw expressions into requirements that are:
 - **NEVER** extract system features at this stage.
 - **DO NOT** convert them into system requirements.
 
+### SR (System Requirement)
+
+**Definition:**  
+Concrete requirements that support System Features. They form the complete, externally visible, and testable requirement set of the system. This includes both customer-facing needs and internal constraints or capability requirements that reflect competitiveness.
+
+**Characteristics:**
+- Represent major capabilities required to solve customer problems (challenges, opportunities, strategies, pain points).
+- Provide end-to-end solutions that deliver specific business value.
+- Form the core selling points of the product package.
+
+**Essence:**  
+All verifiable requirements the system **MUST** satisfy to realize a specific system feature, including:
+- Functional Requirements
+  - Clearly define what the system **MUST** do.
+  - Scenario-based and testable.
+  - May describe external or internal system behaviors.
+- Non-Functional Requirements, including, but not limited to:
+  - Performance (response time, throughput)
+  - Cost objectives (cost reduction targets)
+  - DFX (usability, security, testability, etc.)
+  - Technical constraints and limitations
+  - Performance indicators (e.g., memory size, processing capability)
+  All SRs **MUST** be testable and verifiable.
+
 ## User-Facing Prompt Language
 
 All user-facing prompts must be in the user's locale language. If user locale is Chinese, use Chinese; otherwise use English. 
@@ -131,9 +155,18 @@ Load `workflows/sop-requirement-decomposition.md` for specification design (func
 
 ### [S1.5] Functional Impact Analysis
 
-Load `workflows/sop-functional-impact.md` for functional impact analysis. 
+IF the current project provides a functional library, THEN load `workflows/sop-functional-impact.md` for functional impact analysis. Otherwise, skip this stage.
 
-**Iron Rule**: Do NOT generate any document until all of [S1.2]–[S1.5] are complete and all inversion completion criteria are satisfied.
+### [S1.6] SDR Analysis
+
+IF ALL of the following conditions are met:
+- The skill `aet-sdr-analysis` exists
+- Functional impact analysis is complete
+- An SDR library exists
+
+THEN load `aet-sdr-analysis` to perform SDR analysis, producing SDR analysis results for subsequent design reference. Otherwise, skip this stage.
+
+**Iron Rule**: Do NOT generate any document until all of [S1.2]–[S1.6] are complete and all inversion completion criteria are satisfied.
 
 ## [S2] Document Generation (Generator Pattern)
 
