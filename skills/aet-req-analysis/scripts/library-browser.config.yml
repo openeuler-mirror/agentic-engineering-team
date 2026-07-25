@@ -1,0 +1,25 @@
+# Library Browser field-visibility config (skill-bundled, global).
+#
+# Purpose: reserve per-library-type field hiding for future use.
+# Currently ALL metadata fields are shown (hideFields empty for every type).
+#
+# Schema:
+#   types:
+#     <library-type>:               # matches the root `type` in the library YAML
+#       label: <display name>        # optional; falls back to built-in map (场景库 / 功能库)
+#       hideFields: [<field>, ...]   # metadata fields to suppress from output
+#
+# To hide a field for a given library type, list its key under hideFields.
+# Examples (currently commented out — all fields shown):
+#   scenario:
+#     hideFields: [actor]
+#   function:
+#     hideFields: [约束, 无约束原因]
+
+types:
+  scenario:
+    label: 场景库
+    hideFields: []
+  function:
+    label: 功能库
+    hideFields: []
