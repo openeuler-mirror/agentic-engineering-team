@@ -7,7 +7,6 @@ description: |
   (add/modify/delete), (2) design needs adjustment without changing original requirements,
   (3) development plan needs realignment, or any refinement of existing specification
   deliverables before implementation begins.
-disable-model-invocation: true
 metadata:
   pattern: pipeline
   stages: 4

@@ -13,5 +13,6 @@
 <patch>
 
 - DO NOT execute `assemble-checklist.mjs` or read any template files in the main agent — this is subagent-only work; delegate it to avoid corrupting the main agent's context.
+- `references/deliverable-review.md` is part of `aet-req-design`, not the `aet-req-review` Skill. Please ensure that the `aet-req-design` Skill is still loaded and accessible when performing the review.
 
 </patch>

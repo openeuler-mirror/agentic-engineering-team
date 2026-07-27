@@ -2,7 +2,6 @@
 name: aet-req-analysis
 description: |
   Requirements analysis skill - transforms raw requirements into structured specifications through Socratic dialogue, behavior analysis, and requirement specification design. Use when: (1) requirements are unclear or need decomposition, (2) you need to produce a requirements analysis specification from user input, (3) you need structured functional and non-functional requirements with priority labels, (4) you need acceptance criteria and test case definitions, or any requirements clarification and specification generation tasks.
-disable-model-invocation: true
 metadata:
   pattern: pipeline
   stages: 3
@@ -132,6 +131,15 @@ All user-facing prompts must be in the user's locale language. If user locale is
 ## [S1] Requirements Clarify (Inversion Pattern)
 
 **Completion: Clarity — no unresolved ambiguities remain, user has confirmed all questions, scenarios identified, key specifications designed, functional impact analyzed**
+
+### [S1.0] Environment Setup
+
+- Load the `aet-design-env` skill to obtain its script path.
+- Detect available libraries and their paths:
+  ```
+  node <aet-design-env path>/aet-design-env/scripts/aet-design-env.mjs context scenario-lib function-lib sdr-lib
+  ```
+- Interpret the detected library metadata (scenario-lib / function-lib / sdr-lib presence + paths) from the command's stdout.
 
 ### [S1.1] Lightweight Codebase Scan
 
