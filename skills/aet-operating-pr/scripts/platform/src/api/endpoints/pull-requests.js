@@ -268,11 +268,16 @@ class PullRequestAPI {
         return normalized;
       }
 
-      // 处理跨仓库PR：如果配置中有forkOwner且不同于owner，且head不包含冒号，自动添加前缀
+      // Normalize cross-repository heads at the API boundary. GitCode needs
+      // owner/repository:branch when the fork repository has a different name.
       const forkOwner = this.client.config.forkOwner;
-      if (forkOwner && forkOwner !== owner && validatedData.head && !validatedData.head.includes(':')) {
+      const forkRepo = this.client.config.forkRepository || this.client.config.forkRepo || repo;
+      const crossRepository = forkOwner && (forkOwner !== owner || forkRepo !== repo);
+      if (crossRepository && validatedData.head && !validatedData.head.includes(':')) {
         const originalHead = validatedData.head;
-        validatedData.head = `${forkOwner}:${originalHead}`;
+        validatedData.head = this.client.config.platform === 'gitcode' && forkRepo !== repo
+          ? `${forkOwner}/${forkRepo}:${originalHead}`
+          : `${forkOwner}:${originalHead}`;
         logger.debug(`跨仓库PR检测，自动转换head参数: "${originalHead}" → "${validatedData.head}"`);
       }
 
