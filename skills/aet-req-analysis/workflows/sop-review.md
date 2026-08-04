@@ -4,9 +4,9 @@
 
 - Attempt to load the `aet-req-review` Skill to orchestrate the review pipeline. IF the Skill is unavailable, gracefully bypass this entire stage.
 - Assemble and validate the precise inputs required for the review pipeline:
-  1. **Target Deliverable**: The absolute path of the document generated in [A3].
+  1. **Target Deliverable**: The absolute path of the document generated.
   2. **Review Materials**: Resolve the absolute path to `references/deliverable-review.md` and pass it to the review Skill.
-  3. **Dynamic Checklist**: Resolve the absolute path to `scripts/assemble-checklist.mjs` using the argument `req-analysis`. **CRITICAL**: DO NOT execute this script yourself. Pass the absolute script path to the review Skill, explicitly instructing its SubAgent to execute it via `node` to dynamically evaluate and derive the checklist results.
+  3. **Dynamic Checklist**: Resolve the absolute path to `scripts/assemble-checklist.mjs` and instruct the review Skill's SubAgent to execute it via `node <abs-path>/assemble-checklist.mjs req-analysis`. It dynamically evaluates and derives the checklist results. **CRITICAL**: DO NOT execute this yourself. Pass the absolute script path to the review Skill, explicitly instructing its SubAgent to run it via `node`.
 
 </instruct>
 
