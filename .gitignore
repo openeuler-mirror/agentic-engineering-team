@@ -1,8 +1,5 @@
 # Dependencies
 node_modules/
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
 .opencode/package-lock.json
 
 # Runtime data
@@ -29,9 +26,6 @@ bower_components
 # node-waf configuration
 .lock-wscript
 
-# Compiled binary addons (https://nodejs.org/api/addons.html)
-build/Release
-
 # Dependency directories
 jspm_packages/
 
@@ -55,10 +49,6 @@ typings/
 
 # dotenv environment variables file
 .env
-.env.test
-.env.development
-.env.production
-.env.local
 **/.env.*
 
 # parcel-bundler cache (https://parceljs.org/)
@@ -113,9 +103,6 @@ dist/
 build/
 .cache/
 *.local
-.env.local
-package-lock.json
-package.json
 
 # Agent development configuration
 .aet/
@@ -124,7 +111,6 @@ ai_assistance/
 # Python
 __pycache__/
 *.py[cod]
-*.pyc
 *$py.class
 *.egg-info/
 .eggs/

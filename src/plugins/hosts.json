@@ -1,0 +1,69 @@
+{
+  "$comment": "Single source of truth for every coding-agent host. A class-Claude plugin (claude-code / codeagent / codex) needs three facets, ALL declared here in one place so adding a host is one block, not scatter-shot edits across build.mjs / dialect.ts / default_agents.ts: (1) dialect = hook-namespace mapping (canonical claude event to host event, output field, permissions) — pure data; resolution logic lives in src/plugins/dialect.ts; (2) distribution = build-time assembly fields consumed by build.mjs; (3) agent = file-layer entry for `aet plugin init` (template profile + destination); the template bodies live in default_agents.ts, per-host variables here.",
+  "dialects": {
+    "claude": {
+      "id": "claude"
+    },
+    "codex": {
+      "id": "codex",
+      "extends": "claude"
+    },
+    "codeagent": {
+      "id": "codeagent",
+      "extends": "claude"
+    }
+  },
+  "hosts": {
+    "claude-code": {
+      "label": "Claude Code",
+      "dialect": "claude",
+      "distribution": {
+        "kind": "claude",
+        "targetDir": "dist/plugins/claude-code",
+        "manifestDirs": [".claude-plugin"],
+        "rootVar": "CLAUDE_PLUGIN_ROOT",
+        "commandsDir": ".claude/commands",
+        "installPath": "~/.claude/plugins/aet"
+      },
+      "agent": { "profile": "cc-flat", "destDir": ".claude/commands/aet", "hasPlugin": true }
+    },
+    "codeagent3": {
+      "label": "CodeAgent3",
+      "dialect": "codeagent",
+      "distribution": {
+        "kind": "claude",
+        "targetDir": "dist/plugins/codeagent3",
+        "manifestDirs": [".cac-plugin"],
+        "rootVar": "CODEAGENT3_PLUGIN_ROOT",
+        "commandsDir": ".cac/commands",
+        "installPath": "~/.cac/plugins/aet"
+      },
+      "agent": { "profile": "cc-flat", "destDir": ".cac/commands/aet", "hasPlugin": true }
+    },
+    "codex": {
+      "label": "Codex",
+      "dialect": "codex",
+      "distribution": {
+        "kind": "codex",
+        "targetDir": "dist/plugins/codex",
+        "manifestDirs": ["plugins/aet"],
+        "rootVar": "PLUGIN_ROOT",
+        "commandsDir": ".agents/skills",
+        "installPath": "~/.codex/plugins/aet"
+      },
+      "agent": { "profile": "skill", "destDir": ".agents/skills", "hasPlugin": false }
+    },
+    "opencode": {
+      "label": "OpenCode",
+      "dialect": null,
+      "distribution": null,
+      "agent": { "profile": "cc-flat", "destDir": ".opencode/commands", "hasPlugin": true }
+    },
+    "omp": {
+      "label": "OMP (Oh My Pi)",
+      "dialect": null,
+      "distribution": null,
+      "agent": { "profile": "cc-flat", "destDir": ".omp/commands", "hasPlugin": false }
+    }
+  }
+}

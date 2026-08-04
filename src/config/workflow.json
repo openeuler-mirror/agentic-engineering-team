@@ -1,0 +1,177 @@
+{
+  "version": "1.0",
+  "_comment": "工作流模板 - 随 AET 版本更新可覆盖。workflows: 每个多阶段流水线 agent 的执行阶段序列（named entries 覆盖内置 baseline），内部字段为 stages；commands: 单次派发条目（无生命周期，仅生成 command.md，渲染核心 skill + description，不经过 aet workflow CLI）；hooks: 步骤钩子预设库（被 StepHook.preset 引用）。步骤钩子的 event 必须是 handover 能处理的 OutputEvent——hook.prompt 在 handover 时先执行（CLI 直接返回钩子提示词并提醒再次 handover，步骤不推进，下次 handover 才真正推进，唯一阻塞事件）；context.clear / prompt.inject / prompt.inject_system / hook.func 均非阻塞，随 handover 作为 plugin-only events[] 带出，附带执行。",
+  "hooks": {
+    "confirm": {
+      "description": "阶段任务完成确认——在进入下一步前，请用户确认本阶段产出是否合格。命中 hook.prompt（execute-first / 阻塞）：handover 返回本钩子提示词作为 CLI 直接返回值并提醒再次 handover，步骤不推进；用户确认通过后再次调用 handover 才真正推进到下一阶段。",
+      "event": "hook.prompt",
+      "payload": {
+        "text": "## 阶段完成确认\n\n当前阶段任务已执行完毕。在推进到下一阶段前，请就本阶段产出与用户确认。\n\n### 请使用 question 工具向用户确认\n\n- **完成，进入下一阶段** — 产出已确认合格，调用 `aet workflow handover` 推进\n- **需要修改** — 用户指出问题，留在当前阶段修订产出，修订完成后再次调用 `aet workflow handover` 触发本确认\n- **结束工作流** — 用户决定不再继续，调用 `aet workflow abort` 归档当前工作流\n\n> 仅当用户明确选择「完成，进入下一阶段」后，才再次调用 `aet workflow handover` 真正推进。选择「需要修改」时不要调用 handover。"
+      }
+    }
+  },
+  "workflows": {
+    "project-analysis": {
+      "name": "project-analysis",
+      "description": "负责项目架构分析、模块边界划分、开发原则提炼",
+      "stages": [
+        {
+          "id": "project_analysis_overview",
+          "name": "项目分析概述",
+          "skills": ["aet-analyzing-project"],
+          "description": "<workflow_context>\n    <workflow_name>projectAnalysis</workflow_name>\n    <stages>\n      <stage id=\"systemAnalysis\"/>\n      <stage id=\"componentAnalysis\"/>\n    </stages>\n    <curr_stage id=\"systemAnalysis\"/>\n    <instruction>\n      This is a specific stage within the workflow. DO NOT perform any tasks outside of the curr_stage and prohibited from executing any subsequent steps. Upon completion, provide a summary (within 50 words) and terminate the output immediately.\n    </instruction>\n</workflow_context>\n\n## Task\n\nPerform in-depth analysis of each module/component identified in Stage 1, and generate separate component detail files.\n\n## Execution Steps\n\n- [Proc1.1] Confirm the target project path\n- [Proc1.2] Use the aet-analyzing-project skill and route to `project-overview`\n- [Proc2] Execute according to `references/phase1-project-overview.md`, and skipping steps is prohibited\n- [Proc3] Use the question tool to Confirm the user's intent (continue to component analysis or end the workflow)\n- [Proc4.1] Use the `step_handover` tool: if user wants to continue, call `step_handover({ context: \"Overview analysis completed, proceeding to component analysis.\" })`; if user wants to end, call `step_handover({ context: \"Overview analysis completed, workflow ended by user choice.\" }, end: true)`.\n- [Proc4.2] Stop\n\n## Output\n\n**output path**: `<projectDir>/.aet/project-analysis/` (output directly to the analysis project directory)\n\n现在请遵照执行"
+        },
+        {
+          "id": "project_analysis_component",
+          "name": "项目分析详细",
+          "skills": ["aet-analyzing-project"],
+          "description": "<workflow_context>\n    <workflow_name>projectAnalysis</workflow_name>\n    <stages>\n      <stage id=\"systemAnalysis\"/>\n      <stage id=\"componentAnalysis\"/>\n    </stages>\n    <curr_stage id=\"componentAnalysis\"/>\n    <instruction>\n      This is a specific stage within the workflow. DO NOT perform any tasks outside of the curr_stage and prohibited from executing any subsequent steps. Upon completion, provide a summary (within 50 words) and terminate the output immediately.\n    </instruction>\n</workflow_context>\n\n## Task\n\nPerform in-depth analysis of each module/component identified in Stage 1, and generate separate component detail files.\n\n## Execution Steps\n\n- [Proc1.1] Confirm the target project path\n- [Proc1.2] Use the aet-analyzing-project skill and route to `component-analysis`\n- [Proc1.3] Load `Overview.md`, `Architecture.md`, and `Modules.md` to obtain the component list and related information\n- [Proc2] Execute according to `references/phase2-component-analysis.md`, and skipping steps is prohibited\n- [Proc3.1] Use the `step_handover` tool to end the workflow: call `step_handover({ context: \"Component analysis completed, workflow finished.\" }, end: true)`.\n- [Proc3.2] Stop (Only stopping the orchestration layer will help you truly hand over)\n\n## Output\n\n**output path**: `<projectDir>/.aet/project-analysis/` (output directly to the analysis project directory)\n\n现在请遵照执行"
+        }
+      ]
+    },
+    "design": {
+      "name": "design",
+      "description": "负责需求澄清、架构设计、和具体开发计划编写",
+      "argument-hint": [
+        "initial_requirements"
+      ],
+      "stages": [
+        {
+          "id": "requirements_analysis",
+          "name": "需求分析",
+          "skills": ["aet-design-env", "aet-req-analysis"],
+          "description": "<workflow_context>\n    <workflow_name>SDD</workflow_name>\n    <stages>\n      <stage id=\"requirementAnalysis\"/>\n      <stage id=\"requirementDesign\"/>\n    </stages>\n    <curr_stage id=\"requirementAnalysis\"/>\n    <instruction>\n      This is a specific stage within the workflow. DO NOT perform any tasks outside of the curr_stage and are prohibited from executing any subsequent steps. Upon completion, provide a summary (within 50 words) and terminate the output immediately.\n    </instruction>\n</workflow_context>\n\n## Task\n\nGuide users through requirement clarification, transforming requirements into structured requirement descriptions.\n\n### SKILL\n\n- **Process Skills**:\n  - `aet-design-env` – for environment setup and context gathering.\n  - `aet-req-analysis` – for requirement analysis and deliverable generation.\n\n## Notes\n\n- Before any analysis, you **must** first load and execute the `aet-design-env` skill to retrieve the environment context (scenario-lib, function-lib, sdr-lib). If the skill fails, report the error to the user and stop.\n- After successful setup, load the `aet-req-analysis` skill and proceed with the requirement clarification process.\n- The key stages of the process include: requirement clarification, deliverable generation, and deliverable review (unless the user explicitly requests to skip the review).\n- When asking questions to the user, you MUST use the Question tool. Do not terminate the output until the pipeline has completed execution.\n- Keep the output precise and concise.\n\n## Output\n\n- `./ai_assistance/features/{feature-name}/design/需求分析说明书.md`\n\n- `./ai_assistance/features/{feature-name}/design/SDR分析.md（如果存在功能库与SDR库时输出）`\n\n现在请遵照执行",
+          "hooks": [
+            { "at": "after", "preset": "confirm" },
+            { "at": "after", "event": "context.clear" }
+          ]
+        },
+        {
+          "id": "function_design",
+          "name": "需求设计",
+          "skills": ["aet-req-design"],
+          "description": "<workflow_context>\n    <workflow_name>SDD</workflow_name>\n    <stages>\n      <stage id=\"requirementAnalysis\"/>\n      <stage id=\"requirementDesign\"/>\n      <stage id=\"developmentPlan\"/>\n    </stages>\n    <curr_stage id=\"requirementDesign\"/>\n    <instruction>\n      This is a specific stage within the workflow. DO NOT perform any tasks outside of the curr_stage and are prohibited from executing any subsequent steps. Upon completion, provide a summary (within 50 words) and terminate the output immediately.\n    </instruction>\n</workflow_context>\n\n## Task\n\nConduct design activities at varying levels of depth based on Effort (Low/Medium/High). Low effort focuses on rapid task completion, while High effort emphasizes deeper exploration, design, and validation to ensure high-quality outcomes. \n\n### Core\n\n- **Process Skill**: `aet-req-design`\n\n## Notes\n\n- Execute strictly per the skill pipeline: the skill MUST be loaded before any operation; executing without a loaded skill or skipping any step is prohibited.\n- Before executing any operation, you must load the Process Skill. If the skill fails to load, you must report the error to the user.\n- The key stages of the process include: codebase and reference content exploration, initial design draft, feasibility analysis (as needed), deliverable generation, and deliverable review (unless the user explicitly requests to skip the review).\n- When asking questions to the user, you MUST use the Question tool. Do not terminate the output until the pipeline has completed execution.\n- Keep the output precise and concise.\n\n## Input\n\n- `./ai_assistance/features/{feature-name}/design/需求分析说明书.md`\n\n## Output\n\n- `./ai_assistance/features/{feature-name}/design/功能设计说明书.md`\n\n现在请遵照执行\n",
+          "hooks": [
+            { "at": "after", "preset": "confirm" },
+            { "at": "after", "event": "context.clear" }
+          ]
+        },
+        {
+          "id": "commit",
+          "name": "提交文档",
+          "description": "提交设计文档到 git"
+        }
+      ]
+    },
+    "implement": {
+      "name": "implement",
+      "description": "负责代码开发、单元测试、集成测试、开发验证及 PR 提交",
+      "stages": [
+        {
+          "id": "development_plan",
+          "name": "开发计划",
+          "skills": ["aet-req-dev-plan"],
+          "description": "<workflow_context>\n    <workflow_name>Implementation</workflow_name>\n    <stages>\n      <stage id=\"developmentPlan\"/>\n      <stage id=\"codeImplementation\"/>\n      <stage id=\"devValidation\"/>\n    </stages>\n    <curr_stage id=\"developmentPlan\"/>\n    <instruction>\n      This is a specific stage within the workflow. DO NOT perform any tasks outside of the curr_stage and are prohibited from executing any subsequent steps. Upon completion, provide a summary (within 50 words) and terminate the output immediately.\n    </instruction>\n</workflow_context>\n\n## Task\n\nAs the FIRST step of the implementation phase, transform the approved design documents into a development plan tailored for Agent-oriented programming: concrete, executable coding tasks with acceptance criteria, organized into execution waves and grounded in the CURRENT state of the codebase.\n\n### Core\n\n- **Process Skill**: `aet-req-dev-plan`\n\n## Notes\n\n- Before executing any operation, you must load the Process Skill. If the skill fails to load, you must report the error to the user.\n- The key stages of the process include: codebase and design exploration, task decomposition with upstream gap analysis, execution wave organization, deliverable generation, and deliverable review (unless the user explicitly requests to skip the review).\n- If `./ai_assistance/features/{feature-name}/implementation/dev-plan.md` already exists and is still consistent with the design docs, you MAY reuse it after a brief consistency check (skip regeneration); otherwise continue.\n- When asking questions to the user, you MUST use the Question tool. Do not terminate the output until the pipeline has completed execution.\n- Keep the output precise and concise.\n\n## Input\n\n- `./ai_assistance/features/{feature-name}/design/需求分析说明书.md`\n- `./ai_assistance/features/{feature-name}/design/需求设计说明书.md`\n\n## Output\n\n- `./ai_assistance/features/{feature-name}/implementation/dev-plan.md`\n\n现在请遵照执行",
+          "hooks": [
+            { "at": "after", "preset": "confirm" }
+          ]
+        },
+        {
+          "id": "code_implementation",
+          "name": "代码实现",
+          "skills": ["aet-implementing-requirement"],
+          "description": "使用 aet-implementing-requirement skill，执行代码开发和单元测试",
+          "hooks": [
+            { "at": "after", "preset": "confirm" }
+          ]
+        },
+        {
+          "id": "dev_validation",
+          "name": "开发验证",
+          "skills": ["aet-checking-implementation"],
+          "description": "使用 aet-checking-implementation skill，验证代码通过 lint、tests 和 build"
+        }
+      ]
+    },
+    "bugfix": {
+      "name": "bugfix",
+      "description": "负责问题诊断、修复计划、代码修复、验证和PR提交",
+      "stages": [
+        {
+          "id": "diagnosis",
+          "name": "问题诊断",
+          "skills": ["aet-diagnosing-bug"],
+          "description": "使用 aet-diagnosing-bug skill，系统化分析bug原因，定位根因，识别受影响文件",
+          "hooks": [
+            { "at": "after", "preset": "confirm" }
+          ]
+        },
+        {
+          "id": "planning",
+          "name": "修复计划",
+          "skills": ["aet-implementing-requirement"],
+          "description": "使用 aet-implementing-requirement skill，基于诊断报告制定修复计划",
+          "hooks": [
+            { "at": "after", "preset": "confirm" }
+          ]
+        },
+        {
+          "id": "aet-implementing-requirement",
+          "name": "修复实现",
+          "skills": ["aet-implementing-requirement"],
+          "description": "使用 aet-implementing-requirement skill，按计划修复代码",
+          "hooks": [
+            { "at": "after", "preset": "confirm" }
+          ]
+        },
+        {
+          "id": "validation",
+          "name": "修复验证",
+          "description": "使用验证流程，验证修复效果",
+          "hooks": [
+            { "at": "after", "preset": "confirm" }
+          ]
+        },
+        {
+          "id": "aet-operating-pr-submit",
+          "name": "提交PR",
+          "skills": ["aet-operating-pr"],
+          "description": "使用 aet-operating-pr skill，提交修复PR"
+        }
+      ]
+    }
+  },
+  "commands": {
+    "auto": {
+      "name": "auto",
+      "description": "AET 自动路由入口。请按以下流程引导用户进入合适的工作流。\n\n## 流程\n\n1. 先查询当前是否已有激活的工作流：执行 `aet workflow status`。\n   - 若返回 active（已有激活 workflow）：使用 question 工具询问用户是「继续当前 workflow」还是「放弃并新建一个」。\n     - 继续 → 执行 `aet workflow continue` 恢复当前阶段任务。\n     - 新建 → 执行 `aet workflow abort` 归档当前，再按下方步骤 2 选型并 init。\n   - 若返回 no_active：进入步骤 2。\n\n2. 列出所有可用 workflow 供选型：执行 `aet workflow list`，向用户展示返回的列表。\n\n3. 使用 question 工具询问用户要启动哪一个。意图明确时可直接建议对应 workflow：\n   - 新功能 / 需求设计 → design\n   - 写代码 / 实现 → implement\n   - 修 bug → bugfix\n   - 项目架构分析 → project-analysis\n   - 文档生成 → doc（单次派发，不经 workflow 生命周期）\n   - release 管理 → release\n   - 项目初始化配置 → config-setup\n   - 需求 / 设计 / 开发计划变更 → design-refine\n\n4. 用户确认要进入某个多阶段 workflow（design / implement / bugfix / project-analysis）后：执行 `aet workflow init --name <id> --argument \"<初始需求描述，从用户的最初需求中提取>\"`，收到 `workflow_started` 后执行 `aet workflow handover` 进入第一阶段。注意：进入前必须得到用户明确确认。`--argument` 用于把用户的原始需求记录进 checkpoint，断点恢复（`aet workflow continue`）时会回显，便于确认任务目标。\n\n5. 若用户选的是单次派发命令（doc / release / config-setup / design-refine），直接执行对应 skill / 命令即可，不经 workflow 生命周期。\n\n意图不明确时，使用 question 工具询问用户，不要擅自假设。",
+      "effort": "low",
+      "allowed-tools": "Bash(aet workflow *)"
+    },
+    "continue": {
+      "name": "continue",
+      "description": "恢复当前激活的工作流。请按以下步骤执行：\n\n1. 执行 `aet workflow status`，查询当前是否有激活的工作流。\n2. 若返回 active（有激活 workflow）：执行 `aet workflow continue` 恢复当前阶段任务，向用户展示恢复的当前阶段 prompt，照常推进即可。\n3. 若返回 no_active（无激活 workflow）：明确告诉用户「当前没有激活任何工作流，命令执行失败」，不执行任何其他操作。用户若要开始新任务，可使用 `/auto` 路由入口。",
+      "effort": "low",
+      "allowed-tools": "Bash(aet workflow *)"
+    },
+    "doc": {
+      "name": "doc",
+      "description": "文档生成统一路由入口。根据用户需求路由到对应的文档生成 skill（aet-generating-readme / aet-generating-manual / aet-generating-technical-analysis / aet-generating-python-api / aet-generating-practice-case / aet-doc-translator / aet-checking-docs / aet-building-doc-mdbook 等）。识别用户意图后，引导用户完成对应文档生成。"
+    },
+    "release": {
+      "name": "release",
+      "description": "Release 管理入口 - 处理所有 release 相关操作（创建/删除/查询/上传/下载/完整发布流程）。根据用户输入识别意图并执行相应操作或引导用户完成完整流程。",
+      "skills": ["aet-operating-release"]
+    },
+    "config-setup": {
+      "name": "config-setup",
+      "description": "初始化项目配置，设置平台凭证和仓库信息。",
+      "skills": ["aet-setup-config"]
+    },
+    "design-refine": {
+      "name": "design-refine",
+      "description": "处理需求变更、设计变更和开发计划变更。基于现有文档和用户变更意图执行需求变更处理。",
+      "skills": ["aet-req-refine"]
+    }
+  }
+}

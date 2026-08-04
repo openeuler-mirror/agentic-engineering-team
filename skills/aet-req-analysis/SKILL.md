@@ -2,7 +2,6 @@
 name: aet-req-analysis
 description: |
   Requirements analysis skill - transforms raw requirements into structured specifications through Socratic dialogue, behavior analysis, and requirement specification design. Use when: (1) requirements are unclear or need decomposition, (2) you need to produce a requirements analysis specification from user input, (3) you need structured functional and non-functional requirements with priority labels, (4) you need acceptance criteria and test case definitions, or any requirements clarification and specification generation tasks.
-disable-model-invocation: true
 metadata:
   pattern: pipeline
   stages: 3

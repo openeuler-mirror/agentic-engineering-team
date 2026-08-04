@@ -9,7 +9,6 @@ description: |
   plan, (2) you need to break AR/SR items into bite-sized, file-anchored coding
   tasks, (3) you need a plan with parallel waves, critical path, and Phase FINAL
   quality gates that downstream implementation agents can execute step-by-step.
-disable-model-invocation: true
 metadata:
   pattern: pipeline
   stages: 4
