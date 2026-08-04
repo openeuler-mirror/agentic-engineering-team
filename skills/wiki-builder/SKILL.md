@@ -80,6 +80,7 @@ Once the user provides the path, continue asking:
 请问创建 wiki 的目的是？
   A. 了解项目 — 首次接触项目，想快速了解整体架构和核心流程
   B. 方便检索 — 已熟悉项目，需要快速检索 API、配置等细节为开发提供支撑
+  C. 创建桌面应用型个人知识库 — 偏好使用桌面应用而非纯命令行/skill 流程
 ```
 
 Based on the content type and purpose, consult the **[Path A solution mapping](#path-a-solution-mapping)**
@@ -94,7 +95,7 @@ below to identify the corresponding solution, then execute according to that sol
 | Local project repo | Understand the project | Solution Two |
 | Local project repo | Easy retrieval | Solution One |
 | Online project repo | Understand the project | Solution Three |
-| Online project repo | Easy retrieval | Solution Four |
+| Local project repo | Create a desktop-application-style personal knowledge base | Solution Four |
 
 #### Path B: Add content to an existing wiki
 
@@ -132,7 +133,11 @@ Directly invokes the local sdyckjq-lab_llm-wiki-skill solution:
 
 - Solution path: `sdyckjq-lab_llm-wiki-skill` (relative to this skill directory)
 
-(Solution Four to be added.)
+### Solution Four
+
+Directly invokes the local llm-wiki-desktop solution:
+
+- Solution path: `llm-wiki-desktop` (relative to this skill directory)
 
 ### Solution output signatures (for Path B detection)
 
@@ -141,6 +146,8 @@ Directly invokes the local sdyckjq-lab_llm-wiki-skill solution:
 | Solution One (graphify) | Output dir is `graphify-out/`, containing `graph.json`, `graph.html`, `GRAPH_REPORT.md` | Check whether `graphify-out/graph.json` exists under the wiki directory |
 | Solution Two (llm-wiki2) | Output dir contains `wiki/index.md`, `wiki/concepts/`, `wiki/entities/`, `log/` | Check whether `wiki/index.md` exists under the wiki directory |
 | Solution Three (sdyckjq-lab_llm-wiki-skill) | Output dir contains `index.md`, `raw/`, `wiki/`, `log.md` | Check whether `index.md` exists under the wiki directory |
+| Solution Four（llm-wiki-desktop） | Output dir contains `.llm-wiki/`、`.obsidian/`、`raw/`、`wiki/`、`purpose.md`、`schema.md` | Check whether `purpose.md` and `schema.md` exists under the wiki directory |
+
 
 <!-- ### `query` — Q&A against the Wiki
 
