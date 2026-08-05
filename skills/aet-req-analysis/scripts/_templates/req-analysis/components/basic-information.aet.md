@@ -31,9 +31,9 @@ checklist: |
 
 需求价值：[Core value this requirement brings to business]
 
-<!-- constraint: DO NOT omit the “what it is NOT” part. -->
+需求描述：[Essence and scope of the requirement, 2-3 sentences]
 
-需求描述：[Essence and scope of the requirement, what it is and what it is NOT (boundary definition), 2-3 sentences]
+需求边界：[What it is NOT (boundary definition), 2-3 sentences]
 
 ### 结构化信息
 

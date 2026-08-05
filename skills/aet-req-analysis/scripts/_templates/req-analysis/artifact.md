@@ -7,26 +7,10 @@
 -->
 }}
 
-## 核心能力
-
-{{scenario-analysis.aet,3}}
+{{scenario-analysis.aet,2}}
 {{
 <!--
 ## 场景分析
--->
-}}
-
-{{business-rules.aet,3}}
-{{
-<!--
-## 业务规则
--->
-}}
-
-{{data-constraints.aet,3}}
-{{
-<!--
-## 数据约束
 -->
 }}
 
@@ -39,13 +23,25 @@
 -->
 }}
 
+{{functional-impact.aet,2}}
+{{
+<!--
+## 功能影响
+-->
+}}
+
+{{data-constraints.aet,2}}
+{{
+<!--
+## 数据约束
+-->
+}}
+
 {{acceptance-plan.aet,2}}
 {{
 <!--
 ## 验收方案
 ### 验收准则
-### 测试用例
-### 交付物定义
 -->
 }}
 

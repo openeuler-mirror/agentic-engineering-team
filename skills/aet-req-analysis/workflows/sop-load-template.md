@@ -2,7 +2,7 @@
 
 <instruct>
 
-**Assemble the template**: Run `scripts/assemble-template.mjs req-analysis` (emphasizing running via `bash`, not reading with `read`). Execute the Node script with argument `req-analysis` to output the assembled template.
+**Assemble the template**: Run `scripts/assemble-template.mjs req-analysis` (emphasizing running via `bash`, not reading with `read`). Execute it with argument `req-analysis` to output the assembled template.
 
 </instruct>
 
