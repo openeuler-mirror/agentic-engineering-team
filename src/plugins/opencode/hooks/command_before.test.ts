@@ -92,8 +92,29 @@ describe('command.execute.before', () => {
       error: { code: 'UNKNOWN_WORKFLOW', message: 'no such workflow' },
     });
     const output = { parts: [] as unknown[] };
+    await hook({ command: 'aet-unknown', sessionID: 's', arguments: '' }, output);
+
+    expect(applyResult).not.toHaveBeenCalled();
+    expect(output.parts).toEqual([]);
+  });
+
+  it('passes /enable through (no bootstrap injection, native command expansion)', async () => {
+    const { hook } = makeCtx();
+    runAetSafe.mockResolvedValue({
+      ok: false,
+      prompt: 'ERROR: UNKNOWN_WORKFLOW — no such workflow',
+      events: [],
+      error: { code: 'UNKNOWN_WORKFLOW', message: 'no such workflow' },
+    });
+    const output = { parts: [] as unknown[] };
     await hook({ command: 'enable', sessionID: 's', arguments: '' }, output);
 
+    // /enable passes through to native command rendering (enable.md → aet-install
+    // skill); no bootstrap text is injected by the hook.
+    expect(runAetSafe).toHaveBeenCalledWith(
+      ['workflow', 'command-init', '--name', 'enable'],
+      { cwd: expect.any(String) },
+    );
     expect(applyResult).not.toHaveBeenCalled();
     expect(output.parts).toEqual([]);
   });

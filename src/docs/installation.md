@@ -88,13 +88,6 @@ cp src/config/global-config.json ~/.aet/config.json
 # 然后手动填写 gitcode / github / gitlab 的 token（支持 ${ENV_VAR} 引用）
 ```
 
-工作流配置 `~/.aet/config/workflow.json` 存放 workflow / hook preset 注册表，随 AET 版本更新可覆盖。源模板由新插件项目自带：
-
-```bash
-mkdir -p ~/.aet/config
-cp src/config/workflow.json ~/.aet/config/workflow.json
-```
-
 ---
 
 ## 第二部分：安装 Claude Code 插件（可选）

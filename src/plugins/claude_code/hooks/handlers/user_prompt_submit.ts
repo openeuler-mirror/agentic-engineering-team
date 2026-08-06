@@ -91,6 +91,13 @@ export async function handleUserPromptSubmit(input: CcHookInput): Promise<void> 
 
   debugLog({ event: 'UserPromptSubmit', action: 'command_init_start', workflowId, cwd: input.cwd });
 
+  // `/enable` is NOT handled here — it passes through to CC's native slash-
+  // command expansion, which surfaces commands/enable.md. That command directs
+  // the agent to follow the aet-install skill (self-contained install carrier:
+  // SKILL.md + scripts/install.cjs + runtime/ + cli/), so NO plugin path is
+  // injected by this hook. workflowId === 'enable' then flows to command-init
+  // → UNKNOWN_WORKFLOW → pass-through, and enable.md renders natively.
+
   // Single-shot: init + advance into step 1 in one CLI call. Core's
   // `workflow.commandInit` handler runs `initWorkflow` then
   // `handoverWorkflow` internally and applies the orientation banner to

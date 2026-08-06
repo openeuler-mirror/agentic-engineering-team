@@ -1,6 +1,6 @@
 {
   "name": "aet-cli",
-  "version": "0.2.0",
+  "version": "0.0.1",
   "description": "AET (aet-cli): event-driven CLI + Core for orchestrating multi-agent coding workflows.",
   "type": "module",
   "main": "./dist/index.js",
@@ -58,16 +58,17 @@
     "prepublishOnly": "npm run clean && npm run typecheck && npm run build",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "version": "npm run build"
   },
   "devDependencies": {
     "@types/cross-spawn": "^6.0.6",
     "@types/node": "^20.12.12",
+    "@vitest/coverage-v8": "^4.1.10",
     "cross-spawn": "^7.0.6",
     "esbuild": "^0.21.5",
     "typescript": "^5.4.5",
-    "vitest": "^4.1.10",
-    "@vitest/coverage-v8": "^4.1.10"
+    "vitest": "^4.1.10"
   },
   "engines": {
     "node": ">=18.0.0"

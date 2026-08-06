@@ -21,6 +21,7 @@
 
 import { AET_PLUGIN_INIT_RE, AET_WORKFLOW_RE, rewriteAddFlag } from '../../shared_hooks.js';
 import { AET_AGENT_ID } from '../constants.js';
+import { markAetWorkflow, markNonAetWorkflow } from '../cmd_state.js';
 import type { HookReturn, ToolCallEvent } from '../types.js';
 
 /**
@@ -41,12 +42,21 @@ export function handleToolCall(event: ToolCallEvent): HookReturn | void {
   if (!command) return;
 
   if (AET_WORKFLOW_RE.test(command)) {
+    // Record that this bash call will produce an `aet workflow --output json`
+    // result, so the post hook can surface a parse error even when the output
+    // is truncated/mangled (omp's tool_result carries no command).
+    markAetWorkflow();
     const rewritten = rewriteAddFlag(command, ['--output', '-o'], 'json');
     if (rewritten !== null) {
       return { input: { ...event.input, command: rewritten } };
     }
     return;
   }
+
+  // Any other bash call is NOT an AET workflow result — clear the flag so a
+  // mangled/plain result from it is left untouched (never clobbered with a
+  // synthetic AET error).
+  markNonAetWorkflow();
 
   if (AET_PLUGIN_INIT_RE.test(command)) {
     const rewritten = rewriteAddFlag(command, ['--agent'], AET_AGENT_ID);

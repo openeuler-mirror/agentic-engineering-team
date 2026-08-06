@@ -75,6 +75,12 @@ const STATIC_ARTIFACTS = [
 const CC_HANDLER_ENTRY = 'src/plugins/claude_code/hooks/handlers/aet_handler.ts';
 const SKILLS_SRC = 'skills';
 const COMMANDS_SRC = 'src/commands';
+// Runtime source of truth — the files copied into the aet-install skill's
+// runtime/ (currently config/workflow.json; extensions under src/extensions/*/
+// add more). workflow.json is NOT whitelist-protected (always overwritten on
+// sync); extension-provided runtime-meta.json may declare whitelists for its
+// own files. No default runtime-meta.json is shipped.
+const RUNTIME_SRC = 'src/config';
 
 // OpenCode self-contained plugin package. The entry is the ported handler
 // (aet_handler.ts); assembleOpencodePlugin() wraps its bundle with a
@@ -253,6 +259,254 @@ async function copyStatic(src, dest) {
   await mkdir(dirname(dest), { recursive: true });
   await copyFile(src, dest);
   console.log(`[aet:build] ${relative('.', src).padEnd(40)} → ${dest} (copy)`);
+}
+
+/**
+ * Copy the skills/ tree into a host's skills/ dir, excluding non-distributable
+ * files (test files, .DS_Store). Skill dirs are shipped as plugin content, so
+ * tests/editor cruft must not leak into dist.
+ */
+async function copySkills(src, dest) {
+  await mkdir(dest, { recursive: true });
+  const walk = async (s, d) => {
+    for (const e of await readdir(s, { withFileTypes: true })) {
+      if (e.name === '.DS_Store') continue;
+      // aet-install/scripts/src/ — TS source for the install bootstrap, NOT
+      // distributable. The built .cjs (esbuild output) is what ships.
+      if (e.name === 'src' && s.endsWith('aet-install/scripts')) continue;
+      const srcPath = join(s, e.name);
+      const destPath = join(d, e.name);
+      if (e.isDirectory()) {
+        await walk(srcPath, destPath);
+      } else if (e.isFile()) {
+        if (/\.test\.(ts|js|cjs|mjs)$/.test(e.name)) continue; // no tests in dist
+        await mkdir(dirname(destPath), { recursive: true });
+        await copyFile(srcPath, destPath);
+      }
+    }
+  };
+  await walk(src, dest);
+}
+
+// ---------------------------------------------------------------------------
+// Bundled CLI self-install (enable-time bootstrap)
+// ---------------------------------------------------------------------------
+
+// The aet-install skill lives under skills/aet-install/ and is copied into every
+// host by SKILLS_SRC (the whole skills/ tree). Its scripts/ is rebuilt from TS:
+// scripts/src/install.ts is bundled by assembleCliSelfInstall into
+// scripts/install.cjs (inlining cross-spawn for cross-platform subprocess
+// spawning). The TS source is kept OUT of dist — only the built .cjs ships.
+
+/**
+ * Stamp the AET install resources into `<pluginDir>/skills/aet-install/`.
+ *
+ * The aet-install skill is the SINGLE installation carrier for AET:
+ *
+ *   <pluginDir>/skills/aet-install/
+ *   ├── SKILL.md                  # install instructions (from skills/aet-install/, via SKILLS_SRC copy)
+ *   ├── scripts/install.cjs       # bootstrap script (BUNDLED from scripts/src/install.ts)
+ *   ├── runtime/                  # src/config/workflow.json + extensions merged (runtime-meta merged)
+ *   └── cli/                      # npm-installable aet CLI package
+ *
+ * `install.cjs` resolves its assets relative to `__dirname` (`../cli`,
+ * `../runtime`), so this layout matches its expectations with no path rewiring.
+ * The script is executed by the agent following the aet-install skill, so NO
+ * plugin absolute path is injected by any hook.
+ *
+ * MUST run AFTER the SKILLS_SRC → skills/ copy (which brings SKILL.md and any
+ * author-authored skill files) so it does not get clobbered by it.
+ *
+ * @param {string} pluginDir — the plugin's root dir (e.g. dist/plugins/codeagent3).
+ * @param {{version: string}} rootPkg — root package.json (version source).
+ * @param {string} label — host label for log lines.
+ */
+async function assembleCliSelfInstall(pluginDir, rootPkg, label) {
+  const installDir = join(pluginDir, 'skills', 'aet-install');
+  const scriptsDir = join(installDir, 'scripts');
+  const cliDir = join(installDir, 'cli');
+  const runtimeDir = join(installDir, 'runtime');
+
+  // 1. scripts/install.cjs — bundled from TS source. The bootstrap script is
+  //    authored as TS (skills/aet-install/scripts/src/install.ts) and esbuild
+  //    compiles+bundles it here to CJS, inlining cross-spawn so the shipped
+  //    `.cjs` stays zero-dependency (only `node:*` builtins at runtime). The
+  //    raw TS source is NOT copied into dist (kept as source only).
+  const installSrc = join('skills', 'aet-install', 'scripts', 'src', 'install.ts');
+  const installOut = join(scriptsDir, 'install.cjs');
+  await mkdir(scriptsDir, { recursive: true });
+  await build({
+    entryPoints: [installSrc],
+    bundle: true,
+    platform: 'node',
+    format: 'cjs',
+    target: 'node18',
+    outfile: installOut,
+    banner: { js: '#!/usr/bin/env node' },
+    // Keep the bundle readable for debugging; the shipped .cjs is still a
+    // plain script the agent can read. Flip to `true` for production.
+    minify: false,
+    sourcemap: false,
+    treeShaking: true,
+    legalComments: 'none',
+    logLevel: 'info',
+  });
+  await chmod(installOut, 0o755);
+  console.log(`[aet:build] ${label.padEnd(12)} → ${installOut} (bundle install, ${rootPkg.version})`);
+
+  // 2. cli/ — the npm-installable package wrapping the CLI bundle.
+  await mkdir(cliDir, { recursive: true });
+  const cliPkg = {
+    name: 'aet-cli',
+    version: rootPkg.version,
+    description: 'AET (aet-cli): event-driven CLI + Core for orchestrating multi-agent coding workflows.',
+    type: 'module',
+    bin: { aet: './aet.js' },
+    engines: { node: '>=18.0.0' },
+  };
+  await writeFile(join(cliDir, 'package.json'), JSON.stringify(cliPkg, null, 2) + '\n', 'utf8');
+  await copyFile('dist/bin/aet.js', join(cliDir, 'aet.js'));
+  await chmod(join(cliDir, 'aet.js'), 0o755);
+  await writeFile(
+    join(cliDir, 'README.md'),
+    `# aet-cli\n\nSelf-installable AET CLI bundle for \`${label}\`. Installed globally by the \`/enable\` flow via \`npm i -g <this dir>\`.\n`,
+    'utf8',
+  );
+  console.log(`[aet:build] ${label.padEnd(12)} → ${join(cliDir, 'package.json')} + aet.js (cli self-install)`);
+
+  // 3. runtime/ — the base AET runtime files, copied to ~/.aet/ at bootstrap.
+  //    Base source: src/config/workflow.json → runtime/config/workflow.json.
+  //    Extension-provided runtime files (src/extensions/*/runtime) are merged
+  //    on top by mergeAetPluginExtensions (with their runtime-meta.json
+  //    whitelist unioned). workflow.json is NOT whitelist-protected (overwritten
+  //    on every sync); a default runtime-meta.json is not shipped.
+  await mkdir(join(runtimeDir, 'config'), { recursive: true });
+  await copyFile(join(RUNTIME_SRC, 'workflow.json'), join(runtimeDir, 'config', 'workflow.json'));
+  console.log(`[aet:build] ${label.padEnd(12)} → ${join(runtimeDir, 'config/workflow.json')} (copy base runtime, v${rootPkg.version})`);
+}
+
+// ---------------------------------------------------------------------------
+// AET-plugin extension merge (src/extensions/<aet-plugin>/ → every host dist)
+// ---------------------------------------------------------------------------
+
+// User-defined AET-plugin extensions, merged into every coding-agent host dist.
+// This directory is NOT shipped in the repo by default: a user with custom
+// needs clones the repo, drops their extension(s) under src/extensions/<name>/
+// (each with skills/, commands/, runtime/ subdirs), then runs the build. The
+// build reads it only if present; absent → no extensions, normal build.
+const EXTENSIONS_SRC = 'src/extensions';
+
+// Extension subdirs we merge from src/extensions/<name>/ into every host dist.
+// codex uses a plugins/aet/ marketplace layout (NOT its own claude-style
+// commands/ dir — codex has no commands concept), so it merges skills+runtime
+// into plugins/aet/ and skips commands.
+const EXTENSION_SUBDIRS = ['skills', 'commands', 'runtime'];
+
+/**
+ * Every coding-agent host dist root + the subdir path that extension content
+ * merges into. codex is special (self-contained plugin under plugins/aet/);
+ * the others are flat plugin trees.
+ *
+ * Extension RUNTIME merges into the aet-install skill's runtime/ dir (the
+ * single install carrier) rather than the plugin root; skills/commands merge
+ * into the host's own skills/commands dirs.
+ */
+const HOST_DIST_TARGETS = [
+  { dist: 'dist/plugins/claude-code' },
+  { dist: 'dist/plugins/codeagent3' },
+  { dist: 'dist/plugins/codex/plugins/aet', noCommands: true },
+  { dist: 'dist/plugins/opencode' },
+  { dist: 'dist/plugins/omp' },
+];
+
+/** Map an extension subdir to the target subdir within a host dist. */
+function extensionDest(distRoot, sub) {
+  // runtime lives inside the aet-install skill (single install carrier).
+  if (sub === 'runtime') return join(distRoot, 'skills', 'aet-install', 'runtime');
+  return join(distRoot, sub);
+}
+
+/**
+ * Merge extension content from every `src/extensions/<aet-plugin>/` into every
+ * coding-agent host dist. Each subdir of src/extensions/ (skills/, commands/,
+ * runtime/) is an aet-plugin extension source: ANY host-independent content
+ * the author drops in src/extensions/<name>/{skills,commands,runtime} flows into
+ * ALL dists automatically. On conflicts the extension OVERWRITES the base
+ * (global skills/src/commands/src/config) copy. For runtime/, runtime-meta.json
+ * is MERGED (union of whitelists) across the base + every extension rather
+ * than overwritten, so per-aet-plugin user-mutable files stay listed.
+ * Absent `src/extensions/` dir → no-op.
+ */
+async function mergeAetPluginExtensions() {
+  if (!fileExists(EXTENSIONS_SRC)) return;
+
+  const names = (await readdir(EXTENSIONS_SRC, { withFileTypes: true }))
+    .filter((e) => e.isDirectory())
+    .map((e) => e.name);
+
+  for (const name of names) {
+    for (const sub of EXTENSION_SUBDIRS) {
+      const src = join(EXTENSIONS_SRC, name, sub);
+      if (!fileExists(src)) continue;
+
+      for (const targetCfg of HOST_DIST_TARGETS) {
+        if (sub === 'commands' && targetCfg.noCommands) continue;
+        const dest = extensionDest(targetCfg.dist, sub);
+        await mergeExtTo(`src/extensions/${name}`, sub, src, dest);
+      }
+    }
+  }
+}
+
+/** Merge one extension subdir into one host dist subdir. */
+async function mergeExtTo(pluginPath, sub, src, dest) {
+  await mkdir(dest, { recursive: true });
+  // runtime-meta.json is special: merge the whitelist across sources rather
+  // than overwrite, so the union of all extensions' user-mutable entries is kept.
+  if (sub === 'runtime') {
+    await mergeRuntimeMetas(src, dest);
+  }
+  // Copy the extension content (excluding runtime-meta.json, handled above).
+  // dest is the target subdir (e.g. dist/plugins/xxx/skills); cp each entry
+  // into it by NAME so a file entry lands as <dest>/<name> and a dir recurses.
+  for (const entry of await readdir(src, { withFileTypes: true })) {
+    if (entry.name === 'runtime-meta.json') continue;
+    await cp(join(src, entry.name), join(dest, entry.name), { recursive: true });
+  }
+  console.log(`[aet:build] extension ${pluginPath}/${sub} → ${dest} (merge)`);
+}
+
+/**
+ * Merge runtime-meta.json: union the `whitelist` arrays written so far in
+ * dest with the ones from this extension's runtime-meta.json (if any).
+ * result: arrays deduped, preserving extension entries. runtime-meta.json in
+ * the SOURCE is still a meta file — never copied as a content file.
+ */
+async function mergeRuntimeMetas(src, dest) {
+  const srcMeta = join(src, 'runtime-meta.json');
+  const destMeta = join(dest, 'runtime-meta.json');
+
+  const readWhitelist = (p) => {
+    if (!fileExists(p)) return [];
+    try {
+      const j = JSON.parse(readFileSync(p, 'utf8'));
+      return Array.isArray(j.whitelist) ? j.whitelist : [];
+    } catch { return []; }
+  };
+
+  const p = readWhitelist(destMeta); // current accumulated state (base + earlier extensions)
+  const s = readWhitelist(srcMeta);
+  if (p.length === 0 && s.length === 0) return; // nothing to merge
+
+  const merged = [...new Set([...p, ...s])];
+  // Preserve the _comment/docstring from the base (dest) when present.
+  let base = {};
+  try { base = JSON.parse(readFileSync(destMeta, 'utf8')); } catch { base = {}; }
+  await writeFile(
+    destMeta,
+    JSON.stringify({ ...base, whitelist: merged }, null, 2) + '\n',
+    'utf8',
+  );
 }
 
 /**
@@ -575,16 +829,20 @@ async function assemblePlugin(opts, rootPkg) {
   //    assets/ that CC auto-discovers per the plugins-reference layout.
   //    CC does NOT require skills to be listed in plugin.json — the
   //    directory convention alone is the contract. With ~40 skills this
-  //    is the largest single artifact in the assembled plugin; cp() with
-  //    `recursive: true` is by far the simplest correct implementation
+  //    is the largest single artifact in the assembled plugin; copySkills
+  //    (filtering tests/.DS_Store) is the simplest correct implementation
   //    and lets new skills added under `skills/<name>/` flow through
   //    automatically without touching this script.
   const skillsDest = join(targetDir, 'skills');
-  await mkdir(skillsDest, { recursive: true });
-  await cp(SKILLS_SRC, skillsDest, { recursive: true });
+  await copySkills(SKILLS_SRC, skillsDest);
   const skillCount = (await readdir(skillsDest, { withFileTypes: true }))
     .filter((e) => e.isDirectory()).length;
   console.log(`[aet:build] ${label.padEnd(12)} → ${skillsDest} (copy, recursive, ${skillCount} skills)`);
+
+  // 5b. aet-install skill resources — stamp cli/, scripts/, runtime/ into
+  //    skills/aet-install/ AFTER the SKILLS_SRC copy above (so it is not
+  //    clobbered). This is the single self-contained install carrier.
+  await assembleCliSelfInstall(targetDir, rootPkg, label);
 
   // 6. README.md — install instructions tailored to this distribution.
   await writeFile(join(targetDir, 'README.md'), readme, 'utf8');
@@ -697,10 +955,14 @@ async function assembleCodexMarketplace(dist, rootPkg, readme) {
   console.log(`[aet:build] ${label.padEnd(12)} → ${join(pluginDir, 'bin/')} (in-place from build step)`);
 
   // skills/ — plugin-relative copy (plugin.json `skills: "./skills"`).
-  await cp(SKILLS_SRC, join(pluginDir, 'skills'), { recursive: true });
+  await copySkills(SKILLS_SRC, join(pluginDir, 'skills'));
   const skillCount = (await readdir(join(pluginDir, 'skills'), { withFileTypes: true }))
     .filter((e) => e.isDirectory()).length;
   console.log(`[aet:build] ${label.padEnd(12)} → ${join(pluginDir, 'skills')} (copy, recursive, ${skillCount} skills)`);
+
+  // aet-install skill resources — stamp cli/, scripts/, runtime/ into
+  // skills/aet-install/ AFTER the SKILLS_SRC copy above. Single install carrier.
+  await assembleCliSelfInstall(pluginDir, rootPkg, label);
 
   // README.md — codex install instructions (marketplace add + plugin install).
   await writeFile(join(targetDir, 'README.md'), readme, 'utf8');
@@ -818,8 +1080,7 @@ async function assembleOpencodePlugin(rootPkg) {
 
   // 3. skills/ — recursive copy (the config hook registers it via skills.paths).
   const skillsDest = join(targetDir, 'skills');
-  await mkdir(skillsDest, { recursive: true });
-  await cp(SKILLS_SRC, skillsDest, { recursive: true });
+  await copySkills(SKILLS_SRC, skillsDest);
   const skillCount = (await readdir(skillsDest, { withFileTypes: true }))
     .filter((e) => e.isDirectory()).length;
   console.log(`[aet:build] ${'opencode'.padEnd(12)} → ${skillsDest} (copy, recursive, ${skillCount} skills)`);
@@ -840,6 +1101,9 @@ async function assembleOpencodePlugin(rootPkg) {
   // 5. README.md — install instructions.
   await writeFile(join(targetDir, 'README.md'), buildOpencodeReadme(), 'utf8');
   console.log(`[aet:build] ${'opencode'.padEnd(12)} → ${join(targetDir, 'README.md')} (gen)`);
+
+  // 6. Bundled CLI self-install — cli/ package + scripts/install.cjs.
+  await assembleCliSelfInstall(targetDir, rootPkg, 'opencode');
 }
 
 /**
@@ -1006,8 +1270,7 @@ async function assembleOmpPlugin(rootPkg) {
 
   // 3. skills/ — recursive copy (omp auto-discovers by directory convention).
   const skillsDest = join(targetDir, 'skills');
-  await mkdir(skillsDest, { recursive: true });
-  await cp(SKILLS_SRC, skillsDest, { recursive: true });
+  await copySkills(SKILLS_SRC, skillsDest);
   const skillCount = (await readdir(skillsDest, { withFileTypes: true }))
     .filter((e) => e.isDirectory()).length;
   console.log(`[aet:build] ${'omp'.padEnd(12)} → ${skillsDest} (copy, recursive, ${skillCount} skills)`);
@@ -1030,6 +1293,9 @@ async function assembleOmpPlugin(rootPkg) {
   // 5. README.md — install instructions.
   await writeFile(join(targetDir, 'README.md'), buildOmpReadme(), 'utf8');
   console.log(`[aet:build] ${'omp'.padEnd(12)} → ${join(targetDir, 'README.md')} (gen)`);
+
+  // 6. Bundled CLI self-install — cli/ package + scripts/install.cjs.
+  await assembleCliSelfInstall(targetDir, rootPkg, 'omp');
 }
 
 async function main() {
@@ -1037,10 +1303,14 @@ async function main() {
   await rm('dist', { recursive: true, force: true });
   await mkdir('dist', { recursive: true });
 
-  // Always build the CLI bundle.
-  await buildOne(CLI_MANIFEST);
-
   const rootPkg = JSON.parse(await readFile('package.json', 'utf8'));
+
+  // Always build the CLI bundle. The version is baked into the bundle via
+  // esbuild `define` so `aet --version` stays in lockstep with the root
+  // package.json (single source of truth; no hardcoded banner to drift).
+  await buildOne(CLI_MANIFEST, {
+    __AET_VERSION__: JSON.stringify(rootPkg.version),
+  });
 
   // Assemble the self-contained OpenCode plugin package (bin/aet_handler.js +
   // package.json main → skills/ + commands/ + README).
@@ -1141,6 +1411,11 @@ async function main() {
     }
     await copyStatic(a.src, a.dest);
   }
+
+  // Merge AET-plugin extensions (src/plugins/<name>/{skills,commands,runtime})
+  // into every coding-agent host dist. Runs LAST so it overlays on top of the
+  // base copies (global skills/ src/commands/ src/config/) — extensions win.
+  await mergeAetPluginExtensions();
 
   console.log('[aet:build] all bundles built successfully.');
 }

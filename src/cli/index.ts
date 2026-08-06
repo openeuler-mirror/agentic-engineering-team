@@ -117,7 +117,7 @@ export async function runCli(argv: string[], opts: CliRunOptions = {}): Promise<
     writer(HELP_TEXT);
     return 0;
   }
-  if (argv.includes('--version')) {
+  if (argv.includes('--version') || argv.includes('-v')) {
     writer(VERSION_TEXT);
     return 0;
   }
@@ -182,7 +182,11 @@ export async function runCli(argv: string[], opts: CliRunOptions = {}): Promise<
 // Help / version
 // ---------------------------------------------------------------------------
 
-const VERSION_TEXT = 'aet 0.5.3 (adds workflow list — read-only config query)';
+// The version is baked in at build time by esbuild `define __AET_VERSION__`
+// (see src/scripts/build.mjs CLI bundle). Falling back to 0.0.0-dev keeps the
+// unbundled/test contexts working (`aet 0.` prefix match in index.test.ts).
+declare const __AET_VERSION__: string | undefined;
+const VERSION_TEXT = `aet ${typeof __AET_VERSION__ !== 'undefined' ? __AET_VERSION__ : '0.0.0-dev'}`;
 
 const HELP_TEXT = `aet — Agentic Engineering Team CLI
 
@@ -200,7 +204,7 @@ FLAGS
                       NOTE: \`context\` does not honor --output — its output
                       is always XML (it bypasses the lifecycle channel).
   --help, -h          Show this help and exit.
-  --version           Show CLI version and exit.
+  --version, -v       Show CLI version and exit.
 
 workflow init
   --name <id>         Workflow name (e.g. "design", "implement").

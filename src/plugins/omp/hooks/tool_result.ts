@@ -18,16 +18,16 @@
  * a new `content` array (text parts built from resultToOmpContent).
  */
 
-import { AET_WORKFLOW_RE } from '../../shared_hooks.js';
 import { resultToOmpContent } from '../json_to_omp.js';
+import { wasAetWorkflow } from '../cmd_state.js';
 import type { CommandResult, HookReturn, MessagePart, ToolResultEvent } from '../types.js';
 
 /**
  * The `tool_result` (post-tool) handler. Replaces the bash tool result
  * content with the agent-visible `result.prompt` text (as text parts built
- * by resultToOmpContent) when the command was an `aet workflow` invocation.
- * Returns a `{ content }` replacement when the result changed, or undefined
- * to leave the tool result untouched.
+ * by resultToOmpContent) when the result came from an `aet workflow`
+ * invocation. Returns a `{ content }` replacement when the result changed, or
+ * undefined to leave the tool result untouched.
  *
  * Exported as a bare handler (mirrors handleToolCall) for uniform
  * registration in the plugin entry.
@@ -36,22 +36,38 @@ export function handleToolResult(event: ToolResultEvent): HookReturn | void {
   if (event.toolName !== 'bash') return;
 
   // The command that produced this result is not carried on tool_result in
-  // omp's HookAPI (only toolName/content/isError). The bash tool's command
-  // was available at tool_call time, but omp does not thread it through to
-  // tool_result. We reconstruct the workflow-vs-not signal from the result
-  // CONTENT instead: an `aet workflow` JSON stdout always carries the AET
-  // CommandResult shape (`ok` + `events`/`prompt`/`data`). If the content
-  // parses as a CommandResult, we treat it as an AET workflow result and
-  // replace; otherwise we leave it untouched.
+  // omp's HookAPI (only toolName/content/isError). The tool_call hook saw the
+  // command and recorded whether it was an `aet workflow` invocation in
+  // cmd_state (see cmd_state.ts); we consult that to decide whether a mangled
+  // / truncated / empty result is an AET failure worth surfacing (R9) or a
+  // plain non-AET bash result to leave untouched. For a well-formed result we
+  // still belt-and-suspenders verify the CommandResult shape before replacing.
   const stdout = extractText(event.content);
-  if (!stdout) return;
+  if (!stdout) {
+    // Empty output from an `aet workflow` call is itself a failure — never
+    // silence it (R9). Non-AET empty results are left untouched.
+    if (wasAetWorkflow()) {
+      return {
+        content: [
+          { type: 'text', text: '[AET ERROR PLUGIN_PARSE_FAILED] aet: workflow returned no output (expected a JSON tool result).' },
+        ],
+      };
+    }
+    return;
+  }
 
   let result: CommandResult;
   try {
     result = JSON.parse(stdout) as CommandResult;
   } catch {
-    // R9: errors are never silenced — surface a synthetic error in the tool
-    // result so the agent isn't left guessing about the unparseable stdout.
+    // R9: errors are never silenced — BUT only when this result plausibly came
+    // from an AET command. The tool_call hook recorded whether the most recent
+    // bash call was an `aet workflow` invocation (omp's tool_result carries no
+    // command). If it was, a mangled/truncated/empty `{...}` is worth surfacing
+    // as a synthetic error. Otherwise (plain-text bash output like `git status`
+    // / `ls` / `npm test`) it is NOT an AET result — clobbering it with a
+    // synthetic error would break normal agent bash usage in omp.
+    if (!wasAetWorkflow()) return;
     return {
       content: [
         { type: 'text', text: `[AET ERROR PLUGIN_PARSE_FAILED] aet: failed to parse tool result as JSON. First 200 chars: ${stdout.slice(0, 200)}` },
