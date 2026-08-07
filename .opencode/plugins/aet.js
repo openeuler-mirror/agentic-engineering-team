@@ -485,9 +485,11 @@ class CheckpointManager {
     const filePath = this.getIndexPath();
     index.lastUpdated = new Date().toISOString();
     try {
+      this.ensureCheckpointDir();
       fs.writeFileSync(filePath, JSON.stringify(index, null, 2), 'utf-8');
     } catch (e) {
-      console.error('[CheckpointManager] saveIndex error:', e.message);
+      // Silently ignore — checkpoint persistence is best-effort;
+      // surfacing this to the UI degrades user experience.
     }
   }
 
@@ -575,9 +577,11 @@ class CheckpointManager {
     const filePath = this.getCheckpointPath(checkpoint.workflow.checkpointID);
     checkpoint.updatedAt = new Date().toISOString();
     try {
+      this.ensureCheckpointDir();
       fs.writeFileSync(filePath, JSON.stringify(checkpoint, null, 2), 'utf-8');
     } catch (e) {
-      console.error('[CheckpointManager] saveCheckpoint error:', e.message);
+      // Silently ignore — checkpoint persistence is best-effort;
+      // surfacing this to the UI degrades user experience.
     }
   }
 
@@ -645,10 +649,12 @@ class CheckpointManager {
     checkpoint.workflow.status = 'completed';
     const archivePath = this.getArchiveCheckpointPath(checkpointID);
     try {
+      this.ensureCheckpointDir();
       fs.writeFileSync(archivePath, JSON.stringify(checkpoint, null, 2), 'utf-8');
       fs.unlinkSync(this.getCheckpointPath(checkpointID));
     } catch (e) {
-      console.error('[CheckpointManager] completeCheckpoint archive error:', e.message);
+      // Silently ignore — checkpoint persistence is best-effort;
+      // surfacing this to the UI degrades user experience.
     }
     const index = this.loadIndex();
     index.active = index.active.filter(e => e.checkpointID !== checkpointID);
