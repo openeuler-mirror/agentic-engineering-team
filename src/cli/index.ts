@@ -17,6 +17,10 @@
  *   - `aet context [plugin-name ...] [--root …]`
  *   - `aet plugin init [--agent …]`        (generate agent command/skill files)
  *
+ * Plus one INTERNAL (plugin-only, hidden from --help) dispatcher:
+ *   - `aet event <name>`                    (dispatch a non-workflow event,
+ *                                            e.g. `aet event ca-stop`)
+ *
  * Stateful Core contract: the CLI is a thin transformer. Core owns the
  * active-workflow + current-step state in `<projectRoot>/.aet/core-checkpoint/`;
  * the caller never re-states it. One active workflow per project root is
@@ -46,6 +50,7 @@ import { workflowListSpec } from './commands/workflow/list.js';
 import { workflowContextSpec } from './commands/context/run.js';
 import { workflowCommandInitSpec } from './commands/workflow/command_init.js';
 import { pluginInitSpec } from './commands/plugin/init.js';
+import { eventDispatchSpec } from './commands/event/dispatch.js';
 import type { CommandOutput, CommandSpec } from './commands/base.js';
 
 // ---------------------------------------------------------------------------
@@ -70,6 +75,7 @@ const COMMANDS: CommandSpec[] = [
   workflowContextSpec,
   pluginInitSpec,
   workflowCommandInitSpec,
+  eventDispatchSpec,
 ];
 
 /**
@@ -208,19 +214,28 @@ FLAGS
 
 workflow init
   --name <id>         Workflow name (e.g. "design", "implement").
+                      (init binds NO session — a workflow spans stages; each
+                       stage binds its session on entry via handover/continue)
 
 workflow handover
   (no required flags — Core reads the active workflow + current step
    from its own checkpoint in <projectRoot>/.aet/core-checkpoint/)
   --step <id>         Optional. Explicit next step id (forward skip or
                        backward redo); otherwise advances to next step.
+  --session-id <id>   Optional. Coding-agent session entering the next stage
+                       (auto-appended by plugin hooks). Binds the CURRENT stage
+                       so the ca.stop event verifies the stopping session owns it.
 
 workflow continue
-  (no flags — re-emits the CURRENT step's task prompt (state recovery).
-   Unlike handover, does NOT advance — currentStepId stays the same;
-   Core re-fires the current step's before hooks and records a
+  (no required flags — re-emits the CURRENT step's task prompt (state
+   recovery). Unlike handover, does NOT advance — currentStepId stays the
+   same; Core re-fires the current step's before hooks and records a
    step_resumed audit entry. Errors NO_ACTIVE_STEP if the workflow was
    init'd but not yet handed over — run "aet workflow handover" first.)
+  --session-id <id>   Optional. Coding-agent session resuming the current
+                       stage (auto-appended by plugin hooks). Re-binds the
+                       CURRENT stage so the ca.stop event verifies the stopping
+                       session owns it.
 
 workflow status
   (no flags — Core reads the active workflow from its own checkpoint.

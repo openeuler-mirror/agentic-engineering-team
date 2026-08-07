@@ -18,6 +18,9 @@
  *                              re-emitted the current step's prompt; no
  *                              currentStepId change, only an audit entry
  *                              + `updatedAt` bump)
+ *   ✅ recordSession()     — binds/updates the active checkpoint's
+ *                              `sessionId` (coding-agent session running the
+ *                              workflow; reported via init/handover payloads)
  *   ✅ recordComplete()    — records `workflow_completed` + archives file
  *   ✅ recordAbort()       — records `workflow_aborted` + archives file
  *                              (user-initiated termination, NOT natural
@@ -26,8 +29,12 @@
  *
  * Out of scope (left to higher layers / later iterations):
  *   ❌ interrupt / resume / handover-context tracking
- *   ❌ sessionID / agentId tracking (plugin/CLI concerns)
  *   ❌ multi-execution-per-step (the plugin layer handles retries)
+ *
+ * Session binding: `sessionId` is a CORE-INTERNAL field (like `argument`).
+ * Plugins report it via the init/handover payloads; Core persists it and the
+ * `ca.stop` event reads it back to guard injection. Session OWNERSHIP (what
+ * a session handle means in the host) stays at the plugin layer.
  *
  * Storage layout (<projectRoot>/.aet/core-checkpoint/):
  *   index.json                — top-level active/recent-completed index
@@ -118,6 +125,24 @@ interface CheckpointFile {
   status: 'in_progress' | 'completed' | 'aborted';
   /** Deferred step transition from a `prompt.inject` hook (see {@link PendingTransition}). Absent when none. */
   pendingTransition?: PendingTransition | null;
+  /**
+   * Coding-agent session id bound to this workflow, when one was reported
+   * at init/handover time (auto-appended by the plugin hooks). Absent on
+   * checkpoints started before session binding existed, and on hosts that
+   * decline to report a session. The `ca.stop` event compares its incoming
+   * sessionId against this to decide whether to inject AET guidance —
+   * a mismatch means the stopping session is unrelated to this workflow.
+   */
+  sessionId?: string;
+  /**
+   * Stop-guard block counter for the CURRENT stage + session. Incremented
+   * each time the `ca.stop` event returns blocking guidance on a session
+   * match; reset to 0 when the stage advances (handover) or the bound
+   * session changes. Core stops blocking once this reaches
+   * `STOP_GUARD_MAX_BLOCKS` — the agent is allowed to stop (see
+   * {@link WorkflowEngine.handleCaStop}).
+   */
+  stopGuardBlocks?: number;
   history: HistoryEntry[];
   startedAt: string;
   updatedAt: string;
@@ -147,6 +172,10 @@ export interface ActiveEntry {
   updatedAt: string;
   /** Mirrors the checkpoint file's deferred-transition state. See {@link PendingTransition}. */
   pendingTransition?: PendingTransition | null;
+  /** Coding-agent session id bound to this workflow (see {@link CheckpointFile.sessionId}). */
+  sessionId?: string;
+  /** Stop-guard block counter, mirrored from {@link CheckpointFile.stopGuardBlocks}. */
+  stopGuardBlocks?: number;
 }
 
 interface CompletedEntry {
@@ -196,7 +225,11 @@ export class CheckpointManager {
    * Returns the new checkpointId, or `null` on persistent I/O failure
    * (best-effort: callers MUST proceed regardless).
    */
-  create(workflow: CheckpointWorkflowMeta, firstStepId: string | null): string | null {
+  create(
+    workflow: CheckpointWorkflowMeta,
+    firstStepId: string | null,
+    sessionId?: string,
+  ): string | null {
     const checkpointId = this.generateId();
     const now = new Date().toISOString();
 
@@ -210,6 +243,7 @@ export class CheckpointManager {
       },
       currentStepId: firstStepId,
       status: 'in_progress',
+      sessionId,
       history: [
         { ts: now, event: 'workflow_started', workflow: workflow.name, firstStepId },
       ],
@@ -227,6 +261,7 @@ export class CheckpointManager {
       currentStepId: firstStepId,
       startedAt: now,
       updatedAt: now,
+      sessionId,
     });
     this.saveIndex(index);
 
@@ -255,11 +290,15 @@ export class CheckpointManager {
     checkpoint.currentStepId = toStepId;
     delete checkpoint.pendingTransition; // a pending inject transition is consumed by the advance
     checkpoint.history.push({ ts: now, event: 'step_advanced', from: fromStepId, to: toStepId });
+    // A stage change starts a fresh stop-guard budget — the block counter is
+    // per (stage, session), not per workflow.
+    checkpoint.stopGuardBlocks = 0;
     checkpoint.updatedAt = now;
     this.writeCheckpointFile(checkpoint.checkpointId, checkpoint);
 
     entry.currentStepId = toStepId;
     delete entry.pendingTransition;
+    entry.stopGuardBlocks = 0;
     entry.updatedAt = now;
     this.replaceActiveEntry(entry);
   }
@@ -285,6 +324,68 @@ export class CheckpointManager {
     checkpoint.updatedAt = now;
     this.writeCheckpointFile(checkpoint.checkpointId, checkpoint);
 
+    entry.updatedAt = now;
+    this.replaceActiveEntry(entry);
+  }
+
+  /**
+   * Bind (or update) the coding-agent session id on the latest active
+   * checkpoint for `workflowName`. Called by the engine during init/handover
+   * when the caller reports a session. Does NOT change `currentStepId` or
+   * record a history event — it only persists the session binding (and bumps
+   * `updatedAt`). No-op if no active checkpoint exists for the workflow name.
+   *
+   * The stop-guard block counter is reset when the bound session CHANGES (a
+   * different session gets a fresh budget); re-binding the SAME session keeps
+   * the count, so an agent stuck on a stage can't reset its budget merely by
+   * continuing in place.
+   */
+  recordSession(workflowName: string, sessionId: string): void {
+    if (!sessionId) return;
+    const entry = this.findLatestActive(workflowName);
+    if (!entry) return;
+
+    const checkpoint = this.readCheckpointFile(entry.checkpointId);
+    if (!checkpoint) return;
+
+    const now = new Date().toISOString();
+    if (checkpoint.sessionId !== sessionId) {
+      checkpoint.stopGuardBlocks = 0;
+    }
+    checkpoint.sessionId = sessionId;
+    checkpoint.updatedAt = now;
+    this.writeCheckpointFile(checkpoint.checkpointId, checkpoint);
+
+    if (entry.sessionId !== sessionId) {
+      entry.stopGuardBlocks = 0;
+    }
+    entry.sessionId = sessionId;
+    entry.updatedAt = now;
+    this.replaceActiveEntry(entry);
+  }
+
+  /**
+   * Record one stop-guard block on the latest active checkpoint for
+   * `workflowName`. Called by Core's `ca.stop` handler when it returns
+   * blocking guidance for a session match — the count is how many times
+   * THIS stage + session has already been prevented from stopping. Does
+   * NOT change `currentStepId` or record a history event. No-op if no
+   * active checkpoint exists for the workflow name.
+   */
+  recordStopGuardBlock(workflowName: string): void {
+    const entry = this.findLatestActive(workflowName);
+    if (!entry) return;
+
+    const checkpoint = this.readCheckpointFile(entry.checkpointId);
+    if (!checkpoint) return;
+
+    const now = new Date().toISOString();
+    const blocks = (checkpoint.stopGuardBlocks ?? 0) + 1;
+    checkpoint.stopGuardBlocks = blocks;
+    checkpoint.updatedAt = now;
+    this.writeCheckpointFile(checkpoint.checkpointId, checkpoint);
+
+    entry.stopGuardBlocks = blocks;
     entry.updatedAt = now;
     this.replaceActiveEntry(entry);
   }

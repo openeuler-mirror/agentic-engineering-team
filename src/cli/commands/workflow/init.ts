@@ -12,6 +12,12 @@
  *   aet workflow init --name design --output json
  *   aet workflow init --name bugfix
  *
+ * NOTE: init does NOT bind a session. A workflow spans multiple stages; each
+ * stage may run in a different coding-agent session. Session binding happens
+ * when ENTERING a stage — via `aet workflow handover` (advance into the next
+ * stage) or `aet workflow continue` (resume the current stage), both of which
+ * accept `--session-id`.
+ *
  * Stateful Core contract: the CLI passes only the workflow name; Core owns
  * checkpoint state (active workflow + current step). The caller never
  * re-states workflow identity on subsequent handovers — Core reads it from
@@ -61,7 +67,9 @@ async function runWorkflowInit(bus: EventBus, argv: string[]): Promise<CommandOu
 
   // Core is agent-agnostic — the InputEvent payload carries only the
   // workflow name (and the optional initial-requirement `argument`).
-  // Context/identity lives outside the event contract.
+  // Context/identity lives outside the event contract. No session binding
+  // here — init creates the checkpoint; stage entry (handover/continue)
+  // binds the session.
   const event: InputEvent = {
     event: 'workflow.init',
     payload: { name, ...(argument ? { argument } : {}) },

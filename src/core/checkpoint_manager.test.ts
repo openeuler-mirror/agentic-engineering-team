@@ -47,6 +47,30 @@ describe('CheckpointManager', () => {
     expect(cm.getCheckpointMeta(id)?.argument).toBeUndefined();
   });
 
+  it('create persists the sessionId into the checkpoint file and active index', () => {
+    const { root, cm } = fresh();
+    const id = cm.create({ name: 'design', description: 'd' }, null, 'sess-A')!;
+    const file = readCheckpointFile(root, id);
+    expect(file.sessionId).toBe('sess-A');
+    const idx = readIndex(root);
+    expect(idx.active[0].sessionId).toBe('sess-A');
+    expect(cm.findLatestActive('design')?.sessionId).toBe('sess-A');
+  });
+
+  it('recordSession binds the sessionId on the latest active checkpoint', () => {
+    const { root, cm } = fresh();
+    const id = cm.create({ name: 'design', description: 'd' }, null)!;
+    cm.recordSession('design', 'sess-B');
+    const file = readCheckpointFile(root, id);
+    expect(file.sessionId).toBe('sess-B');
+    expect(cm.findLatestActive('design')?.sessionId).toBe('sess-B');
+  });
+
+  it('recordSession is a no-op when no active checkpoint exists', () => {
+    const { cm } = fresh();
+    expect(() => cm.recordSession('design', 'sess-A')).not.toThrow();
+  });
+
   it('getCheckpointMeta returns null for an unknown checkpoint id', () => {
     const { cm } = fresh();
     expect(cm.getCheckpointMeta('ckpt_does_not_exist')).toBeNull();

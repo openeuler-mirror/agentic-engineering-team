@@ -61,6 +61,20 @@ export type OutputMode = 'json' | 'prompt';
  *                              `data.status='list'` with `data.workflows[]` /
  *                              `data.commands[]` populated. Pure read, no side
  *                              effects, no checkpoint access.
+ *   - `ca.stop`             — CLI/plugin mode: a coding agent stopped producing
+ *                              output (CC `Stop` hook / OpenCode `session.idle`).
+ *                              Core resolves the active workflow and compares the
+ *                              caller-supplied `sessionId` against the session
+ *                              bound to the checkpoint (via the `session-id`
+ *                              parameter on init/handover). Only when they MATCH
+ *                              does Core return a guidance prompt telling the
+ *                              agent to keep working (use the question tool if
+ *                              asking something, call `aet workflow handover`
+ *                              if the stage task is done, otherwise continue to
+ *                              the workflow end). Returns an empty prompt (no
+ *                              injection) when no active workflow, no bound
+ *                              session, or a session mismatch — so an unrelated
+ *                              coding-agent session is never fed AET guidance.
  *
  * Stateful Core contract: the CLI is a thin transformer. Core owns the
  * active-workflow + current-step state in `<projectRoot>/.aet/core-checkpoint/`;
@@ -74,7 +88,8 @@ export type InputEventId =
   | 'workflow.commandInit'
   | 'workflow.status'
   | 'workflow.abort'
-  | 'workflow.list';
+  | 'workflow.list'
+  | 'ca.stop';
 
 /**
  * Strongly-typed payload for `workflow.init` AND `workflow.commandInit`. The
@@ -92,6 +107,15 @@ export interface WorkflowInitPayload {
    * after `context.clear` wipes the agent's context. CLI maps `--argument`.
    */
   argument?: string;
+  /**
+   * Coding-agent session id, used ONLY by `workflow.commandInit` (not bare
+   * `workflow.init`). `commandInit` collapses init + advance-into-step-1; the
+   * session binds to STEP 1 (entering a stage) via the internal handover —
+   * NOT to init. Bare `workflow.init` never binds a session (per-stage model:
+   * a workflow spans sessions; binding happens on stage entry via handover /
+   * continue). Ignored by `initWorkflow`.
+   */
+  sessionId?: string;
 }
 
 /**
@@ -105,16 +129,34 @@ export interface WorkflowInitPayload {
 export interface WorkflowHandoverPayload {
   /** Optional explicit step id to jump to. If omitted, advances to the next step. */
   step?: string;
+  /**
+   * Optional coding-agent session id that is entering the next stage via
+   * this handover. Auto-appended by the plugin hooks; persists to the
+   * checkpoint as the CURRENT stage's `sessionId` so `ca.stop` (the
+   * stop/idle guard) can verify the stopping session owns the current
+   * stage. Each stage may bind a different session (or reuse the same).
+   * CLI maps `--session-id`.
+   */
+  sessionId?: string;
 }
 
 /**
  * Strongly-typed payload for `workflow.continue`. Core is stateful: the
  * active workflow and current step are read from the on-disk checkpoint, so
  * the caller passes nothing. Continue re-emits the CURRENT step's task
- * prompt (state recovery) — it does NOT advance. No fields needed; the
- * payload exists so the event type is explicit on the wire.
+ * prompt (state recovery) — it does NOT advance. The optional `sessionId`
+ * re-binds the CURRENT stage to the calling session (a resumed workflow may
+ * run in a new coding-agent session after an interrupt).
  */
-export interface WorkflowContinuePayload {}
+export interface WorkflowContinuePayload {
+  /**
+   * Optional coding-agent session id that is resuming the CURRENT stage.
+   * Auto-appended by the plugin hooks; persists to the checkpoint as the
+   * current stage's `sessionId` so `ca.stop` can verify the stopping session
+   * owns the current stage. CLI maps `--session-id`.
+   */
+  sessionId?: string;
+}
 
 /**
  * Strongly-typed payload for `workflow.status`. Read-only query — Core
@@ -147,6 +189,21 @@ export interface WorkflowAbortPayload {
 export interface WorkflowListPayload {}
 
 /**
+ * Strongly-typed payload for `ca.stop`. A coding agent stopped producing
+ * output; the caller reports the session that went idle. Core resolves the
+ * active workflow and compares `sessionId` against the session bound to the
+ * CURRENT stage. Only a match yields a guidance prompt; every no-match /
+ * no-active / no-bound-session / missing-session case yields an empty prompt
+ * (no injection). `sessionId` is optional — callers without a session concept
+ * (e.g. a bare-bash fallback) may omit it, and Core conservatively injects
+ * nothing.
+ */
+export interface CaStopPayload {
+  /** The coding-agent session id that stopped producing output, if known. */
+  sessionId?: string;
+}
+
+/**
  * Canonical input event envelope. Mirrors 新方案.md §3.1 "输入事件公共协议".
  */
 export interface InputEvent {
@@ -159,7 +216,8 @@ export interface InputEvent {
     | WorkflowContinuePayload
     | WorkflowStatusPayload
     | WorkflowAbortPayload
-    | WorkflowListPayload;
+    | WorkflowListPayload
+    | CaStopPayload;
 }
 
 // ---------------------------------------------------------------------------
@@ -474,6 +532,22 @@ export interface CommandData {
    * started without an argument (or the checkpoint predates this field).
    */
   argument?: string | null;
+  /**
+   * The coding-agent session id bound to the active workflow, when one was
+   * reported at init/handover time. Populated on `ca.stop` (session-match
+   * branch) so the plugin can confirm which session owns the workflow.
+   * Undefined for every other status.
+   */
+  sessionId?: string | null;
+  /**
+   * How many times the `ca.stop` stop-guard has already BLOCKED the stopping
+   * session on the CURRENT stage (0 = never blocked). Populated on `ca.stop`
+   * (session-match branch) so the plugin / operator can see the remaining
+   * budget. Core refuses to block once this reaches
+   * {@link STOP_GUARD_MAX_BLOCKS} — the agent is allowed to stop. Resets to 0
+   * on a stage change (handover) or a new session binding.
+   */
+  stopGuardBlocks?: number;
   /**
    * Full list of multi-stage workflows declared in the merged config, as
    * returned by `workflow.list` (`data.status === 'list'`). Each entry

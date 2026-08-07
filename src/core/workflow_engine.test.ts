@@ -330,3 +330,122 @@ describe('stale-config guards', () => {
     expect(engine.handleStatus(status()).data?.status).toBe('active');
   });
 });
+describe('ca.stop — coding-agent stop guard', () => {
+  const caStop = (sessionId: string): InputEvent => ({
+    event: 'ca.stop',
+    payload: { sessionId },
+  });
+
+  it('yields an empty prompt when no active workflow exists (no injection)', () => {
+    const engine = makeEngine();
+    const r = engine.handleCaStop(caStop('sess-1'));
+    expect(r.ok).toBe(true);
+    expect(r.prompt).toBe('');
+    expect(r.events).toEqual([]);
+  });
+
+  it('yields an empty prompt when the checkpoint has no bound session (cannot verify)', () => {
+    const engine = makeEngine();
+    engine.handleInit({ event: 'workflow.init', payload: { name: DESIGN } });
+    const r = engine.handleCaStop(caStop('sess-1'));
+    expect(r.ok).toBe(true);
+    expect(r.prompt).toBe('');
+  });
+
+  it('yields an empty prompt on a session mismatch (unrelated session)', () => {
+    const engine = makeEngine();
+    // Bind the CURRENT stage to session A via handover (per-stage binding).
+    engine.handleInit({ event: 'workflow.init', payload: { name: DESIGN } });
+    engine.handleHandover({ event: 'workflow.handover', payload: { sessionId: 'sess-A' } });
+    // A different session stops → no guidance.
+    const r = engine.handleCaStop(caStop('sess-B'));
+    expect(r.ok).toBe(true);
+    expect(r.prompt).toBe('');
+  });
+
+  it('injects guidance when the stopping session matches the bound session', () => {
+    const engine = makeEngine();
+    engine.handleInit({ event: 'workflow.init', payload: { name: DESIGN } });
+    engine.handleHandover({ event: 'workflow.handover', payload: { sessionId: 'sess-A' } });
+    const r = engine.handleCaStop(caStop('sess-A'));
+    const data = expectOk(r);
+    expect(data.status).toBe('active');
+    expect(data.sessionId).toBe('sess-A');
+    expect(data.currentStep).toBe('requirements_analysis');
+    expect(r.prompt).toContain('请勿停止');
+    expect(r.prompt).toContain('aet workflow handover');
+  });
+
+  it('binds the session via handover stage entry (init binds nothing)', () => {
+    const engine = makeEngine();
+    engine.handleInit({ event: 'workflow.init', payload: { name: DESIGN } });
+    // init does NOT bind — stop right after init (no stage entered) yields
+    // no guidance even for the same session.
+    expect(engine.handleCaStop(caStop('sess-A')).prompt).toBe('');
+    // handover enters step 1 and binds the session.
+    engine.handleHandover({ event: 'workflow.handover', payload: { sessionId: 'sess-A' } });
+    expect(engine.handleCaStop(caStop('sess-A')).prompt).toContain('请勿停止');
+  });
+
+  it('re-binds the CURRENT stage session via continue (resume in a new session)', () => {
+    const engine = makeEngine();
+    engine.handleInit({ event: 'workflow.init', payload: { name: DESIGN } });
+    // Stage entered + bound to sess-A via handover.
+    engine.handleHandover({ event: 'workflow.handover', payload: { sessionId: 'sess-A' } });
+    // Resume in a NEW session-B via continue → re-binds the current stage.
+    engine.handleContinue({ event: 'workflow.continue', payload: { sessionId: 'sess-B' } });
+    // sess-B stop now matches → guidance.
+    expect(engine.handleCaStop(caStop('sess-B')).prompt).toContain('请勿停止');
+    // sess-A no longer matches the current stage → no guidance.
+    expect(engine.handleCaStop(caStop('sess-A')).prompt).toBe('');
+  });
+
+  it('blocks the same session+stage up to STOP_GUARD_MAX_BLOCKS, then lets the agent stop', () => {
+    const engine = makeEngine();
+    engine.handleInit({ event: 'workflow.init', payload: { name: DESIGN } });
+    engine.handleHandover({ event: 'workflow.handover', payload: { sessionId: 'sess-A' } });
+    // First three stops → blocked with guidance, counter exposed in data.
+    for (let i = 1; i <= 3; i++) {
+      const r = engine.handleCaStop(caStop('sess-A'));
+      expect(r.prompt).toContain('请勿停止');
+      expect(expectOk(r).stopGuardBlocks).toBe(i);
+    }
+    // Fourth stop → budget exhausted → no guidance.
+    const r4 = engine.handleCaStop(caStop('sess-A'));
+    expect(r4.ok).toBe(true);
+    expect(r4.prompt).toBe('');
+  });
+
+  it('resets the stop-guard budget when the stage advances (handover)', () => {
+    const engine = makeEngine();
+    engine.handleInit({ event: 'workflow.init', payload: { name: DESIGN } });
+    engine.handleHandover({ event: 'workflow.handover', payload: { sessionId: 'sess-A' } });
+    for (let i = 0; i < 3; i++) engine.handleCaStop(caStop('sess-A'));
+    expect(engine.handleCaStop(caStop('sess-A')).prompt).toBe('');
+    // Advance to the next stage (same session) → fresh budget.
+    engine.handleHandover({ event: 'workflow.handover', payload: { sessionId: 'sess-A' } });
+    expect(engine.handleCaStop(caStop('sess-A')).prompt).toContain('请勿停止');
+  });
+
+  it('resets the stop-guard budget when the bound session changes (continue)', () => {
+    const engine = makeEngine();
+    engine.handleInit({ event: 'workflow.init', payload: { name: DESIGN } });
+    engine.handleHandover({ event: 'workflow.handover', payload: { sessionId: 'sess-A' } });
+    for (let i = 0; i < 3; i++) engine.handleCaStop(caStop('sess-A'));
+    expect(engine.handleCaStop(caStop('sess-A')).prompt).toBe('');
+    // Resume the SAME stage in a new session → fresh budget for the new session.
+    engine.handleContinue({ event: 'workflow.continue', payload: { sessionId: 'sess-B' } });
+    expect(engine.handleCaStop(caStop('sess-B')).prompt).toContain('请勿停止');
+  });
+
+  it('does NOT reset the budget when the same session continues in place', () => {
+    const engine = makeEngine();
+    engine.handleInit({ event: 'workflow.init', payload: { name: DESIGN } });
+    engine.handleHandover({ event: 'workflow.handover', payload: { sessionId: 'sess-A' } });
+    for (let i = 0; i < 3; i++) engine.handleCaStop(caStop('sess-A'));
+    expect(engine.handleCaStop(caStop('sess-A')).prompt).toBe('');
+    // Continue in the SAME session on the SAME stage → budget stays exhausted.
+    engine.handleContinue({ event: 'workflow.continue', payload: { sessionId: 'sess-A' } });
+    expect(engine.handleCaStop(caStop('sess-A')).prompt).toBe('');
+  });
+});

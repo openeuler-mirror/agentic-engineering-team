@@ -31,6 +31,7 @@ import { DIALECT_ID, resolveDialect } from '../../../dialect.js';
 import { handleUserPromptSubmit } from './user_prompt_submit.js';
 import { handlePreToolUse } from './pre_tool_use.js';
 import { handlePostToolUse } from './post_tool_use.js';
+import { handleStop } from './stop.js';
 import { debugLog, emit, emitError, readStdin, resolveAetBin } from './shared.js';
 
 const dialect = resolveDialect(DIALECT_ID);
@@ -57,6 +58,8 @@ async function dispatch(eventName: string | undefined, input: CcHookInput): Prom
       return handlePreToolUse(input);
     case 'PostToolUse':
       return handlePostToolUse(input);
+    case 'Stop':
+      return handleStop(input);
     default:
       debugLog({ event: 'default_skip', hookEventName: eventName });
       emit(null);

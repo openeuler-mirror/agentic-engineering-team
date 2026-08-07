@@ -38,6 +38,42 @@ describe('handlePreToolUse', () => {
     });
   });
 
+  it('appends --session-id on a workflow handover when session_id is present', () => {
+    handlePreToolUse({
+      tool_name: 'Bash',
+      session_id: 'sess-9',
+      tool_input: { command: 'aet workflow handover' },
+    } as unknown as CcHookInput);
+    const emitted = (emit as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[0];
+    const cmd = emitted?.hookSpecificOutput?.updatedInput?.command;
+    expect(cmd).toContain('--output json');
+    expect(cmd).toContain('--session-id sess-9');
+  });
+
+  it('appends --session-id on a workflow continue (re-bind current stage)', () => {
+    handlePreToolUse({
+      tool_name: 'Bash',
+      session_id: 'sess-10',
+      tool_input: { command: 'aet workflow continue' },
+    } as unknown as CcHookInput);
+    const emitted = (emit as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[0];
+    const cmd = emitted?.hookSpecificOutput?.updatedInput?.command;
+    expect(cmd).toContain('--output json');
+    expect(cmd).toContain('--session-id sess-10');
+  });
+
+  it('does NOT append --session-id on workflow init (per-stage binding)', () => {
+    handlePreToolUse({
+      tool_name: 'Bash',
+      session_id: 'sess-11',
+      tool_input: { command: 'aet workflow init --name design' },
+    } as unknown as CcHookInput);
+    const emitted = (emit as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[0];
+    const cmd = emitted?.hookSpecificOutput?.updatedInput?.command ?? '';
+    expect(cmd).toContain('--output json');
+    expect(cmd).not.toContain('--session-id');
+  });
+
   it('is idempotent — leaves a command that already has --output json untouched', () => {
     handlePreToolUse(bashInput('aet workflow init --name design --output json'));
     expect(emit).toHaveBeenCalledWith(null);

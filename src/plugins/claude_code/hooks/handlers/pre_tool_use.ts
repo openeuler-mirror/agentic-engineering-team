@@ -47,11 +47,22 @@ export function handlePreToolUse(input: CcHookInput): void {
   const command = String(toolInput['command'] ?? '').trim();
 
   if (AET_WORKFLOW_RE.test(command)) {
-    const rewritten = rewriteAddFlag(command, ['--output', '-o'], 'json');
+    let rewritten = rewriteAddFlag(command, ['--output', '-o'], 'json');
     if (rewritten === null) {
       debugLog({ event: 'PreToolUse', action: 'already_has_output_flag', command: command.slice(0, 200) });
       emit(null);
       return;
+    }
+    // Bind the coding-agent session when ENTERING a stage — `aet workflow
+    // handover` (advance into the next stage) and `aet workflow continue`
+    // (resume the current stage). Per-stage binding: each stage may run in a
+    // different session, so the `ca.stop` event verifies the stopping session
+    // owns the CURRENT stage. Applies to the (post-rewrite) command so the
+    // flag lands on the same `aet` invocation. The session_id is CC's ambient
+    // session.
+    if (/(aet\s+workflow\s+handover|aet\s+workflow\s+continue)\b/.test(command) && input.session_id) {
+      const withSession = rewriteAddFlag(rewritten, ['--session-id'], input.session_id);
+      if (withSession !== null) rewritten = withSession;
     }
     debugLog({ event: 'PreToolUse', action: 'rewrite_output', original: command.slice(0, 200), rewritten: rewritten.slice(0, 200), autoAllow: isSingleCommand(command) });
     emitPreToolResult(rewritten, isSingleCommand(command));

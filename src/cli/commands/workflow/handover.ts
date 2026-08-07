@@ -13,6 +13,7 @@
  * Usage:
  *   aet workflow handover                       # advance to next step
  *   aet workflow handover --step requirements_design
+ *   aet workflow handover --session-id <id>    # bind the coding-agent session
  *   aet workflow handover --output json
  */
 
@@ -40,10 +41,12 @@ async function runWorkflowHandover(bus: EventBus, argv: string[]): Promise<Comma
   const parsed = parseArgs(argv);
 
   let step: string | undefined;
+  let sessionId: string | undefined;
   let output: OutputMode;
 
   try {
     step = optionalFlag(parsed, 'step');
+    sessionId = optionalFlag(parsed, 'session-id');
     output = requireOutputMode(parsed);
   } catch (e) {
     if (e instanceof UsageError) {
@@ -52,10 +55,13 @@ async function runWorkflowHandover(bus: EventBus, argv: string[]): Promise<Comma
     throw e;
   }
 
-  // Build payload, omitting `step` when absent so the engine sees
-  // `undefined` and applies its own default (advance one step in
-  // definition order; enter step 1 if currentStepId is null).
-  const payload: InputEvent['payload'] = step !== undefined ? { step } : {};
+  // Build payload, omitting `step` / `session-id` when absent so the engine
+  // sees `undefined` and applies its own defaults (advance one step in
+  // definition order; skip session binding when no session is reported).
+  const payload: InputEvent['payload'] = {
+    ...(step !== undefined ? { step } : {}),
+    ...(sessionId !== undefined ? { sessionId } : {}),
+  };
 
   const event: InputEvent = {
     event: 'workflow.handover',

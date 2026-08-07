@@ -16,15 +16,20 @@
  * workflow was init'd but not yet handed over — run
  * `aet workflow handover` first to enter step 1).
  *
+ * Session binding: `--session-id` (auto-appended by plugin hooks) re-binds
+ * the CURRENT stage to the calling session. A resumed workflow may run in a
+ * new coding-agent session after an interrupt.
+ *
  * Usage:
  *   aet workflow continue
+ *   aet workflow continue --session-id sess-A
  *   aet workflow continue --output json
  */
 
 import type { EventBus } from '../../../core/event_bus.js';
 import type { InputEvent, OutputMode } from '../../../definitions/events.js';
 
-import { parseArgs, requireOutputMode, UsageError } from '../../args.js';
+import { parseArgs, requireOutputMode, optionalFlag, UsageError } from '../../args.js';
 import { cliError, encodeResult, type CommandOutput, type CommandSpec } from '../base.js';
 
 // ---------------------------------------------------------------------------
@@ -45,9 +50,11 @@ async function runWorkflowContinue(bus: EventBus, argv: string[]): Promise<Comma
   const parsed = parseArgs(argv);
 
   let output: OutputMode;
+  let sessionId: string | undefined;
 
   try {
     output = requireOutputMode(parsed);
+    sessionId = optionalFlag(parsed, 'session-id');
   } catch (e) {
     if (e instanceof UsageError) {
       return cliError(e.message, 'USAGE_ERROR');
@@ -56,11 +63,11 @@ async function runWorkflowContinue(bus: EventBus, argv: string[]): Promise<Comma
   }
 
   // Core is stateful — the active workflow + current step are read from
-  // the on-disk checkpoint. The payload is empty; the event type is what
-  // selects the handler.
+  // the on-disk checkpoint. The payload is `{}` unless `--session-id` is
+  // supplied (re-binds the current stage to the calling session).
   const event: InputEvent = {
     event: 'workflow.continue',
-    payload: {},
+    payload: sessionId ? { sessionId } : {},
   };
 
   const result = await bus.dispatch(event);

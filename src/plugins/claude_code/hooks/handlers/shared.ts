@@ -234,3 +234,43 @@ export function emitError(eventName: CcHookEventName, code: string, message: str
   debugLog({ event: 'emitError', code, message });
   emit(output);
 }
+
+/**
+ * BLOCK a Stop/SubagentStop hook — keep the agent going.
+ *
+ * Per the CC Stop-hook contract (ctx7 docs), the advanced decision API lets
+ * a Stop hook BLOCK the agent from stopping and tell it how to continue:
+ *
+ *   {
+ *     "decision": "block",
+ *     "reason": "Must be provided when Claude is blocked from stopping",
+ *     "systemMessage": "Optional additional context"
+ *   }
+ *
+ * This JSON MUST be written to STDERR and the process MUST exit with code 2
+ * (exit 0 = allow the stop; exit 2 = block with JSON on stderr). This is the
+ * ONLY way to reliably keep the agent's turn going on a Stop hook — the
+ * `additionalContext` return is NOT the mechanism for blocking (it is
+ * deprecated/unreliable for this purpose).
+ *
+ * `reason` is the guidance text Claude reads to know how to continue — e.g.
+ * the AET `ca.stop` prompt telling it to use the question tool / handover /
+ * keep working. We deliberately do NOT use `additionalContext` here.
+ *
+ * Every other AET hook path keeps using {@link emit} (stdout + exit 0). This
+ * dedicated helper exists because Stop blocking is a different wire contract.
+ */
+export function emitStopBlock(reason: string): void {
+  const decision = { decision: 'block', reason };
+  const json = JSON.stringify(decision);
+  debugLog({
+    event: 'stop_block',
+    chars: reason.length,
+    reason, // NOT truncated — log the full guidance fed back to Claude
+  });
+  process.stderr.write(json + '\n');
+  // Exit code 2 signals CC: block with JSON on stderr. Set exitCode so the
+  // process exits 2 after the handler returns (we do not force-exit here so
+  // any pending stdout flush / debug logging completes first).
+  process.exitCode = 2;
+}

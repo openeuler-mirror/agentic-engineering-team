@@ -85,6 +85,14 @@
  *                              reads the status and releases any session/
  *                              context it held (mirrors `workflow_complete`
  *                              handling).
+ *   - `ca.stop`             → a coding agent stopped producing output (CC
+ *                              `Stop` hook / OpenCode `session.idle`).
+ *                              Resolves the active workflow and compares the
+ *                              caller's `sessionId` against the session bound
+ *                              to the checkpoint. Guidance is injected ONLY on
+ *                              a session match; every no-active / no-bound /
+ *                              mismatch case yields an empty prompt so an
+ *                              unrelated session is never fed AET guidance.
  */
 
 import type {
@@ -92,9 +100,11 @@ import type {
   InputEvent,
   OutputEvent,
   WorkflowAbortPayload,
+  WorkflowContinuePayload,
   WorkflowHandoverPayload,
   WorkflowInitPayload,
   WorkflowListPayload,
+  CaStopPayload,
 } from '../definitions/events.js';
 import { err, ok } from '../definitions/events.js';
 
@@ -109,6 +119,17 @@ import { CheckpointManager, type ActiveEntry, type PendingTransition } from './c
  * workflow.
  */
 const HOOK_REMINDER = '执行完毕后，请再次调用 `aet workflow handover` 以继续推进。';
+
+/**
+ * Stop-guard budget: the `ca.stop` event blocks the SAME stage + session from
+ * stopping at most this many times. Once a stage+session has been prevented
+ * from stopping `STOP_GUARD_MAX_BLOCKS` times, further stops are allowed to
+ * proceed (the guard returns an empty prompt) — an agent that keeps stopping
+ * despite the guidance is past the point of helping and must be let go. The
+ * per-(stage, session) counter lives in the checkpoint and resets on stage
+ * change / session change.
+ */
+const STOP_GUARD_MAX_BLOCKS = 3;
 
 // ---------------------------------------------------------------------------
 // Engine
@@ -200,7 +221,9 @@ export class WorkflowEngine {
     // Init succeeded with no events — advance into step 1 via the same
     // handover codepath the CLI uses. The handover reads the active
     // workflow + null currentStepId from the checkpoint we just created.
-    const handoverResult = this.handoverWorkflow({});
+    // The session (if reported) binds to step 1 — entering a stage, not
+    // init. initWorkflow itself does NOT bind a session (per-stage model).
+    const handoverResult = this.handoverWorkflow(payload.sessionId ? { sessionId: payload.sessionId } : {});
     if (!handoverResult.ok) return handoverResult;
 
     // Plugin-active-mode entry: prefix the step-1 task text with an
@@ -269,8 +292,8 @@ export class WorkflowEngine {
    *     `UNKNOWN_STEP`.
    */
   handleContinue(input: InputEvent): CommandResult {
-    // Payload is empty by contract — the event type selects the handler.
-    return this.continueWorkflow();
+    const payload = input.payload as WorkflowContinuePayload;
+    return this.continueWorkflow(payload);
   }
 
   /**
@@ -418,6 +441,77 @@ export class WorkflowEngine {
     );
   }
 
+  /**
+   * `ca.stop` — a coding agent stopped producing output (CC `Stop` hook /
+   * OpenCode `session.idle`).
+   *
+   * Stateful contract: Core resolves the active workflow from the on-disk
+   * checkpoint and compares the caller-supplied `sessionId` against the
+   * `sessionId` bound to that checkpoint (reported at init/handover time).
+   *
+   * Injection guard (the safety property the caller wants): guidance is
+   * injected ONLY when BOTH hold —
+   *   1. an active workflow exists, AND
+   *   2. the stopping session matches the session bound to the workflow.
+   * Every no-match case yields an EMPTY prompt (`ok('')`), so the plugin
+   * injects nothing and the stop proceeds cleanly:
+   *   - no active workflow → nothing to guide;
+   *   - checkpoint has no bound session → can't verify → don't inject
+   *     (an unrelated coding-agent session must never get AET guidance);
+   *   - `payload.sessionId !== checkpoint.sessionId` → the stopping session
+   *     is not the one running this workflow → don't inject.
+   *
+   * On a match, returns the guidance prompt as the top-level `prompt` (the
+   * plugin surfaces it and keeps the agent going) with `data.status='active'`
+   * describing the workflow / current step / checkpoint / bound session.
+   * No side effects — this is a pure read (does NOT bump `updatedAt`).
+   */
+  handleCaStop(input: InputEvent): CommandResult {
+    const payload = input.payload as CaStopPayload;
+    const sessionId = payload?.sessionId;
+
+    const active = this.checkpoints.findLatestActiveAny();
+    if (!active) return ok('');
+
+    // No bound session → can't verify the stopping session owns this stage
+    // → conservatively inject nothing.
+    if (!active.sessionId) return ok('');
+    // Session mismatch (or the caller reported no session) → the stopping
+    // session is unrelated to the current stage → inject nothing.
+    if (sessionId !== active.sessionId) return ok('');
+
+    // Stop-guard budget: the SAME stage + session gets at most
+    // STOP_GUARD_MAX_BLOCKS blocks. Past that, let the agent stop — an empty
+    // prompt means no more guidance. The counter is persisted in the
+    // checkpoint (reset on stage change / session change).
+    const blocks = active.stopGuardBlocks ?? 0;
+    if (blocks >= STOP_GUARD_MAX_BLOCKS) return ok('');
+    this.checkpoints.recordStopGuardBlock(active.workflow);
+
+    const workflowDef = this.registry.getWorkflow(active.workflow);
+    const workflowName = workflowDef?.name ?? active.workflow;
+
+    return ok(
+      buildCaStopPrompt({
+        workflowName,
+        workflowId: active.workflow,
+        currentStepId: active.currentStepId,
+        checkpointId: active.checkpointId,
+      }),
+      [],
+      {
+        status: 'active',
+        workflow: active.workflow,
+        workflowName,
+        currentStep: active.currentStepId,
+        nextStep: null,
+        checkpointId: active.checkpointId,
+        sessionId: active.sessionId,
+        stopGuardBlocks: blocks + 1,
+      },
+    );
+  }
+
   // -----------------------------------------------------------------------
   // Internal: shared init & handover logic
   // -----------------------------------------------------------------------
@@ -505,6 +599,9 @@ export class WorkflowEngine {
         argument: payload.argument,
       },
       null,
+      // No session binding at init — a workflow spans multiple stages, each
+      // of which may run in a different coding-agent session. Session binding
+      // happens when ENTERING a stage (handover / continue).
     );
 
     // init created the checkpoint but did NOT enter any step —
@@ -562,6 +659,14 @@ export class WorkflowEngine {
         'UNKNOWN_WORKFLOW',
         `Active checkpoint references workflow "${active.workflow}" but no such workflow is defined in config.`,
       );
+    }
+
+    // Bind the coding-agent session (if the caller reported one) to the
+    // active checkpoint. Auto-appended by the plugin hooks; there is nothing
+    // to do when the payload omits it. This is a side-effect-free-record only
+    // — it does not change the step transition.
+    if (payload.sessionId) {
+      this.checkpoints.recordSession(active.workflow, payload.sessionId);
     }
 
     // Resume a deferred transition: a previous handover served a
@@ -771,7 +876,7 @@ export class WorkflowEngine {
    * no `recordStepAdvance`, no next-step resolution. `currentStep` in
    * the returned `data` is the SAME step the workflow is already on.
    */
-  private continueWorkflow(): CommandResult {
+  private continueWorkflow(payload: WorkflowContinuePayload): CommandResult {
     const resolved = this.resolveActiveWorkflow();
     if (!resolved) {
       return err('NO_ACTIVE_WORKFLOW', 'No active workflow to continue. Run `aet workflow init --name <id>` first.');
@@ -801,6 +906,13 @@ export class WorkflowEngine {
         'UNKNOWN_STEP',
         `Active checkpoint's currentStep "${active.currentStepId}" not found in workflow "${active.workflow}".`,
       );
+    }
+
+    // Bind the coding-agent session (if reported) to the CURRENT stage.
+    // A resumed workflow may run in a new session after an interrupt; this
+    // re-binds the stage so `ca.stop` verifies against the right session.
+    if (payload.sessionId) {
+      this.checkpoints.recordSession(active.workflow, payload.sessionId);
     }
 
     // Record step_resumed (Core-internal). No currentStepId change.
@@ -991,6 +1103,44 @@ function buildWorkflowCompletePrompt(workflowName: string): string {
     '所有步骤已完成，工作流结束。',
     '',
     '无需再调用 `aet workflow handover`。',
+  ].join('\n');
+}
+
+interface CaStopPromptContext {
+  workflowName: string;
+  workflowId: string;
+  currentStepId: string | null;
+  checkpointId: string;
+}
+
+/**
+ * Build the guidance prompt the agent sees when it stops producing output
+ * while an AET workflow is active AND the stopping session is the one bound
+ * to that workflow (`ca.stop` session-match branch).
+ *
+ * The prompt tells the agent how to proceed rather than letting it stop:
+ *   - if it is asking a question → use the question tool, do NOT stop;
+ *   - if the current stage task is done → call `aet workflow handover`;
+ *   - otherwise → continue working until the workflow ends.
+ *
+ * Deliberately cites the workflow / current step / checkpoint so the agent
+ * can confirm it is the right workflow before acting. Carried as the
+ * top-level `prompt` field; the plugin surfaces it and keeps the agent going.
+ */
+function buildCaStopPrompt(c: CaStopPromptContext): string {
+  return [
+    '## AET 工作流进行中 — 请勿停止',
+    '',
+    `你正在执行 AET 工作流 \`${c.workflowName}\`（\`${c.workflowId}\`），`,
+    `当前阶段：\`${c.currentStepId ?? '(尚未进入任何 step)'}\`，checkpoint：\`${c.checkpointId}\`。`,
+    '',
+    '检测到你已停止输出，请根据当前情况继续：',
+    '',
+    '- **如果你正在提问**：请使用提问（question）工具，而不要停止。',
+    '- **如果当前阶段任务已完成**：调用 `aet workflow handover` 推进到下一阶段。',
+    '- **否则**：请继续工作，直到工作流结束。',
+    '',
+    '请勿在此工作流结束前停止。',
   ].join('\n');
 }
 

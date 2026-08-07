@@ -14,11 +14,39 @@ function bashArgs(command: string) {
 describe('tool.execute.before', () => {
   const hook = makeHook();
 
-  it('rewrites an aet workflow command to append --output json', () => {
+  it('rewrites an aet workflow handover to append --output json and --session-id', () => {
     const input = { tool: 'bash', sessionID: 's', callID: 'c' };
     const output = bashArgs('aet workflow handover');
     hook(input, output);
-    expect(output.args.command).toBe('aet workflow handover --output json');
+    expect(output.args.command).toBe('aet workflow handover --session-id s --output json');
+  });
+
+  it('appends --session-id to a workflow handover with an existing --output json', () => {
+    const input = { tool: 'bash', sessionID: 's', callID: 'c' };
+    const output = bashArgs('aet workflow handover --output json');
+    hook(input, output);
+    const cmd = output.args.command;
+    expect(cmd).toContain('--session-id s');
+    expect(cmd).toContain('--output json');
+  });
+
+  it('appends --session-id to a workflow continue (re-bind current stage)', () => {
+    const input = { tool: 'bash', sessionID: 's2', callID: 'c' };
+    const output = bashArgs('aet workflow continue');
+    hook(input, output);
+    expect(output.args.command).toBe('aet workflow continue --session-id s2 --output json');
+  });
+
+  it('does not append --session-id to non-stage-entry workflow commands', () => {
+    const input = { tool: 'bash', sessionID: 's', callID: 'c' };
+    const output = bashArgs('aet workflow status');
+    hook(input, output);
+    expect(output.args.command).toBe('aet workflow status --output json');
+    // init does NOT bind a session (per-stage model) — no --session-id appended.
+    const output2 = bashArgs('aet workflow init --name design');
+    hook(input, output2);
+    expect(output2.args.command).toContain('--output json');
+    expect(output2.args.command).not.toContain('--session-id');
   });
 
   it('is idempotent — leaves a command that already has --output json untouched', () => {

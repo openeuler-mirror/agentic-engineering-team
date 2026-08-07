@@ -16,6 +16,8 @@ allowed-tools: Bash(aet:*) Skill(aet-install) Skill(aet:aet-install)
    Load the `aet-install` skill and follow its steps.
    If it is already installed, skip this step.
 
+   当前 plugin 版本为 `__AET_PLUGIN_VERSION__`；若 `aet -v` 的版本低于当前 plugin 版本，也需要执行第二步的安装。
+
 3. On success, run:
 
    ```bash

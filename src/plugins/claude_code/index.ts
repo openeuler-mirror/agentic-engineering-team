@@ -74,6 +74,17 @@ export const CC_PLUGIN_MANIFEST: CcPluginManifest = {
           ],
         },
       ],
+      Stop: [
+        {
+          matcher: '',
+          hooks: [
+            {
+              type: 'command',
+              command: 'node "$CLAUDE_PROJECT_DIR/node_modules/@aet/workflow-core/dist/plugins/claude_code/handlers/aet_handler.js"',
+            },
+          ],
+        },
+      ],
     },
   },
   commands: [],

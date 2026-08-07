@@ -116,6 +116,13 @@ export async function handleUserPromptSubmit(input: CcHookInput): Promise<void> 
   if (argText) {
     argv.push('--argument', argText);
   }
+  // Bind the coding-agent session at workflow start so the `ca.stop` event
+  // (the Stop / session.idle guard) can verify the stopping session owns this
+  // workflow.
+  // `input.session_id` is CC's ambient session for this user prompt.
+  if (input.session_id) {
+    argv.push('--session-id', input.session_id);
+  }
   const result = await runAet(argv, input.cwd);
 
   if (result === null) {

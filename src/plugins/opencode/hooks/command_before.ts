@@ -79,6 +79,12 @@ export function registerCommandBeforeHook(ctx: PluginContext): (input: unknown, 
     if (trimmed.length > 0) {
       argv.push('--argument', trimmed);
     }
+    // Bind the coding-agent session at workflow start so the `ca.stop` event
+    // (the stop/idle guard) can verify the stopping session owns this workflow.
+    // `input.sessionID` is the host's ambient session for THIS command.
+    if (input.sessionID) {
+      argv.push('--session-id', input.sessionID);
+    }
     const result = await runAetSafe(argv, { cwd: process.cwd() });
 
     // Command pass-through: not a workflow — let OpenCode render the

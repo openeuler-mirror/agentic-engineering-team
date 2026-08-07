@@ -23,6 +23,7 @@
  *
  * Usage:
  *   aet workflow command-init --name design --output json
+ *   aet workflow command-init --name design --session-id <id> --output json
  *
  * Returns (Core's handleCommandInit branches):
  *   - init failure (ok=false)         → init error result
@@ -64,11 +65,13 @@ async function runWorkflowCommandInit(
   let name: string;
   let output: OutputMode;
   let argument: string | undefined;
+  let sessionId: string | undefined;
 
   try {
     name = requireFlag(parsed, 'name', 'workflow name (e.g. design)');
     output = requireOutputMode(parsed);
     argument = optionalFlag(parsed, 'argument');
+    sessionId = optionalFlag(parsed, 'session-id');
   } catch (e) {
     if (e instanceof UsageError) {
       return cliError(e.message, 'USAGE_ERROR');
@@ -82,9 +85,15 @@ async function runWorkflowCommandInit(
   // result; intervention → intervention prompt; success → step_advanced
   // + step-1 task text). `argument` (the user's initial requirement) is
   // persisted into the checkpoint so `workflow.continue` can re-inject it.
+  // `sessionId` (if reported) binds to STEP 1 — command-init enters stage 1,
+  // so the session attaches to the stage, not to init (per-stage model).
   const event: InputEvent = {
     event: 'workflow.commandInit',
-    payload: { name, ...(argument ? { argument } : {}) },
+    payload: {
+      name,
+      ...(argument ? { argument } : {}),
+      ...(sessionId ? { sessionId } : {}),
+    },
   };
 
   const result = await bus.dispatch(event);

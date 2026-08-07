@@ -66,6 +66,12 @@ describe('workflow.init spec', () => {
     expect(dispatches[0].payload).toEqual({ name: 'aet-design' });
   });
 
+  it('does NOT forward --session-id from init (per-stage binding; init binds no session)', async () => {
+    const { bus, dispatches } = fakeBus(true);
+    await workflowInitSpec.run(bus, ['--name', 'aet-design', '--session-id', 'sess-A', '--output', 'json']);
+    expect(dispatches[0].payload).toEqual({ name: 'aet-design' });
+  });
+
   it('returns a usage error when --name is missing', async () => {
     const { bus } = fakeBus(true);
     const out = await workflowInitSpec.run(bus, ['--output', 'json']);
@@ -86,6 +92,29 @@ describe('workflow.handover spec', () => {
     const { bus, dispatches } = fakeBus(true);
     await workflowHandoverSpec.run(bus, ['--output', 'json']);
     expect(dispatches[0].payload).toEqual({});
+  });
+
+  it('forwards --session-id into the payload when supplied', async () => {
+    const { bus, dispatches } = fakeBus(true);
+    await workflowHandoverSpec.run(bus, ['--session-id', 'sess-A', '--output', 'json']);
+    expect(dispatches[0].event).toBe('workflow.handover');
+    expect(dispatches[0].payload).toEqual({ sessionId: 'sess-A' });
+  });
+});
+
+describe('workflow.continue spec', () => {
+  it('dispatches workflow.continue with an empty payload by default', async () => {
+    const { bus, dispatches } = fakeBus(true);
+    await workflowContinueSpec.run(bus, ['--output', 'json']);
+    expect(dispatches[0].event).toBe('workflow.continue');
+    expect(dispatches[0].payload).toEqual({});
+  });
+
+  it('forwards --session-id into the payload when supplied (re-bind current stage)', async () => {
+    const { bus, dispatches } = fakeBus(true);
+    await workflowContinueSpec.run(bus, ['--session-id', 'sess-B', '--output', 'json']);
+    expect(dispatches[0].event).toBe('workflow.continue');
+    expect(dispatches[0].payload).toEqual({ sessionId: 'sess-B' });
   });
 });
 

@@ -15,7 +15,7 @@
  *     `NOT_IMPLEMENTED` — never throws, never silently swallows. This is the
  *     "降级一致" principle (新方案.md §1.3).
  *
- * This iteration registers seven handlers:
+ * This iteration registers eight handlers:
  *   - `workflow.init`        → WorkflowEngine.handleInit
  *   - `workflow.handover`   → WorkflowEngine.handleHandover
  *   - `workflow.continue`   → WorkflowEngine.handleContinue
@@ -23,6 +23,7 @@
  *   - `workflow.status`     → WorkflowEngine.handleStatus
  *   - `workflow.abort`      → WorkflowEngine.handleAbort
  *   - `workflow.list`       → WorkflowEngine.handleList
+ *   - `ca.stop`             → WorkflowEngine.handleCaStop
  */
 
 import type { CommandResult, InputEvent, InputEventId } from '../definitions/events.js';
@@ -66,6 +67,7 @@ export class EventBus {
       'workflow.status': (e) => this._workflowEngine.handleStatus(e),
       'workflow.abort': (e) => this._workflowEngine.handleAbort(e),
       'workflow.list': (e) => this._workflowEngine.handleList(e),
+      'ca.stop': (e) => this._workflowEngine.handleCaStop(e),
     };
     for (const [id, handler] of Object.entries(engineHandlers) as Array<
       [InputEventId, InputEventHandler]

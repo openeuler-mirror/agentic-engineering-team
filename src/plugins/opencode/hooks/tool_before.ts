@@ -6,9 +6,13 @@
  * the OpenCode Plugin API.
  *
  * When the agent invokes the `bash` tool with an `aet workflow ...` /
- * `aet plugin init ...` command, REWRITE the command to append the flag the
+ * `aet plugin init ...` command, REWRITE the command to append the flags the
  * plugin needs:
- *   - `aet workflow <...>`  → append `--output json` (idempotent)
+ *   - `aet workflow <...>`  → append `--output json` (idempotent), and for
+ *                             `aet workflow handover` / `continue` also append
+ *                             `--session-id <sessionID>` so the stopping-session
+ *                             guard (the `ca.stop` event) can verify which
+ *                             session owns the current stage (idempotent).
  *   - `aet plugin init`     → append `--agent opencode`
  *
  * OpenCode passes the live `output.args` object by reference and reads it
@@ -41,9 +45,11 @@ interface ToolBeforeOutput {
 
 /**
  * Build the `tool.execute.before` hook handler. Rewrites an AET Bash command
- * to append `--output json` (workflow) or `--agent opencode` (plugin init).
- * Returns the handler so the plugin entry can return its hooks object (the
- * OpenCode Plugin API contract — the plugin RETURNS its hooks).
+ * to append `--output json` (workflow) / `--agent opencode` (plugin init),
+ * plus `--session-id <sessionID>` on workflow handover calls so the
+ * checkpoint binds the coding-agent session. Returns the handler so the
+ * plugin entry can return its hooks object (the OpenCode Plugin API contract
+ * — the plugin RETURNS its hooks).
  */
 export function registerToolBeforeHook(ctx: PluginContext): (input: unknown, output: unknown) => Promise<void> {
   return async (rawInput: unknown, rawOutput: unknown): Promise<void> => {
@@ -56,8 +62,20 @@ export function registerToolBeforeHook(ctx: PluginContext): (input: unknown, out
     if (!command) return;
 
     if (AET_WORKFLOW_RE.test(command)) {
-      const rewritten = rewriteAddFlag(command, ['--output', '-o'], 'json');
-      if (rewritten !== null) output.args.command = rewritten;
+      let rewritten = rewriteAddFlag(command, ['--output', '-o'], 'json');
+      if (rewritten !== null) {
+        output.args.command = rewritten;
+      }
+      // Bind the coding-agent session when ENTERING a stage — `aet workflow
+      // handover` (advance into the next stage) and `aet workflow continue`
+      // (resume the current stage). Per-stage binding: each stage may run in
+      // a different session, so the `ca.stop` event verifies the stopping
+      // session owns the CURRENT stage. Applies to the (post-rewrite) command
+      // so the flag lands on the same `aet` invocation.
+      if (/(aet\s+workflow\s+handover|aet\s+workflow\s+continue)\b/.test(command) && input.sessionID) {
+        rewritten = rewriteAddFlag(output.args.command, ['--session-id'], input.sessionID);
+        if (rewritten !== null) output.args.command = rewritten;
+      }
       return;
     }
 

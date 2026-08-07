@@ -99,6 +99,12 @@ const OPENCODE_TARGET_DIR = 'dist/plugins/opencode';
 const OMP_ENTRY = 'src/plugins/omp/aet_handler.ts';
 const OMP_TARGET_DIR = 'dist/plugins/omp';
 
+// Canonical AET tagline — the single description used in every generated
+// plugin.json manifest AND the one-line pitch of every plugin README. Kept
+// in sync with src/README.md's opening blockquote so the dist plugins and
+// the source-of-truth README describe the product identically.
+const AET_TAGLINE = 'AET (Agentic Engineering Team) 全流程 AI 辅助研发底座/引擎：通过多个专用 AI 智能体有序协作，覆盖从需求分析、设计、编码、测试到发布、运维的软件研发全生命周期。';
+
 const HOSTS = JSON.parse(readFileSync('src/plugins/hosts.json', 'utf8')).hosts;
 // Dialects section of hosts.json — single source of truth for the canonical→host
 // hook-namespace remap (event names + post-tool output field). Mirrors the
@@ -510,156 +516,90 @@ async function mergeRuntimeMetas(src, dest) {
 }
 
 /**
- * Build a target-specific README for an assembled plugin dir
- * (claude-code / codeagent3). The README adapts the manifest dir list,
- * install path, ${ROOT_VAR} name, baked agent id, and commands dir to the
- * target distribution so users get accurate copy/paste instructions.
+ * Coding-agent identity for the README substitution. src/README.md is the
+ * byte-for-byte source of truth for every dist plugin README; the ONLY thing
+ * that varies per host is the coding-agent's CLI command and display name
+ * (the "coding agent 名称自适应" substitution). Keyed by host label
+ * (hosts.json `label`).
+ */
+const README_AGENT_BY_LABEL = {
+  'Claude Code': { cli: 'claude', display: 'Claude Code' },
+  'CodeAgent3': { cli: 'codeagent', display: 'CodeAgent3' },
+  'Codex': { cli: 'codex', display: 'Codex' },
+  'OpenCode': { cli: 'opencode', display: 'OpenCode' },
+  'omp (Oh My Pi)': { cli: 'omp', display: 'omp' },
+};
+
+/**
+ * Dist plugin README — src/README.md taken VERBATIM (the single source of
+ * truth), with only the coding-agent identity substituted: the CLI command
+ * (`codeagent` → host) and display name (`CodeAgent3` → host). No invented
+ * install section, no truncated 快速上手 — the generated README is exactly
+ * src/README.md except for the coding-agent 名称自适应.
  *
- * @param {{targetDir: string, label: string, manifestDirs: string[], rootVar: string, commandsDir: string, agentId: string, installPath: string}} opts
+ * @param {string} label — host display name (hosts.json `label`).
  * @returns {string} README.md content
  */
-function buildPluginReadme({ targetDir, label, manifestDirs, rootVar, commandsDir, agentId, installPath, kind = 'claude' }) {
-  if (kind === 'codex') {
-    // Codex installs via marketplace registration, not directory copy.
-    return `# AET Codex plugin (marketplace)
-
-Self-contained Codex marketplace assembled at \`${targetDir}/\`. Install:
-
-\`\`\`bash
-codex plugin marketplace add ./${targetDir}
-codex plugin install aet
-\`\`\`
-
-The marketplace root ships \`marketplace.json\`; the plugin lives at
-\`plugins/aet/\` (\`plugin.json\` with \`skills\` + \`hooks\` fields, \`hooks/hooks.json\`,
-bundled \`bin/aet_handler.js\`, and \`skills/\`).
-
-## Layout
-
-- \`marketplace.json\` — market root; \`codex plugin marketplace add\` consumes it.
-- \`plugins/aet/plugin.json\` — Codex plugin manifest (\`skills: "./skills"\`,
-  \`hooks: default\` → \`hooks/hooks.json\`).
-- \`hooks/hooks.json\` — registers four hooks, all pointing at the bundled
-  handler via \`\${PLUGIN_ROOT}/bin/aet_handler.js\` (Codex injects
-  \`PLUGIN_ROOT\` into plugin-hook subprocesses; it also injects CLAUDE_*
-  variants for compatibility):
-  - **SessionStart** → BOOT MODE. Auto-runs \`aet plugin init --agent ${agentId}\`.
-  - **UserPromptSubmit** → ACTIVE MODE: catch \`/aet-<id>\` slash commands.
-  - **PreToolUse**/**PostToolUse** → PASSIVE MODE pre/post (Codex's hook
-    names match Claude 1:1, so the claude-identity \`codex\` dialect needs
-    no overrides).
-- \`bin/aet_handler.js\` — Node CJS handler; Codex hook names match Claude
-  (verified via ctx7), so the claude-identity \`codex\` dialect needs no overrides.
-- \`skills/<name>/SKILL.md\` — ~40 AET skills.
-
-## Updating
-
-Rebuild (\`npm run build\`) and re-run \`codex plugin marketplace add\`. Version
-tracks the root \`@aet/workflow-core\` package version.
-
-`;
+function buildHostReadme(label) {
+  let readme = readFileSync('src/README.md', 'utf8');
+  const agent = README_AGENT_BY_LABEL[label];
+  if (agent) {
+    // src/README.md names the coding agent as `codeagent` / CodeAgent3;
+    // substitute the host's CLI command and display name everywhere they
+    // appear. For CodeAgent3 both are identity → byte-for-byte identical.
+    readme = readme.split('codeagent').join(agent.cli).split('CodeAgent3').join(agent.display);
   }
+  return readme;
+}
 
-  const manifestLines = manifestDirs
-    .map((d) => {
-      if (d === '.claude-plugin') {
-        return [
-          `- \`.claude-plugin/plugin.json\` — CC native manifest (auto-discovered by Claude Code).`,
-          `- \`.claude-plugin/marketplace.json\` — per-plugin marketplace catalog (generated at build time; \`claude plugin marketplace add ./${targetDir}\` reads it to install the \`aet\` plugin).`,
-        ].join('\n');
-      }
-      if (d === '.cac-plugin') {
-        return `- \`.cac-plugin/plugin.json\` — manifest for the \`${label}\` runtime (auto-discovered).`;
-      }
-      return `- \`.${d}/plugin.json\` — manifest.`;
-    })
-    .join('\n');
+/**
+ * Build the README for an assembled plugin dir (claude-code / codeagent3 /
+ * codex). The README is src/README.md taken verbatim, with only the
+ * coding-agent name adapted for the target distribution (see
+ * buildHostReadme). No character is invented or dropped: the generated
+ * README is byte-for-byte src/README.md except the coding-agent identity.
+ *
+ * @param {{label: string}} opts — label (host display name).
+ * @returns {string} README.md content
+ */
+function buildPluginReadme({ label }) {
+  return buildHostReadme(label);
+}
 
-  // Marketplace install command name per host (both are claude-family runtimes
-  // that share the claude plugin marketplace syntax, but the binary name
-  // differs: `claude` for claude-code, `codeagent` for codeagent3 — matching
-  // install.sh's CLI detection). The per-plugin catalog is at
-  // {manifestDir}/marketplace.json, generated at build time.
-  const cliCmd = agentId === 'codeagent3' ? 'codeagent' : 'claude';
 
-  return `# AET ${label} plugin
+/**
+ * Copy src/commands/ into a dist commands dir, substituting build-time
+ * version placeholders. enable.md carries a `__AET_PLUGIN_VERSION__`
+ * placeholder (the plugin's current version, shown to the user deciding
+ * whether to re-run the install step); the placeholder is replaced with the
+ * real root package version here so the shipped command reports the actual
+ * plugin version.
+ *
+ * @param {string} commandsDest — target commands dir (host plugin commands/).
+ * @param {string} version — root @aet/workflow-core version (plugin version).
+ * @param {string} label — host label for log lines.
+ */
+async function copyCommandsWithVersion(commandsDest, version, label) {
+  await mkdir(commandsDest, { recursive: true });
+  if (!fileExists(COMMANDS_SRC)) {
+    console.log(`[aet:build] ${label.padEnd(12)} → ${commandsDest} (empty, ${COMMANDS_SRC} not found)`);
+    return;
+  }
+  await cp(COMMANDS_SRC, commandsDest, { recursive: true });
+  const cmdFiles = (await readdir(commandsDest, { withFileTypes: true }))
+    .filter((e) => e.isFile()).length;
+  console.log(`[aet:build] ${label.padEnd(12)} → ${commandsDest} (copy, ${cmdFiles} files)`);
 
-Self-contained plugin assembled at \`${targetDir}/\`. Install via marketplace
-(the plugin tree ships its own \`${manifestDirs[0]}/marketplace.json\` catalog,
-generated at build time — one catalog per plugin, no shared root template):
-
-\`\`\`bash
-${cliCmd} plugin marketplace add ./${targetDir}
-${cliCmd} plugin install aet@aet
-\`\`\`
-
-Or copy the plugin dir directly:
-
-\`\`\`bash
-cp -r ${targetDir} ${installPath}
-\`\`\`
-
-Restart the host runtime (or run \`/plugin reload\` if supported). Verify with
-\`/design\` — the UserPromptSubmit hook fires, runs \`aet workflow
-command-init --name design --output json\` (one-shot init + enter
-step 1), and injects the AET orientation banner + step-1 task prompt
-as additionalContext for the agent to execute.
-
-## Layout
-
-${manifestLines}
-- \`hooks/hooks.json\` — registers four hooks, all pointing at the same
-  handler script (it dispatches internally on \`hookEventName\`):
-  - **SessionStart** (matcher \`""\`) → BOOT MODE. Auto-runs \`aet plugin
-    init --agent ${agentId}\` to generate slash command files for every
-    workflow in the merged config (baseline + custom) into the project's
-    \`${commandsDir}/\`. Idempotent; output suppressed on success.
-  - **UserPromptSubmit** (matcher \`""\`) → ACTIVE MODE. Catches any
-    \`/aet-<id>\` slash command and runs \`aet workflow command-init
-    --name <id> --output json\` in one shot (init + enter step 1).
-  - **PreToolUse** (matcher \`Bash\`) → PASSIVE MODE pre. Rewrites any
-    \`aet workflow ...\` Bash command to append \`--output json\`.
-  - **PostToolUse** (matcher \`Bash\`) → PASSIVE MODE post. Parses the
-    JSON stdout, injects \`result.prompt\` as additionalContext for the
-    next turn (agent doesn't see raw JSON stdout).
-- \`bin/aet_handler.js\` — Node CJS handler, executable (shebang + 0755).
-  Dispatches on \`hookEventName\`. Referenced from \`hooks/hooks.json\` as
-  \`\${${rootVar}}/bin/aet_handler.js\` — the host substitutes the
-  installed plugin root at hook fire time.
-- \`commands/\` — NOT shipped. All slash command files are generated at
-  runtime by the SessionStart hook into the project's \`${commandsDir}/\`
-  (one \`aet-<id>.md\` per workflow in the merged config).
-- \`skills/<name>/SKILL.md\` — ~40 AET skills (requirement analysis,
-  design, implementation, bugfix, CVE handling, doc generation, code
-  review, etc.). The host auto-discovers each subdirectory; agents invoke
-  via \`/skill-name\` or autonomously per the trigger description in each
-  SKILL.md frontmatter.
-
-## Capabilities
-
-Per AGENTS.md "Plugin 三钩子" + "已知 stale 代码" — dual-channel design
-(Core b3):
-
-| AET event              | behavior                                                   |
-|------------------------|------------------------------------------------------------|
-| \`prompt.inject\`        | supported — injected as additionalContext                   |
-| \`prompt.inject_system\` | degraded — surfaces as \`[AET system note] ...\`             |
-| \`context.clear\`        | degraded — surfaces as a text hint (rarely emitted under b3)|
-| \`omit_prompt\`          | degraded — emit \`{}\`, let raw stdout pass (no native suppress) |
-| \`interrupt_execution\` | degraded — surfaces as an additionalContext warning (no native halt) |
-| \`error\`                | always visible (R9)                                        |
-
-Lifecycle metadata from \`CommandResult.data\` (workflow_started /
-step_advanced / workflow_complete / intervention_required) is surfaced as
-a brief status banner prepended to additionalContext.
-
-## Updating
-
-Rebuild the workflow-core package (\`npm run build\` in this repo) and
-re-copy the directory. The plugin version in \`plugin.json\` tracks the
-root \`@aet/workflow-core\` package version.
-
-`;
+  // Substitute the plugin version placeholder in every shipped command file.
+  const enablePath = join(commandsDest, 'enable.md');
+  if (fileExists(enablePath)) {
+    const prev = await readFile(enablePath, 'utf8');
+    const next = prev.split('__AET_PLUGIN_VERSION__').join(version);
+    if (next !== prev) {
+      await writeFile(enablePath, next, 'utf8');
+      console.log(`[aet:build] ${label.padEnd(12)} → ${join(commandsDest, 'enable.md')} (stamp v${version})`);
+    }
+  }
 }
 
 /**
@@ -695,7 +635,7 @@ async function assemblePlugin(opts, rootPkg) {
   //    and .cac-plugin so one install loads under both runtimes).
   const pluginJson = {
     name: 'aet',
-    description: 'AET workflow orchestration for Claude Code (feature / design / implement / bugfix).',
+    description: AET_TAGLINE,
     version: rootPkg.version,
   };
   for (const manifestDir of manifestDirs) {
@@ -723,7 +663,7 @@ async function assemblePlugin(opts, rootPkg) {
         {
           name: 'aet',
           source: './',
-          description: `AET workflow orchestration for ${label} (feature / design / implement / bugfix).`,
+          description: AET_TAGLINE,
         },
       ],
     };
@@ -737,10 +677,12 @@ async function assemblePlugin(opts, rootPkg) {
 
   // 2. hooks/hooks.json — references handler via ${rootVar}, so no
   //    hardcoded node_modules path. The host substitutes the variable
-  //    at hook fire time. Bare-command form relies on shebang + chmod
-  //    applied to bin/aet_handler.js below (either by the build step
-  //    for the canonical dir, or by chmod 0755 in the copy step for
-  //    mirrors).
+  //    at hook fire time. The command is prefixed with `node ` rather
+  //    than relying on the shebang + executable bit: the +x on
+  //    bin/aet_handler.js may be stripped when the plugin is copied
+  //    into the host's plugin dir, which would make a bare-command
+  //    form fail with "Permission denied". `node <path>` runs the
+  //    bundle regardless of file mode.
   //    Four hooks registered, keyed by the HOST's event names (resolved
   //    from the dialect in hosts.json — identity for all currently-registered
   //    dialects: claude, codex, and codeagent are aligned 1:1).
@@ -763,7 +705,7 @@ async function assemblePlugin(opts, rootPkg) {
   //    on `hookEventName`. The variable name differs by distribution
   //    (CLAUDE_PLUGIN_ROOT for claude-code, CODEAGENT3_PLUGIN_ROOT for
   //    codeagent3) — the host runtime must substitute the matching var.
-  const HANDLER_CMD = `\${${rootVar}}/bin/aet_handler.js`;
+  const HANDLER_CMD = `node \${${rootVar}}/bin/aet_handler.js`;
   const hooksJson = {
     description: 'AET workflow hooks (SessionStart auto-init + active UserPromptSubmit + passive PreToolUse/PostToolUse)',
     hooks: {
@@ -791,6 +733,12 @@ async function assemblePlugin(opts, rootPkg) {
           hooks: [{ type: 'command', command: HANDLER_CMD, timeout: 30 }],
         },
       ],
+      [toHostEvent(dialectId, 'Stop')]: [
+        {
+          matcher: '',
+          hooks: [{ type: 'command', command: HANDLER_CMD, timeout: 30 }],
+        },
+      ],
     },
   };
   await writeFile(
@@ -813,15 +761,7 @@ async function assemblePlugin(opts, rootPkg) {
   //    (e.g. enable.md). cp() recursively so additions under src/commands/
   //    flow through automatically.
   const commandsDest = join(targetDir, 'commands');
-  await mkdir(commandsDest, { recursive: true });
-  if (fileExists(COMMANDS_SRC)) {
-    await cp(COMMANDS_SRC, commandsDest, { recursive: true });
-    const cmdFiles = (await readdir(commandsDest, { withFileTypes: true }))
-      .filter((e) => e.isFile()).length;
-    console.log(`[aet:build] ${label.padEnd(12)} → ${commandsDest} (copy, ${cmdFiles} files)`);
-  } else {
-    console.log(`[aet:build] ${label.padEnd(12)} → ${commandsDest} (empty, ${COMMANDS_SRC} not found)`);
-  }
+  await copyCommandsWithVersion(commandsDest, rootPkg.version, label);
 
   // 5. skills/ — recursive copy of all AET skill subdirectories from the
   //    repo's top-level `skills/` dir. Each subdirectory contains a
@@ -865,7 +805,8 @@ async function assemblePlugin(opts, rootPkg) {
  * Per the Codex hooks spec (verified via ctx7): hook event names stay
  * CamelCase (PreToolUse/PostToolUse — the codex dialect maps them 1:1), the
  * Bash matcher is a REGEX (`^Bash$`), and plugin hooks run with `PLUGIN_ROOT`
- * injected, so the command is `${PLUGIN_ROOT}/bin/aet_handler.js`.
+ * injected, so the command is `node ${PLUGIN_ROOT}/bin/aet_handler.js` (node
+ * prefix — the +x bit on bin/aet_handler.js may be stripped on install).
  *
  * @param {{targetDir: string, label: string, rootVar: string, commandsDir: string, agentId: string, installPath: string}} dist
  * @param {{ version: string, name?: string }} rootPkg
@@ -911,7 +852,7 @@ async function assembleCodexMarketplace(dist, rootPkg, readme) {
   const pluginJson = {
     name: 'aet',
     version: rootPkg.version,
-    description: 'AET workflow orchestration for Codex (feature / design / implement / bugfix).',
+    description: AET_TAGLINE,
     skills: './skills',
   };
   await writeFile(
@@ -923,9 +864,10 @@ async function assembleCodexMarketplace(dist, rootPkg, readme) {
 
   // plugins/aet/hooks/hooks.json — four hooks, regex Bash matcher, and the
   // handler referenced via ${PLUGIN_ROOT} (Codex injects PLUGIN_ROOT — plus
-  // CLAUDE_* compat vars — into plugin-hook subprocesses). Event keys are
+  // CLAUDE_* compat vars — into plugin-hook subprocesses). `node ` prefix —
+  // the +x bit on bin/aet_handler.js may be stripped on install. Event keys are
   // the host's names via the dialect (codex is identity → PreToolUse etc.).
-  const HANDLER_CMD = '${PLUGIN_ROOT}/bin/aet_handler.js';
+  const HANDLER_CMD = 'node ${PLUGIN_ROOT}/bin/aet_handler.js';
   const hooksJson = {
     description: 'AET workflow hooks (SessionStart auto-init + active UserPromptSubmit + passive PreToolUse/PostToolUse)',
     hooks: {
@@ -940,6 +882,9 @@ async function assembleCodexMarketplace(dist, rootPkg, readme) {
       ],
       [toHostEvent(dist.dialectId, 'PostToolUse')]: [
         { matcher: '^Bash$', hooks: [{ type: 'command', command: HANDLER_CMD, timeout: 30 }] },
+      ],
+      [toHostEvent(dist.dialectId, 'Stop')]: [
+        { matcher: '', hooks: [{ type: 'command', command: HANDLER_CMD, timeout: 30 }] },
       ],
     },
   };
@@ -970,65 +915,13 @@ async function assembleCodexMarketplace(dist, rootPkg, readme) {
 }
 
 /**
- * README for the self-contained OpenCode plugin package.
+ * README for the self-contained OpenCode plugin package — src/README.md
+ * verbatim, coding-agent name adapted to OpenCode.
  *
  * @returns {string} README.md content
  */
 function buildOpencodeReadme() {
-  return `# AET OpenCode plugin
-
-Self-contained OpenCode plugin package assembled at \`${OPENCODE_TARGET_DIR}/\`. Install:
-
-\`\`\`bash
-cp -r ${OPENCODE_TARGET_DIR} ~/.config/opencode/plugin/aet
-\`\`\`
-
-or point the \`plugin\` array in your \`opencode.json\` at this directory:
-
-\`\`\`json
-{ "plugin": ["/abs/path/to/${OPENCODE_TARGET_DIR}"] }
-\`\`\`
-
-Restart OpenCode. Verify with the \`skill\` tool (AET skills listed) and \`/enable\`.
-
-## What ships
-
-- \`package.json\` — \`main: bin/aet_handler.js\`; OpenCode resolves the plugin entry here.
-- \`bin/aet_handler.js\` — ESM plugin entry. Registers, per the OpenCode Plugin API:
-  - **\`config\`** → adds \`skills/\` to \`config.skills.paths\` and registers each
-    \`commands/*.md\` as a \`config.command\` template. Paths are resolved RELATIVE
-    to the plugin file (\`import.meta.url\`), so the package works from any
-    install location — no hardcoded paths.
-  - **\`command.execute.before\`** → ACTIVE MODE. Runs \`aet workflow command-init
-    --name <cmd>\` for any registered command; non-workflow ids
-    (UNKNOWN_WORKFLOW) pass through to OpenCode's native rendering.
-  - **\`tool.execute.before\`** → PASSIVE MODE pre. Rewrites \`aet workflow ...\` to
-    append \`--output json\`, and \`aet plugin init\` to append \`--agent opencode\`.
-  - **\`tool.execute.after\`** → PASSIVE MODE post. Replaces an \`aet workflow\` Bash
-    tool result with \`result.prompt\` (agent never sees raw JSON stdout).
-- \`skills/<name>/SKILL.md\` — ~40 AET skills (requirement analysis, design,
-  implementation, bugfix, CVE handling, doc generation, code review, etc.).
-- \`commands/\` — markdown command templates registered into \`config.command\`.
-
-## Capabilities
-
-Dual-channel design (Core b3):
-
-| AET event              | behavior                                                   |
-|------------------------|------------------------------------------------------------|
-| \`prompt.inject\`        | supported — appended as a text part                         |
-| \`prompt.inject_system\` | degraded — surfaces as a text part (no system mutation)    |
-| \`context.clear\`        | degraded — in-hook emits an instruction part               |
-| \`omit_prompt\`          | degraded — leave the tool result untouched                 |
-| \`interrupt_execution\`  | degraded — surfaces as an instruction part                 |
-| \`error\`                | always visible (R9)                                        |
-
-## Updating
-
-Rebuild the workflow-core package (\`npm run build\`) and re-copy the
-directory. The plugin version in \`package.json\` tracks the root package.
-
-`;
+  return buildHostReadme('OpenCode');
 }
 
 /**
@@ -1088,15 +981,7 @@ async function assembleOpencodePlugin(rootPkg) {
   // 4. commands/ — copy of src/commands/ (the config hook registers each as a
   //    config.command template).
   const commandsDest = join(targetDir, 'commands');
-  await mkdir(commandsDest, { recursive: true });
-  if (fileExists(COMMANDS_SRC)) {
-    await cp(COMMANDS_SRC, commandsDest, { recursive: true });
-    const cmdFiles = (await readdir(commandsDest, { withFileTypes: true }))
-      .filter((e) => e.isFile()).length;
-    console.log(`[aet:build] ${'opencode'.padEnd(12)} → ${commandsDest} (copy, ${cmdFiles} files)`);
-  } else {
-    console.log(`[aet:build] ${'opencode'.padEnd(12)} → ${commandsDest} (empty, ${COMMANDS_SRC} not found)`);
-  }
+  await copyCommandsWithVersion(commandsDest, rootPkg.version, 'opencode');
 
   // 5. README.md — install instructions.
   await writeFile(join(targetDir, 'README.md'), buildOpencodeReadme(), 'utf8');
@@ -1107,86 +992,13 @@ async function assembleOpencodePlugin(rootPkg) {
 }
 
 /**
- * README for the self-contained omp (Oh My Pi) extension package.
+ * README for the self-contained omp (Oh My Pi) extension package —
+ * src/README.md verbatim, coding-agent name adapted to omp.
  *
  * @returns {string} README.md content
  */
 function buildOmpReadme() {
-  return `# AET omp (Oh My Pi) plugin
-
-Self-contained omp (Oh My Pi) plugin package assembled at \`${OMP_TARGET_DIR}/\`. Install via omp's
-marketplace (the package carries its own \`.claude-plugin/marketplace.json\` catalog — omp reuses
-Claude Code's marketplace format/location per its docs):
-
-\`\`\`bash
-omp marketplace add ./${OMP_TARGET_DIR}
-omp install aet@aet
-\`\`\`
-
-Restart omp and verify with a generated \`/aet-<id>\` slash command.
-
-## What ships
-
-- \`.claude-plugin/marketplace.json\` — per-plugin marketplace catalog (GENERATED at build time,
-  not a shared root template). omp registers \`${OMP_TARGET_DIR}\` as the marketplace root and reads
-  this catalog; \`source: "./"\` resolves to the plugin tree itself. Each coding-agent plugin
-  (claude-code / omp / codex) ships its own catalog in its own dist tree, so the filename never
-  collides across hosts.
-- \`package.json\` — \`omp: { extensions: ["./bin/aet_handler.js"] }\`; omp resolves
-  the hook factory here (NOT a \`main\` field — omp uses the \`omp.extensions\`
-  manifest, per the omp extension-authoring contract).
-- \`bin/aet_handler.js\` — ESM hook factory. Subscribes, per the omp HookAPI:
-  - **\`tool_call\`** (PASSIVE pre). Rewrites \`aet workflow ...\` to append
-    \`--output json\`, and \`aet plugin init\` to append \`--agent omp\`.
-  - **\`tool_result\`** (PASSIVE post). Replaces an \`aet workflow\` bash tool
-    result's content with \`result.prompt\` (agent never sees raw JSON stdout).
-- \`skills/<name>/SKILL.md\` — ~40 AET skills (requirement analysis, design,
-  implementation, bugfix, CVE handling, doc generation, code review, etc.).
-  omp auto-discovers the \`skills/\` directory by convention.
-- \`commands/\` — markdown slash-command templates omp auto-discovers. The
-  AET \`/aet-<id>\` slash commands are generated project-side into
-  \`.omp/commands/\` by \`aet plugin init --agent omp\` with \`hasPlugin:false\`,
-  so each command body carries a \`## 启动工作流\` section guiding the agent
-  to run \`aet workflow init --name <id>\` + \`aet workflow handover\` via bash;
-  the two hooks above rewrite those bash calls + inject \`result.prompt\` —
-  this carries ACTIVE MODE (slash → init + step-1 task) since omp's HookAPI
-  exposes no \`command.execute.before\` equivalent.
-
-## ACTIVE MODE on omp
-
-omp's HookAPI does NOT expose a \`command.execute.before\` hook (per ctx7 omp
-docs: hookable events are \`tool_call\` / \`tool_result\` / message rewrite /
-compact / session lifecycle). So AET's ACTIVE MODE (intercept \`/aet-*\` and
-auto-init the workflow) degrades to the natural path: the generated
-\`.omp/commands/aet-<id>.md\` body (rendered with \`hasPlugin:false\` in
-hosts.json) carries a \`## 启动工作流\` section that tells the agent to run
-\`aet workflow init --name <id> --argument <原始需求>\` then
-\`aet workflow handover\` via bash. The \`tool_call\` hook appends
-\`--output json\` to each, and the \`tool_result\` hook injects
-\`result.prompt\` — keeping the full AET init + step-1-task delivery within
-omp's actual hook surface. The PASSIVE plugin (the two tool hooks) still
-ships and runs; only the auto-init half is carried by the command body
-instead of a command-pre hook.
-
-## Capabilities
-
-Dual-channel design (Core b3):
-
-| AET event              | behavior                                                   |
-|------------------------|------------------------------------------------------------|
-| \`prompt.inject\`        | supported — replaced as a text content part                 |
-| \`prompt.inject_system\` | degraded — surfaces as a text content part (no system mutation) |
-| \`context.clear\`        | degraded — surfaces as a text instruction (no session.create) |
-| \`omit_prompt\`          | degraded — leave the tool result untouched                 |
-| \`interrupt_execution\`  | degraded — surfaces as a text instruction                  |
-| \`error\`                | always visible (R9)                                        |
-
-## Updating
-
-Rebuild the workflow-core package (\`npm run build\`) and re-copy the
-directory. The plugin version in \`package.json\` tracks the root package.
-
-`;
+  return buildHostReadme('omp (Oh My Pi)');
 }
 
 /**
@@ -1257,7 +1069,7 @@ async function assembleOmpPlugin(rootPkg) {
       {
         name: 'aet',
         source: './',
-        description: 'AET workflow orchestration for omp / Oh My Pi (aet Bash rewriting + workflow result injection via HookAPI tool_call/tool_result hooks).',
+        description: AET_TAGLINE,
       },
     ],
   };
@@ -1280,15 +1092,7 @@ async function assembleOmpPlugin(rootPkg) {
   //    `aet plugin init --agent omp`; these shipped templates are the static
   //    ones (e.g. enable.md).
   const commandsDest = join(targetDir, 'commands');
-  await mkdir(commandsDest, { recursive: true });
-  if (fileExists(COMMANDS_SRC)) {
-    await cp(COMMANDS_SRC, commandsDest, { recursive: true });
-    const cmdFiles = (await readdir(commandsDest, { withFileTypes: true }))
-      .filter((e) => e.isFile()).length;
-    console.log(`[aet:build] ${'omp'.padEnd(12)} → ${commandsDest} (copy, ${cmdFiles} files)`);
-  } else {
-    console.log(`[aet:build] ${'omp'.padEnd(12)} → ${commandsDest} (empty, ${COMMANDS_SRC} not found)`);
-  }
+  await copyCommandsWithVersion(commandsDest, rootPkg.version, 'omp');
 
   // 5. README.md — install instructions.
   await writeFile(join(targetDir, 'README.md'), buildOmpReadme(), 'utf8');
@@ -1373,16 +1177,7 @@ async function main() {
       //    claude / codeagent3 → shared-tree plugin (assemblePlugin);
       //    codex → marketplace tree with the plugin self-contained under
       //    plugins/aet/ (assembleCodexMarketplace).
-      const readme = buildPluginReadme({
-        targetDir: dist.targetDir,
-        label: dist.label,
-        manifestDirs: dist.manifestDirs,
-        rootVar: dist.rootVar,
-        commandsDir: dist.commandsDir,
-        agentId: dist.agentId,
-        installPath: dist.installPath,
-        kind: dist.kind,
-      });
+      const readme = buildPluginReadme({ label: dist.label });
       if (dist.kind === 'codex') {
         await assembleCodexMarketplace(dist, rootPkg, readme);
       } else {

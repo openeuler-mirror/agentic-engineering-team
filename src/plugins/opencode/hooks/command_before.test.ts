@@ -39,7 +39,7 @@ describe('command.execute.before', () => {
     await hook({ command: 'design', sessionID: 's', arguments: '' }, output);
 
     expect(runAetSafe).toHaveBeenCalledWith(
-      ['workflow', 'command-init', '--name', 'design'],
+      ['workflow', 'command-init', '--name', 'design', '--session-id', 's'],
       { cwd: expect.any(String) },
     );
     expect(applyResult).toHaveBeenCalledWith(ctx, expect.objectContaining({ ok: true }), 'in-hook', {
@@ -54,7 +54,7 @@ describe('command.execute.before', () => {
     await hook({ command: 'design', sessionID: 's', arguments: '做一个登录功能' }, output);
 
     expect(runAetSafe).toHaveBeenCalledWith(
-      ['workflow', 'command-init', '--name', 'design', '--argument', '做一个登录功能'],
+      ['workflow', 'command-init', '--name', 'design', '--argument', '做一个登录功能', '--session-id', 's'],
       { cwd: expect.any(String) },
     );
   });
@@ -66,7 +66,7 @@ describe('command.execute.before', () => {
     await hook({ command: 'design', sessionID: 's', arguments: ['做一个', '登录功能'] }, output);
 
     expect(runAetSafe).toHaveBeenCalledWith(
-      ['workflow', 'command-init', '--name', 'design', '--argument', '做一个 登录功能'],
+      ['workflow', 'command-init', '--name', 'design', '--argument', '做一个 登录功能', '--session-id', 's'],
       { cwd: expect.any(String) },
     );
   });
@@ -78,7 +78,7 @@ describe('command.execute.before', () => {
     await hook({ command: 'design', sessionID: 's', arguments: '   ' }, output);
 
     expect(runAetSafe).toHaveBeenCalledWith(
-      ['workflow', 'command-init', '--name', 'design'],
+      ['workflow', 'command-init', '--name', 'design', '--session-id', 's'],
       { cwd: expect.any(String) },
     );
   });
@@ -112,7 +112,7 @@ describe('command.execute.before', () => {
     // /enable passes through to native command rendering (enable.md → aet-install
     // skill); no bootstrap text is injected by the hook.
     expect(runAetSafe).toHaveBeenCalledWith(
-      ['workflow', 'command-init', '--name', 'enable'],
+      ['workflow', 'command-init', '--name', 'enable', '--session-id', 's'],
       { cwd: expect.any(String) },
     );
     expect(applyResult).not.toHaveBeenCalled();

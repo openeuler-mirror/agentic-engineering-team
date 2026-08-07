@@ -101,7 +101,9 @@ cp -r dist/plugins/claude-code ~/.claude/plugins/aet
 
 Restart Claude Code. The plugin auto-loads: `hooks/hooks.json` registers
 three hooks (UserPromptSubmit + PreToolUse + PostToolUse), all pointing at
-`${CLAUDE_PLUGIN_ROOT}/bin/aet_handler.js` (no path hardcoding). The
+`node ${CLAUDE_PLUGIN_ROOT}/bin/aet_handler.js` (no path hardcoding; the
+`node ` prefix means the hook works even if the executable bit on the bundle
+is stripped when the plugin is copied). The
 `.claude-plugin/plugin.json` manifest declares `name`/`description`/`version`.
 
 Verify with `/design`.
