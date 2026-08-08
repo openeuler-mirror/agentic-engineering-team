@@ -26,9 +26,8 @@ Use this skill when:
 This skill accepts:
 
 - Design document path (requirements-analysis + requirements-design specs under `design/`)
-- Implementation plan (`dev-plan.md`) — **generated as the FIRST step of this phase** (the
+- Implementation plan (`dev-plan.md`, DPS) — **generated as the FIRST step of this phase** (the
   `development_plan` step) from the design specs, or reused if an up-to-date one already exists.
-  The implementation phase now owns development-plan generation (it was previously a design step).
 - Feature folder path for context storage
 
 Check for design specifications:

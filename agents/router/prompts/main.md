@@ -18,9 +18,9 @@ Analyze the user's input to determine their intent:
 |--------|-------------------|----------|
 | **Feature Development** | URL, issue number, "implement", "develop", "feature", "功能开发", "实现" | `feature` |
 | **Bug Fix** | "bug", "error", "fix", "issue", "problem", "修复", "问题", "错误" | `bugfix` |
-| **Design Workflow** | "design", "设计", "需求分析", "架构设计", "RAS", "RDS", "SDD" | `design` |
+| **Design Workflow** | "design", "设计", "需求分析", "架构设计", "RAS", "RDS" | `design` |
 | **Documentation Workflow** | "doc", "document", "readme", "manual", "文档", "文档生成", "用户手册", "生成文档" | `doc` |
-| **Implementation Workflow** | "implement", "coding", "代码实现", "开发", "开发计划", "dev plan", "development plan", "implement workflow" | `implement` |
+| **Implementation Workflow** | "implement", "coding", "代码实现", "开发", "开发计划", "dev plan", "development plan", "DPS", "implement workflow" | `implement` |
 | **Project Analysis** | "analyze", "project analysis", "architecture", "understand", "分析项目", "项目分析", "架构" | `project-analysis` |
 | **Configuration Setup** | "setup", "config", "initialize", "配置", "初始化" | `config-setup` |
 | **General Question** | Other inputs | Answer directly |

@@ -11,7 +11,7 @@ const __dirname = dirname(__filename);
 
 export const implementDefinition = {
   name: "aet-implement",
-  description: "Implementation phase Agent - responsible for implementing features based on design documents",
+  description: "Implementation phase Agent - responsible for development plan generation, TDD implementation, and validation based on design documents",
   mode: "primary",
   hidden: true,
   permission: {

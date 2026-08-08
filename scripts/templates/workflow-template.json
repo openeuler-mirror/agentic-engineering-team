@@ -76,7 +76,7 @@
     },
     "design": {
       "name": "设计阶段流程",
-      "description": "需求澄清、架构设计、开发计划编写的完整设计流程",
+      "description": "需求澄清、架构设计的完整设计流程",
       "workflow": [
         {
           "agent_id": "aet-design",
@@ -98,7 +98,7 @@
     },
     "implement": {
       "name": "实现阶段流程",
-      "description": "基于设计文档执行代码开发、单元测试、开发验证",
+      "description": "基于设计文档执行开发计划生成、代码开发、单元测试、开发验证",
       "workflow": [
         {
           "agent_id": "aet-implement",
@@ -190,7 +190,7 @@
     },
     "aet-design": {
       "name": "aet-design",
-      "description": "负责需求澄清、架构设计、和具体开发计划编写",
+      "description": "负责需求澄清与架构设计",
       "workflow": [
         {
           "step_id": "requirements_analysis",
@@ -203,7 +203,7 @@
         {
           "step_id": "requirements_design",
           "name": "需求设计",
-          "description": "<workflow_context>\n    <workflow_name>SDD</workflow_name>\n    <stages>\n      <stage id=\"requirementAnalysis\"/>\n      <stage id=\"requirementDesign\"/>\n      <stage id=\"developmentPlan\"/>\n    </stages>\n    <curr_stage id=\"requirementDesign\"/>\n    <instruction>\n      This is a specific stage within the workflow. DO NOT perform any tasks outside of the curr_stage and are prohibited from executing any subsequent steps. Upon completion, provide a summary (within 50 words) and terminate the output immediately.\n    </instruction>\n</workflow_context>\n\n## Task\n\nConduct design activities at varying levels of depth based on Effort (Low/Medium/High). Low effort focuses on rapid task completion, while High effort emphasizes deeper exploration, design, and validation to ensure high-quality outcomes. \n\n### Core\n\n- **Process Skill**: `aet-req-design`\n\n## Notes\n\n- Execute strictly per the skill pipeline: the skill MUST be loaded before any operation; executing without a loaded skill or skipping any step is prohibited.\n- Before executing any operation, you must load the Process Skill. If the skill fails to load, you must report the error to the user.\n- The key stages of the process include: codebase and reference content exploration, initial design draft, feasibility analysis (as needed), deliverable generation, and deliverable review (unless the user explicitly requests to skip the review).\n- When asking questions to the user, you MUST use the Question tool. Do not terminate the output until the pipeline has completed execution.\n- Keep the output precise and concise.\n\n## Input\n\n- `./ai_assistance/features/{feature-name}/design/需求分析说明书.md`\n\n## Output\n\n- `./ai_assistance/features/{feature-name}/design/功能设计说明书.md`\n\n现在请遵照执行\n",
+          "description": "<workflow_context>\n    <workflow_name>SDD</workflow_name>\n    <stages>\n      <stage id=\"requirementAnalysis\"/>\n      <stage id=\"requirementDesign\"/>\n    </stages>\n    <curr_stage id=\"requirementDesign\"/>\n    <instruction>\n      This is a specific stage within the workflow. DO NOT perform any tasks outside of the curr_stage and are prohibited from executing any subsequent steps. Upon completion, provide a summary (within 50 words) and terminate the output immediately.\n    </instruction>\n</workflow_context>\n\n## Task\n\nConduct design activities at varying levels of depth based on Effort (Low/Medium/High). Low effort focuses on rapid task completion, while High effort emphasizes deeper exploration, design, and validation to ensure high-quality outcomes. \n\n### Core\n\n- **Process Skill**: `aet-req-design`\n\n## Notes\n\n- Execute strictly per the skill pipeline: the skill MUST be loaded before any operation; executing without a loaded skill or skipping any step is prohibited.\n- Before executing any operation, you must load the Process Skill. If the skill fails to load, you must report the error to the user.\n- The key stages of the process include: codebase and reference content exploration, initial design draft, feasibility analysis (as needed), deliverable generation, and deliverable review (unless the user explicitly requests to skip the review).\n- When asking questions to the user, you MUST use the Question tool. Do not terminate the output until the pipeline has completed execution.\n- Keep the output precise and concise.\n\n## Input\n\n- `./ai_assistance/features/{feature-name}/design/需求分析说明书.md`\n\n## Output\n\n- `./ai_assistance/features/{feature-name}/design/功能设计说明书.md`\n\n现在请遵照执行\n",
           "before": null,
           "after": "confirm",
           "clear": true
@@ -219,7 +219,7 @@
     },
     "aet-implement": {
       "name": "aet-implement",
-      "description": "负责代码开发、单元测试、集成测试、开发验证及 PR 提交",
+      "description": "负责开发计划生成、代码开发、单元测试、集成测试、开发验证及 PR 提交",
       "workflow": [
         {
           "step_id": "development_plan",
