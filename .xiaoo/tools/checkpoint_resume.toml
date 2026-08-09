@@ -1,0 +1,17 @@
+name = "checkpoint_resume"
+description = "Resume an interrupted AET workflow checkpoint"
+timeout_ms = 10000
+
+[input_schema]
+type = "object"
+required = ["checkpoint_id"]
+
+[input_schema.properties.checkpoint_id]
+type = "string"
+description = "The checkpoint ID to resume"
+
+[exec]
+command = "node"
+args = ["~/.xiaoo/aet/.xiaoo/tools/checkpoint_resume.js"]
+stdin = "json"
+stdout = "text"
