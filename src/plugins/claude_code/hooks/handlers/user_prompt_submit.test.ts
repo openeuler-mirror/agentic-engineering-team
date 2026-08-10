@@ -39,9 +39,9 @@ describe('handleUserPromptSubmit', () => {
     expect(emit).toHaveBeenCalledWith(null);
   });
 
-  it('passes /enable through (no bootstrap injection, native command expansion)', async () => {
-    // /enable is no longer intercepted: it flows to command-init → UNKNOWN_WORKFLOW
-    // → native expansion surfaces enable.md (which directs the agent to the
+  it('passes /init through (no bootstrap injection, native command expansion)', async () => {
+    // /init is no longer intercepted: it flows to command-init → UNKNOWN_WORKFLOW
+    // → native expansion surfaces init.md (which directs the agent to the
     // aet-install skill). No bootstrap path is injected.
     runAet.mockResolvedValue({
       ok: false,
@@ -49,9 +49,9 @@ describe('handleUserPromptSubmit', () => {
       events: [],
       error: { code: 'UNKNOWN_WORKFLOW', message: 'no such workflow' },
     });
-    await handleUserPromptSubmit(promptInput('/enable'));
+    await handleUserPromptSubmit(promptInput('/init'));
     expect(runAet).toHaveBeenCalledWith(
-      ['workflow', 'command-init', '--name', 'enable', '--output', 'json'],
+      ['workflow', 'command-init', '--name', 'init', '--output', 'json'],
       undefined,
     );
     expect(emit).toHaveBeenCalledWith(null);

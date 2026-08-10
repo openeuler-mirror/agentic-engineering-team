@@ -8,7 +8,8 @@
  * declarative template) but is far simpler: AET needs a handful of
  * placeholders (`{{id}}`, `{{workflow.name}}`, `{{workflow.description}}`,
  * `{{workflow.steps_count}}`, `{{workflow.steps_list}}`, `{{command.name}}`,
- * `{{command.description}}`, `{{command.skills_list}}`, `{{init_guidance}}`)
+ * `{{command.description}}`, `{{command.prompt}}`, `{{command.skills_list}}`,
+ * `{{init_guidance}}`)
  * plus pass-through of host-native tokens like `$ARGUMENTS`.
  */
 
@@ -38,6 +39,11 @@ export interface RenderContext {
   command?: {
     name: string;
     description: string;
+    /**
+     * The command's concrete execution body. Falls back to `description`
+     * when the config omits `prompt` (see {@link CommandDefinition.prompt}).
+     */
+    prompt: string;
     /** Core skill ids (the "核心 skill" line); empty = routing-type command. */
     skills: string[];
   };
@@ -180,6 +186,7 @@ export function renderTemplate(tpl: string, ctx: RenderContext): string {
     .replaceAll('{{workflow.steps_list}}', renderStepsList(ctx.workflow.steps))
     .replaceAll('{{command.name}}', ctx.command?.name ?? '')
     .replaceAll('{{command.description}}', ctx.command?.description ?? '')
+    .replaceAll('{{command.prompt}}', ctx.command?.prompt ?? '')
     .replaceAll('{{command.skills_list}}', renderCommandSkillsBlock(ctx.command?.skills ?? []))
     .replaceAll('{{init_guidance}}', renderInitGuidance(ctx));
 }

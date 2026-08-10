@@ -61,7 +61,7 @@ codeagent plugin add aet
 对**每个项目**只需执行一次：
 
 ```bash
-/aet:enable
+/aet:init
 ```
 
 ### 启动一个工作流

@@ -168,7 +168,7 @@ describe('install.cjs Bootstrap', () => {
       preExistingWorkflow: '{"syncIt":true}',
     });
     expect(res.stdout).toMatch(/already installed/);
-    // Even with the CLI already installed, /enable still syncs runtime.
+    // Even with the CLI already installed, /init still syncs runtime.
     expect(res.stdout).toMatch(/syncing AET runtime/);
   });
 

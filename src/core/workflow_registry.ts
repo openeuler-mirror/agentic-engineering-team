@@ -95,6 +95,17 @@ export interface WorkflowDefinition {
 export interface CommandDefinition {
   name: string;
   description: string;
+  /**
+   * The command's concrete execution body — the full instruction text the
+   * agent reads and follows. Distinct from {@link description}: `description`
+   * is a one-line summary surfaced as frontmatter metadata + list display,
+   * while `prompt` carries the actual procedure (e.g. a routing command's
+   * step-by-step flow). Optional — when omitted, the renderer falls back to
+   * `description`, so a command with only a short description needs no
+   * `prompt`. (A long, procedural description is exactly when you SHOULD
+   * split it: keep the summary in `description`, move the steps to `prompt`.)
+   */
+  prompt?: string;
   /** Core process skill id(s). Rendered as the "核心 skill" line. Optional —
    *  omitted for routing-type commands that dispatch among several skills. */
   skills?: string[];

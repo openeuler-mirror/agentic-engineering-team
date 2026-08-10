@@ -56,7 +56,8 @@ export type AgentFormat = 'markdown-flat' | 'markdown-skill';
  *   `{{init_guidance}}`      → init directive (empty when hasPlugin)
  * Command entries additionally use:
  *   `{{command.name}}`       → command display name
- *   `{{command.description}}` → command description
+ *   `{{command.description}}` → command description (one-line frontmatter summary)
+ *   `{{command.prompt}}`     → command execution body (falls back to description)
  *   `{{command.skills_list}}` → "核心 skill: ..." line (empty when no skills)
  * `$ARGUMENTS` is a host-native token (CC slash-command args); the AET
  * renderer leaves it untouched (it only replaces `{{...}}`).

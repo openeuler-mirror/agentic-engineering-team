@@ -8,7 +8,7 @@
  * JSON to stdout. All heavy lifting lives in per-event modules:
  *
  *   - user_prompt_submit.ts  — ACTIVE MODE: `/aet-*` slash → command-init
- *   - session_start.ts       — BOOT MODE (currently disabled)
+ *   - session_start.ts       — ensure the global commands dir exists
  *   - pre_tool_use.ts        — PASSIVE (pre): append `--output json`
  *   - post_tool_use.ts       — PASSIVE (post): replace stdout with prompt
  *   - shared.ts              — stdin / spawn / emit / debug plumbing
@@ -32,6 +32,7 @@ import { handleUserPromptSubmit } from './user_prompt_submit.js';
 import { handlePreToolUse } from './pre_tool_use.js';
 import { handlePostToolUse } from './post_tool_use.js';
 import { handleStop } from './stop.js';
+import { handleSessionStart } from './session_start.js';
 import { debugLog, emit, emitError, readStdin, resolveAetBin } from './shared.js';
 
 const dialect = resolveDialect(DIALECT_ID);
@@ -49,11 +50,10 @@ async function dispatch(eventName: string | undefined, input: CcHookInput): Prom
     case 'UserPromptSubmit':
       return handleUserPromptSubmit(input);
     case 'SessionStart':
-      // BOOT MODE is deliberately disabled. The intended behavior lives in
-      // session_start.ts; enable by importing + calling handleSessionStart(input).
-      debugLog({ event: 'SessionStart', action: 'disabled' });
-      emit(null);
-      return;
+      // Ensure the host's global commands dir (~/.claude/commands /
+      // ~/.cac/commands) exists so `aet plugin init -g` has a folder to
+      // install into. Pure mkdir — no CLI spawn, no reloadSkills.
+      return handleSessionStart(input);
     case 'PreToolUse':
       return handlePreToolUse(input);
     case 'PostToolUse':

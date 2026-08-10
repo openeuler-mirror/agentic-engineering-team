@@ -50,11 +50,11 @@ export function registerCommandBeforeHook(ctx: PluginContext): (input: unknown, 
       return;
     }
 
-    // `/enable` is NOT handled here — it passes through to OpenCode's native
-    // slash-command rendering of commands/enable.md, which directs the agent to
+    // `/init` is NOT handled here — it passes through to OpenCode's native
+    // slash-command rendering of commands/init.md, which directs the agent to
     // follow the aet-install skill (self-contained install carrier). No plugin
-    // path is injected by this hook. 'enable' then flows to command-init →
-    // UNKNOWN_WORKFLOW → pass-through, and enable.md renders natively.
+    // path is injected by this hook. 'init' then flows to command-init →
+    // UNKNOWN_WORKFLOW → pass-through, and init.md renders natively.
 
     // One-shot init + advance into step 1. Core's registry classifies the
     // id: workflows get the lifecycle prompt, everything else returns

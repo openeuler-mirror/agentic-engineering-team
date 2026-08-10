@@ -2,13 +2,6 @@
   "version": "1.0",
   "_comment": "全局配置 - 包含跨项目共享的敏感信息和全局设置",
   "_note": "此文件永不覆盖，只能用户手动修改",
-  "trace": {
-    "enabled": true,
-    "_comment": "LLM 请求/响应追踪日志。enabled=true 时拦截 fetch 并记录到 ~/.aet/log/trace/"
-  },
-  "knowledgeGraph": {
-    "type": "none"
-  },
   "codePlatform": {
     "_comment": "代码托管平台配置：包含多平台 Token",
     "platforms": {

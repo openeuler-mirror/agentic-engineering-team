@@ -375,20 +375,23 @@ async function assembleCliSelfInstall(pluginDir, rootPkg, label) {
   await chmod(join(cliDir, 'aet.js'), 0o755);
   await writeFile(
     join(cliDir, 'README.md'),
-    `# aet-cli\n\nSelf-installable AET CLI bundle for \`${label}\`. Installed globally by the \`/enable\` flow via \`npm i -g <this dir>\`.\n`,
+    `# aet-cli\n\nSelf-installable AET CLI bundle for \`${label}\`. Installed globally by the \`/init\` flow via \`npm i -g <this dir>\`.\n`,
     'utf8',
   );
   console.log(`[aet:build] ${label.padEnd(12)} → ${join(cliDir, 'package.json')} + aet.js (cli self-install)`);
 
   // 3. runtime/ — the base AET runtime files, copied to ~/.aet/ at bootstrap.
-  //    Base source: src/config/workflow.json → runtime/config/workflow.json.
+  //    Base source: src/config/workflow.json → runtime/config/workflow.json,
+  //    src/config/repository.json → runtime/config/repository.json.
   //    Extension-provided runtime files (src/extensions/*/runtime) are merged
   //    on top by mergeAetPluginExtensions (with their runtime-meta.json
   //    whitelist unioned). workflow.json is NOT whitelist-protected (overwritten
-  //    on every sync); a default runtime-meta.json is not shipped.
+  //    on every sync); repository.json IS whitelist-protected via the top-level
+  //    src/extensions/runtime-meta.json (kept — user token edits survive).
   await mkdir(join(runtimeDir, 'config'), { recursive: true });
   await copyFile(join(RUNTIME_SRC, 'workflow.json'), join(runtimeDir, 'config', 'workflow.json'));
-  console.log(`[aet:build] ${label.padEnd(12)} → ${join(runtimeDir, 'config/workflow.json')} (copy base runtime, v${rootPkg.version})`);
+  await copyFile(join(RUNTIME_SRC, 'repository.json'), join(runtimeDir, 'config', 'repository.json'));
+  console.log(`[aet:build] ${label.padEnd(12)} → ${join(runtimeDir, 'config/{workflow,repository}.json')} (copy base runtime, v${rootPkg.version})`);
 }
 
 // ---------------------------------------------------------------------------
@@ -445,6 +448,19 @@ function extensionDest(distRoot, sub) {
  */
 async function mergeAetPluginExtensions() {
   if (!fileExists(EXTENSIONS_SRC)) return;
+
+  // Top-level runtime-meta.json (src/extensions/runtime-meta.json) — a shared
+  // whitelist for the BASE runtime files, merged into every host's runtime/
+  // BEFORE any per-extension meta. It lets the base config (e.g.
+  // config/repository.json) be whitelist-protected without shipping a default
+  // runtime-meta.json in the base runtime. Absent → no-op.
+  const rootMeta = join(EXTENSIONS_SRC, 'runtime-meta.json');
+  if (fileExists(rootMeta)) {
+    for (const targetCfg of HOST_DIST_TARGETS) {
+      const dest = extensionDest(targetCfg.dist, 'runtime');
+      await mergeRuntimeMetas(EXTENSIONS_SRC, dest);
+    }
+  }
 
   const names = (await readdir(EXTENSIONS_SRC, { withFileTypes: true }))
     .filter((e) => e.isDirectory())
@@ -569,7 +585,7 @@ function buildPluginReadme({ label }) {
 
 /**
  * Copy src/commands/ into a dist commands dir, substituting build-time
- * version placeholders. enable.md carries a `__AET_PLUGIN_VERSION__`
+ * version placeholders. init.md carries a `__AET_PLUGIN_VERSION__`
  * placeholder (the plugin's current version, shown to the user deciding
  * whether to re-run the install step); the placeholder is replaced with the
  * real root package version here so the shipped command reports the actual
@@ -591,13 +607,13 @@ async function copyCommandsWithVersion(commandsDest, version, label) {
   console.log(`[aet:build] ${label.padEnd(12)} → ${commandsDest} (copy, ${cmdFiles} files)`);
 
   // Substitute the plugin version placeholder in every shipped command file.
-  const enablePath = join(commandsDest, 'enable.md');
-  if (fileExists(enablePath)) {
-    const prev = await readFile(enablePath, 'utf8');
+  const initPath = join(commandsDest, 'init.md');
+  if (fileExists(initPath)) {
+    const prev = await readFile(initPath, 'utf8');
     const next = prev.split('__AET_PLUGIN_VERSION__').join(version);
     if (next !== prev) {
-      await writeFile(enablePath, next, 'utf8');
-      console.log(`[aet:build] ${label.padEnd(12)} → ${join(commandsDest, 'enable.md')} (stamp v${version})`);
+      await writeFile(initPath, next, 'utf8');
+      console.log(`[aet:build] ${label.padEnd(12)} → ${join(commandsDest, 'init.md')} (stamp v${version})`);
     }
   }
 }
@@ -758,7 +774,7 @@ async function assemblePlugin(opts, rootPkg) {
   console.log(`[aet:build] ${label.padEnd(12)} → ${join(targetDir, 'bin/')} (in-place from build step)`);
 
   // 4. commands/ — static slash command files shipped from src/commands/
-  //    (e.g. enable.md). cp() recursively so additions under src/commands/
+  //    (e.g. init.md). cp() recursively so additions under src/commands/
   //    flow through automatically.
   const commandsDest = join(targetDir, 'commands');
   await copyCommandsWithVersion(commandsDest, rootPkg.version, label);
@@ -1090,7 +1106,7 @@ async function assembleOmpPlugin(rootPkg) {
   // 4. commands/ — copy of src/commands/ (omp auto-discovers). The AET
   //    `/aet-<id>` slash commands are generated project-side by
   //    `aet plugin init --agent omp`; these shipped templates are the static
-  //    ones (e.g. enable.md).
+  //    ones (e.g. init.md).
   const commandsDest = join(targetDir, 'commands');
   await copyCommandsWithVersion(commandsDest, rootPkg.version, 'omp');
 

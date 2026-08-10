@@ -144,13 +144,15 @@
   "commands": {
     "auto": {
       "name": "auto",
-      "description": "AET 自动路由入口。请按以下流程引导用户进入合适的工作流。\n\n## 流程\n\n1. 先查询当前是否已有激活的工作流：执行 `aet workflow status`。\n   - 若返回 active（已有激活 workflow）：使用 question 工具询问用户是「继续当前 workflow」还是「放弃并新建一个」。\n     - 继续 → 执行 `aet workflow continue` 恢复当前阶段任务。\n     - 新建 → 执行 `aet workflow abort` 归档当前，再按下方步骤 2 选型并 init。\n   - 若返回 no_active：进入步骤 2。\n\n2. 列出所有可用 workflow 供选型：执行 `aet workflow list`，向用户展示返回的列表。\n\n3. 使用 question 工具询问用户要启动哪一个。意图明确时可直接建议对应 workflow：\n   - 新功能 / 需求设计 → design\n   - 写代码 / 实现 → implement\n   - 修 bug → bugfix\n   - 项目架构分析 → project-analysis\n   - 文档生成 → doc（单次派发，不经 workflow 生命周期）\n   - release 管理 → release\n   - 项目初始化配置 → config-setup\n   - 需求 / 设计 / 开发计划变更 → design-refine\n\n4. 用户确认要进入某个多阶段 workflow（design / implement / bugfix / project-analysis）后：执行 `aet workflow init --name <id> --argument \"<初始需求描述，从用户的最初需求中提取>\"`，收到 `workflow_started` 后执行 `aet workflow handover` 进入第一阶段。注意：进入前必须得到用户明确确认。`--argument` 用于把用户的原始需求记录进 checkpoint，断点恢复（`aet workflow continue`）时会回显，便于确认任务目标。\n\n5. 若用户选的是单次派发命令（doc / release / config-setup / design-refine），直接执行对应 skill / 命令即可，不经 workflow 生命周期。\n\n意图不明确时，使用 question 工具询问用户，不要擅自假设。",
+      "description": "AET 自动路由入口。根据用户意图路由到合适的工作流。执行 `aet workflow status` / `list` 并结合意图选择入口。",
+      "prompt": "AET 自动路由入口。请按以下流程引导用户进入合适的工作流。\n\n## 流程\n\n1. 先查询当前是否已有激活的工作流：执行 `aet workflow status`。\n   - 若返回 active（已有激活 workflow）：使用 question 工具询问用户是「继续当前 workflow」还是「放弃并新建一个」。\n     - 继续 → 执行 `aet workflow continue` 恢复当前阶段任务。\n     - 新建 → 执行 `aet workflow abort` 归档当前，再按下方步骤 2 选型并 init。\n   - 若返回 no_active：进入步骤 2。\n\n2. 列出所有可用 workflow 供选型：执行 `aet workflow list`，向用户展示返回的列表。\n\n3. 使用 question 工具询问用户要启动哪一个。意图明确时可直接建议对应 workflow：\n   - 新功能 / 需求设计 → design\n   - 写代码 / 实现 → implement\n   - 修 bug → bugfix\n   - 项目架构分析 → project-analysis\n   - 文档生成 → doc（单次派发，不经 workflow 生命周期）\n   - release 管理 → release\n   - 项目初始化配置 → config-setup\n   - 需求 / 设计 / 开发计划变更 → design-refine\n\n4. 用户确认要进入某个多阶段 workflow（design / implement / bugfix / project-analysis）后：执行 `aet workflow init --name <id> --argument \"<初始需求描述，从用户的最初需求中提取>\"`，收到 `workflow_started` 后执行 `aet workflow handover` 进入第一阶段。注意：进入前必须得到用户明确确认。`--argument` 用于把用户的原始需求记录进 checkpoint，断点恢复（`aet workflow continue`）时会回显，便于确认任务目标。\n\n5. 若用户选的是单次派发命令（doc / release / config-setup / design-refine），直接执行对应 skill / 命令即可，不经 workflow 生命周期。\n\n意图不明确时，使用 question 工具询问用户，不要擅自假设。",
       "effort": "low",
       "allowed-tools": "Bash(aet workflow *)"
     },
     "continue": {
       "name": "continue",
-      "description": "恢复当前激活的工作流。请按以下步骤执行：\n\n1. 执行 `aet workflow status`，查询当前是否有激活的工作流。\n2. 若返回 active（有激活 workflow）：执行 `aet workflow continue` 恢复当前阶段任务，向用户展示恢复的当前阶段 prompt，照常推进即可。\n3. 若返回 no_active（无激活 workflow）：明确告诉用户「当前没有激活任何工作流，命令执行失败」，不执行任何其他操作。用户若要开始新任务，可使用 `/auto` 路由入口。",
+      "description": "恢复当前激活的工作流。执行 `aet workflow status` 检查后恢复当前阶段任务。",
+      "prompt": "恢复当前激活的工作流。请按以下步骤执行：\n\n1. 执行 `aet workflow status`，查询当前是否有激活的工作流。\n2. 若返回 active（有激活 workflow）：执行 `aet workflow continue` 恢复当前阶段任务，向用户展示恢复的当前阶段 prompt，照常推进即可。\n3. 若返回 no_active（无激活 workflow）：明确告诉用户「当前没有激活任何工作流，命令执行失败」，不执行任何其他操作。用户若要开始新任务，可使用 `/auto` 路由入口。",
       "effort": "low",
       "allowed-tools": "Bash(aet workflow *)"
     },

@@ -14,13 +14,16 @@
  *   aet plugin init                          # generate for all configured agents
  *   aet plugin init --agent claude-code      # generate for one agent only
  *   aet plugin init --agent opencode --output json
+ *   aet plugin init -g                       # install into the global (~) root
  *   aet plugin init --root /path/to/project
  *
  * Roots resolution (mirrors runCli / the handler's runAet spawn):
  *   projectRoot = --root ?? env.AET_PROJECT_ROOT ?? process.cwd()
  *   globalRoot  = env.AET_GLOBAL_ROOT ?? os.homedir()
  * The SessionStart hook sets env.AET_PROJECT_ROOT=cwd when it spawns this
- * command, so generation lands in the active project.
+ * command, so generation lands in the active project. With `-g`, relative
+ * destDirs (the default per-project `.claude/commands/aet` etc.) instead
+ * resolve against globalRoot, so commands/skills install user-globally.
  */
 
 import { homedir } from 'node:os';
@@ -62,11 +65,13 @@ async function runPluginInit(_bus: EventBus, argv: string[]): Promise<CommandOut
 
   let agent: string | undefined;
   let root: string | undefined;
+  let global: boolean;
   let output: OutputMode;
 
   try {
     agent = optionalFlag(parsed, 'agent');
     root = optionalFlag(parsed, 'root');
+    global = parsed.flags.g === true || parsed.flags.global === true;
     output = requireOutputMode(parsed);
   } catch (e) {
     if (e instanceof UsageError) {
@@ -105,6 +110,7 @@ async function runPluginInit(_bus: EventBus, argv: string[]): Promise<CommandOut
     projectRoot,
     globalRoot,
     agent,
+    global,
   );
 
   return encodeResult(ok(summarize(results)), output);

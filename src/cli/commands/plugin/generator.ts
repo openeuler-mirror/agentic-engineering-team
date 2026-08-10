@@ -77,10 +77,14 @@ function resolveDestDir(
   destDir: string,
   projectRoot: string,
   globalRoot: string,
+  global: boolean,
 ): string {
   if (isAbsolute(destDir)) return destDir;
-  if (destDir.startsWith('~/')) return join(globalRoot, destDir.slice(2));
-  return join(projectRoot, destDir);
+  const rel = destDir.startsWith('~/') ? destDir.slice(2) : destDir;
+  // `-g` forces ALL relative destDirs to resolve against the global root,
+  // not just `~/`-prefixed ones (the default project-local install).
+  const base = global || destDir.startsWith('~/') ? globalRoot : projectRoot;
+  return join(base, rel);
 }
 
 // ---------------------------------------------------------------------------
@@ -98,6 +102,9 @@ function resolveDestDir(
  * @param agentFilter If set, only this agent id is processed; otherwise all
  *                    agents in `agentsConfig` are processed. The caller must
  *                    have validated the id exists (unknown → no-op here).
+ * @param global      If true, relative destDirs resolve against the global
+ *                    (home) root instead of the project root — `aet plugin
+ *                    init -g` installs commands/skills user-globally.
  */
 export async function generateAll(
   agentsConfig: AgentsConfig,
@@ -105,6 +112,7 @@ export async function generateAll(
   projectRoot: string,
   globalRoot: string,
   agentFilter?: string,
+  global = false,
 ): Promise<GenerateAllResult> {
   const results: GenerateResult[] = [];
 
@@ -118,6 +126,7 @@ export async function generateAll(
       config,
       projectRoot,
       globalRoot,
+      global,
     );
     results.push(result);
   }
@@ -140,8 +149,9 @@ async function generateForAgent(
   config: WorkflowConfig,
   projectRoot: string,
   globalRoot: string,
+  global: boolean,
 ): Promise<GenerateResult> {
-  const destDir = resolveDestDir(entry.destDir, projectRoot, globalRoot);
+  const destDir = resolveDestDir(entry.destDir, projectRoot, globalRoot, global);
   const generated: string[] = [];
   const skipped: string[] = [];
   // Entry ids that this agent should keep on disk (drives stale cleanup).
@@ -223,6 +233,7 @@ async function generateForAgent(
       command: {
         name: command.name,
         description: command.description,
+        prompt: command.prompt ?? command.description,
         skills: command.skills ?? [],
       },
       metaFrontmatter: meta,

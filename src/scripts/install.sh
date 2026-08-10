@@ -283,26 +283,14 @@ install_cli() {
 # ======================================================================
 # Step 3: 拷贝运行时配置到 ~/.aet/
 # ======================================================================
+# 全局配置（repository.json，含 token）不再由本脚本拷贝到特殊路径
+# ~/.aet/config.json。它由 aet-install skill 的 /init 流程经 runtime 同步
+# 拷入 ~/.aet/config/repository.json（runtime-meta whitelist 保护，永不覆盖）。
+# 这里只拷贝 workflow.json（运行期实际生效副本，~/.aet/config/workflow.json）。
 install_configs() {
-    local src_global="$REPO_ROOT/src/config/global-config.json"
     local src_workflow="$REPO_ROOT/src/config/workflow.json"
     local dst_dir="$INSTALL_ROOT"
-    local dst_global="$dst_dir/config.json"
     local dst_workflow="$dst_dir/config/workflow.json"
-
-    if [ ! -f "$src_global" ]; then
-        log_warn "源配置缺失（跳过）: $src_global"
-        return 0
-    fi
-    mkdir -p "$dst_dir/config"
-
-    if [ -f "$dst_global" ]; then
-        log_info "已存在，保留: $dst_global"
-    else
-        cp "$src_global" "$dst_global"
-        chmod 600 "$dst_global" 2>/dev/null || true
-        log_ok "已创建: $dst_global"
-    fi
 
     # workflow.json 是运行期实际生效副本（~/.aet/config/workflow.json），
     # 源缺失则跳过；目标已存在时询问是否覆盖（默认保留，避免覆盖用户改动）。
@@ -310,6 +298,7 @@ install_configs() {
         log_warn "工作流配置源缺失（跳过）: $src_workflow"
         return 0
     fi
+    mkdir -p "$dst_dir/config"
 
     if [ -f "$dst_workflow" ]; then
         local answer=""
@@ -482,7 +471,7 @@ summary() {
     fi
     printf '\n'
     printf '%s下一步:%s\n' "$BOLD" "$NC"
-    printf '  · 编辑 ~/.aet/config.json 填写 platform token\n'
+    printf '  · 编辑 ~/.aet/config/repository.json 填写 platform token\n'
     printf '    (支持 ${ATOMGIT_TOKEN} / ${GITHUB_TOKEN} / ${GITLAB_TOKEN} 环境变量引用)\n'
     printf '  · 重启 claude / codeagent / opencode / codex / omp 使插件生效\n'
     printf '  · 首次进入项目时 SessionStart 钩子自动生成斜杠命令\n'

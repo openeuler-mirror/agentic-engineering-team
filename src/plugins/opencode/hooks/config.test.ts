@@ -19,7 +19,7 @@ beforeAll(() => {
   mkdirSync(join(dir, 'bin'));
   mkdirSync(join(dir, 'commands'));
   writeFileSync(
-    join(dir, 'commands', 'enable.md'),
+    join(dir, 'commands', 'init.md'),
     [
       '---',
       'description: Reload AET skills',
@@ -67,7 +67,7 @@ describe('parseMarkdownCommand', () => {
 describe('collectCommandEntries', () => {
   it('maps each .md file to a config.command entry keyed by basename', () => {
     const entries = collectCommandEntries(join(dir, 'commands'));
-    expect(entries.enable).toEqual({
+    expect(entries.init).toEqual({
       description: 'Reload AET skills',
       template: 'Tell the user to reload AET skills.',
     });
@@ -84,7 +84,7 @@ describe('config hook', () => {
     getHook()(config);
     const skills = config as unknown as { skills: { paths: string[] }; command: Record<string, unknown> };
     expect(skills.skills.paths).toContain(join(dir, 'skills'));
-    expect(skills.command.enable).toBeDefined();
+    expect(skills.command.init).toBeDefined();
   });
 
   it('is idempotent — does not double-add the skills path', () => {

@@ -77,14 +77,17 @@ function ccFlatAgent(label: string, destDir: string, hasPlugin: boolean): AgentE
     // Command (single-dispatch) template: self-contained — core skill(s) +
     // description, no workflow lifecycle, no init/handover guidance. The
     // handler passes command ids through (emits null) so CC's native slash
-    // command expansion injects THIS file content verbatim.
+    // command expansion injects THIS file content verbatim. The BODY is the
+    // command's concrete execution instruction (`{{command.prompt}}`, falling
+    // back to `description` when the config omits `prompt`); frontmatter
+    // `description` stays a one-line summary for CC's command matching/display.
     commandFrontmatter: {
       description: '{{command.description}}',
       'disable-model-invocation': 'true',
     },
     commandBody: `/{{id}} $ARGUMENTS
 
-{{command.skills_list}}{{command.description}}
+{{command.skills_list}}{{command.prompt}}
 `,
   };
 }
@@ -124,13 +127,16 @@ function skillAgent(label: string, destDir: string, hasPlugin: boolean): AgentEn
 {{init_guidance}}
 `,
     // Command template: self-contained, description-triggered (no plugin).
+    // Body = the concrete execution instruction (`{{command.prompt}}`,
+    // falling back to `description`); frontmatter `description` = one-line
+    // summary for trigger matching.
     commandFrontmatter: {
       name: '{{id}}',
       description: '{{command.description}}\n\nTriggers: "/{{id}}", "start {{id}}".',
     },
     commandBody: `# {{command.name}}
 
-{{command.skills_list}}{{command.description}}
+{{command.skills_list}}{{command.prompt}}
 `,
   };
 }

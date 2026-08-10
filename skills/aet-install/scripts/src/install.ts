@@ -18,24 +18,24 @@
  *      OVERWRITTEN on a version BUMP and left untouched on the SAME version
  *      (idempotent), so user edits to workflow.json survive within a version.
  *
- * It runs at `/enable` time (the user-invoked AET enable command), NOT at
+ * It runs at `/init` time (the user-invoked AET init command), NOT at
  * session start — so it is a deliberate, user-present action with no
  * timeout pressure and no startup race. It uses `npm i -g` for the CLI
  * (cross-platform bin resolution / PATH wiring / global install location all
  * handled for us) and plain `node:fs` copies for the runtime. If the global
  * install fails (e.g. an unwritable default prefix), we do NOT silently
  * fall back to a secondary prefix — we fail loudly and let the agent tell the
- * user enable failed, since a half-installed CLI is worse than a clear error.
+ * user init failed, since a half-installed CLI is worse than a clear error.
  * After a successful install we re-verify `aet` resolves on PATH so a
  * not-on-PATH global bin dir is surfaced rather than silently re-installed on
- * every subsequent /enable.
+ * every subsequent /init.
  *
  * Resolution order (each step MUST pass before the next):
  *   1. Node runtime present + >= engines.node (18). If absent → hard error,
- *      the caller surfaces it to the user ("install Node, then /enable again").
+ *      the caller surfaces it to the user ("install Node, then /init again").
  *   2. npm present. If absent → hard error (npm is the chosen installer).
  *   3. Global `aet` already installed AND version matches the bundled CLI →
- *      skip install (idempotent; no-op on every /enable after the first).
+ *      skip install (idempotent; no-op on every /init after the first).
  *   4. Otherwise `npm i -g <cliDir>`.
  *   5. Runtime sync: the runtime version tracks the INSTALLED CLI's version
  *      (both are stamped from the same root version at build time). We read the
@@ -153,28 +153,28 @@ function main(): void {
   // 1. Node runtime check. If the user has no Node, nothing else works —
   //    the CLI and all handlers are Node programs. Bail out loudly.
   if (!process.versions?.node) {
-    fail(41, 'Node.js is required but not available. Install Node.js >= 18, then run /enable again.');
+    fail(41, 'Node.js is required but not available. Install Node.js >= 18, then run /init again.');
   }
   const nodeMajor = parseInt(process.versions.node.split('.')[0], 10);
   if (nodeMajor < MIN_NODE_MAJOR) {
-    fail(41, `AET requires Node.js >= ${MIN_NODE_MAJOR}; found ${process.versions.node}. Please upgrade Node.js, then run /enable again.`);
+    fail(41, `AET requires Node.js >= ${MIN_NODE_MAJOR}; found ${process.versions.node}. Please upgrade Node.js, then run /init again.`);
   }
 
   // 2. npm check. npm is our chosen cross-platform installer; without it we
   //    cannot guarantee a PATH-correct global `aet`. Bail rather than guess.
   const npm = run('npm', ['--version']);
   if (npm.error || !npm.stdout) {
-    fail(42, `npm is required to install the AET CLI but was not found (${npm.error || 'no version output'}). Install npm / Node.js, then run /enable again.`);
+    fail(42, `npm is required to install the AET CLI but was not found (${npm.error || 'no version output'}). Install npm / Node.js, then run /init again.`);
   }
 
   // Preconditions passed. Determine whether we actually need to install.
   const bundledVersion = readBundledVersion(cliDir);
   if (!bundledVersion) {
-    fail(43, `Bundled AET CLI package not found at ${installSrc}. Reinstall the plugin, then run /enable again.`);
+    fail(43, `Bundled AET CLI package not found at ${installSrc}. Reinstall the plugin, then run /init again.`);
   }
 
   // 3. Global `aet` CLI — install only if missing or older than bundled.
-  //    (Idempotent: an up-to-date install is skipped on every /enable.)
+  //    (Idempotent: an up-to-date install is skipped on every /init.)
   //    We capture the PRE-INSTALL observed CLI version. If it is missing or
   //    older than bundled we upgrade; either way `installedVersion < bundled`
   //    afterwards signals the runtime must re-sync to the bundled version.
@@ -193,7 +193,7 @@ function main(): void {
     installCli(installSrc);
   }
 
-  // 4. Runtime sync. Every /enable syncs; the runtime-meta.json whitelist
+  // 4. Runtime sync. Every /init syncs; the runtime-meta.json whitelist
   //    decides per-file (whitelisted+present → preserve, whitelisted+missing →
   //    add, else → overwrite). A version bump flows new runtime files in; a
   //    same-version re-run stays idempotent because whitelisted edits survive.
@@ -204,11 +204,11 @@ function main(): void {
 
 /**
  * Install the bundled CLI globally via npm. Exits on failure — the caller's
- * agent relays the error verbatim to the user ("enable failed"). On success,
+ * agent relays the error verbatim to the user ("init failed"). On success,
  * RE-VERIFIES that `aet` is now resolvable on PATH before declaring success:
  * a successful `npm i -g` does not guarantee the global bin dir is on the
  * user's PATH, and a silently-unusable install would make every subsequent
- * /enable re-enter this install path forever.
+ * /init re-enter this install path forever.
  */
 function installCli(installSrc: string): void {
   const res = run('npm', ['install', '-g', installSrc], {
@@ -217,7 +217,7 @@ function installCli(installSrc: string): void {
 
   if (res.status !== 0) {
     // Final failure — surface the real npm output so the agent can act on it.
-    fail(44, `npm install -g failed.\n  stdout: ${res.stdout || '(empty)'}\n  stderr: ${res.stderr || res.error || '(empty)'}\n\nAET enable failed: the CLI could not be installed. Check the npm output above (often a permissions issue — consider fixing your global npm prefix), then run /enable again.`);
+    fail(44, `npm install -g failed.\n  stdout: ${res.stdout || '(empty)'}\n  stderr: ${res.stderr || res.error || '(empty)'}\n\nAET init failed: the CLI could not be installed. Check the npm output above (often a permissions issue — consider fixing your global npm prefix), then run /init again.`);
   }
 
   // Verify the installed `aet` is actually resolvable. If the global bin dir
@@ -225,7 +225,7 @@ function installCli(installSrc: string): void {
   // hard failure, surfaced to the user rather than silently glossed over.
   const check = run('aet', ['--version']);
   if (check.error || !check.stdout) {
-    fail(45, `AET CLI was installed globally but the \`aet\` command could not be found on PATH.\n  npm said: ${res.stdout || res.stderr || '(no output)'}\n  check said: ${check.error || '(no version output)'}\n\nAET enable failed: add npm's global bin directory to your PATH, then run /enable again.`);
+    fail(45, `AET CLI was installed globally but the \`aet\` command could not be found on PATH.\n  npm said: ${res.stdout || res.stderr || '(no output)'}\n  check said: ${check.error || '(no version output)'}\n\nAET init failed: add npm's global bin directory to your PATH, then run /init again.`);
   }
 
   console.log(`[aet:ensure] AET CLI ${check.stdout} installed globally. You can now run \`aet\` from your terminal.`);
@@ -304,7 +304,7 @@ function readWhitelist(runtimeDir: string): string[] {
 }
 
 /**
- * Sync the bundled runtime files into ~/.aet/. No version gating: every /enable
+ * Sync the bundled runtime files into ~/.aet/. No version gating: every /init
  * syncs, and the runtime-meta.json whitelist decides per-file behavior —
  * whitelisted files already present in ~/.aet/ are PRESERVED (user edits
  * survive), whitelisted-but-missing files are added, everything else is
