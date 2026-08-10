@@ -1,0 +1,21 @@
+name = "workflow_start"
+description = "Start a capability scenario or a single agent's task in AET workflow system"
+timeout_ms = 10000
+
+[input_schema]
+type = "object"
+required = ["name", "context"]
+
+[input_schema.properties.name]
+type = "string"
+description = "Scenario name (e.g. 'auto', 'design') or agent id with steps"
+
+[input_schema.properties.context]
+type = "string"
+description = "Task description or context for the first stage agent"
+
+[exec]
+command = "node"
+args = ["~/.xiaoo/aet/.xiaoo/tools/workflow_start.js"]
+stdin = "json"
+stdout = "text"

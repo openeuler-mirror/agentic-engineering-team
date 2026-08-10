@@ -1,0 +1,22 @@
+[
+  {
+    "id": "aet_command_before",
+    "hook_point": "*.Chat.command.before",
+    "command": "node ~/.xiaoo/aet/.xiaoo/hookers/command-before.js"
+  },
+  {
+    "id": "aet_message_received",
+    "hook_point": "*.Chat.message.received",
+    "command": "node ~/.xiaoo/aet/.xiaoo/hookers/message-received.js"
+  },
+  {
+    "id": "aet_system_transform",
+    "hook_point": "*.Chat.system.transform",
+    "command": "node ~/.xiaoo/aet/.xiaoo/hookers/system-transform.js"
+  },
+  {
+    "id": "aet_session_lifecycle_state",
+    "hook_point": "*.Session.lifecycle.state",
+    "command": "node ~/.xiaoo/aet/.xiaoo/hookers/session-lifecycle-state.js"
+  }
+]
