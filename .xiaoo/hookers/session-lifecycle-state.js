@@ -237,7 +237,7 @@ function main() {
               // 当前 stage 最后一个 step 完成 → 收尾 execution 并调用 stage handover。
               const execResult = currentStepState?.context;
               checkpointManager.completeExecution(checkpointID, currentStage, execResult);
-              checkpointManager.completeAllSteps(checkpointID, currentStage)
+              checkpointManager.completeAllSteps(checkpointID, currentStage);
               const stages = workflowEngine.getScenarioWorkflow(checkpoint.workflow.name);
               const stageIdx = stages.findIndex(s => (s.stage_id || s.agent_id) === currentStage);
               const nextStage = stageIdx >= 0 ? stages[stageIdx + 1] : undefined;
