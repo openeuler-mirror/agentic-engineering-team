@@ -14,6 +14,10 @@ log_error() {
     exit 1
 }
 
+log_warn() {
+    echo -e "\033[0;33m[WARN]\033[0m $1"
+}
+
 # 检测管道模式
 IS_PIPE_MODE=false
 if [ ! -t 0 ]; then
@@ -118,59 +122,76 @@ install_knowledge_graph() {
     return 0
 }
 
-# 下载源代码（远程安装）
+resolve_aet_target() {
+    case "${platform}" in
+        xiaoO)    echo "$HOME/.xiaoo/aet" ;;
+        opencode) echo "$HOME/.config/opencode/aet" ;;
+        *)        echo "$HOME/.xiaoo/aet" ;;
+    esac
+}
+
+resolve_repo_url() {
+    echo "https://atomgit.com/openeuler/agentic-engineering-team.git"
+}
+
 download_source() {
-    local repo="https://atomgit.com/openeuler/agentic-engineering-team.git"
-    local target="$HOME/.config/opencode/aet"
-    
+    local repo="$(resolve_repo_url)"
+    local target="$(resolve_aet_target)"
+
     log_info "下载源代码..."
-    
-    if [ -d "$target" ]; then
-        log_info "目录已存在，删除旧目录..."
-        rm -rf "$target" || log_error "无法删除目录 $target"
+
+    if [ -d "${target}" ] && [ ! -L "${target}" ]; then
+        log_info "目录已存在，拉取更新..."
+        cd "${target}" && git pull || log_warn "git pull 失败，继续使用现有代码"
+    else
+        log_info "克隆仓库到 ${target}..."
+        mkdir -p "$(dirname "${target}")"
+        rm -rf "${target}"
+        git clone "${repo}" "${target}" || log_error "克隆仓库失败"
     fi
-    log_info "克隆仓库..."
-    git clone "$repo" "$target" || log_error "克隆仓库失败"
-    
+
     log_success "源代码下载完成"
 }
 
-# 设置本地源目录（本地安装）
-setup_local_source() {
-    local current_dir="$(cd "$(dirname "$0")/.." && pwd)"
-    
-    # 检查是否为有效的 AET 项目目录
-    if [ ! -f "$current_dir/.opencode/plugins/aet.js" ]; then
-        log_error "本地目录不是有效的 AET 项目: $current_dir\n请确保在 AET 项目根目录下运行此脚本"
-    fi
-    
-    log_info "使用本地源代码: $current_dir"
-    
-    # 如果 ~/.config/opencode/aet 已存在，提示用户
-    local target="$HOME/.config/opencode/aet"
-    if [ -d "$target" ]; then
-        if [ "$(readlink -f "$target")" = "$(readlink -f "$current_dir")" ]; then
-            log_info "已使用相同目录，跳过链接步骤"
-        else
-            log_info "目录已存在，删除旧目录..."
-            rm -rf "$target" || log_error "无法删除目录 $target"
-            # 创建符号链接代替复制
-            ln -s "$current_dir" "$target" || log_error "无法创建目录链接"
-            log_success "使用符号链接连接到本地源代码"
-        fi
+resolve_aet_root() {
+    local target="$(resolve_aet_target)"
+
+    if [ "${install_mode}" = "remote" ]; then
+        download_source
     else
-        # 创建符号链接代替复制
-        mkdir -p "$(dirname "$target")"
-        ln -s "$current_dir" "$target" || log_error "无法创建目录链接"
-        log_success "使用符号链接连接到本地源代码"
+        local script_dir="$(cd "$(dirname "$0")" && pwd)"
+        local project_root="$(cd "${script_dir}/.." && pwd)"
+
+        if [ ! -f "${project_root}/commands/init.md" ]; then
+            log_error "本地目录不是有效的 AET 项目: ${project_root}\n请确保在 AET 项目根目录下运行此脚本"
+        fi
+
+        log_info "使用本地源代码: ${project_root}"
+
+        mkdir -p "$(dirname "${target}")"
+        if [ -L "${target}" ]; then
+            rm -f "${target}"
+        elif [ -d "${target}" ]; then
+            if [ "$(readlink -f "${target}")" = "$(readlink -f "${project_root}")" ]; then
+                log_info "已使用相同目录，跳过链接步骤"
+                AET_ROOT="${target}"
+                return
+            fi
+            rm -rf "${target}"
+        fi
+        ln -s "${project_root}" "${target}"
+        log_success "已创建符号链接: ${target} -> ${project_root}"
     fi
-    
-    # 返回源目录路径
-    echo "$current_dir"
+
+    AET_ROOT="${target}"
 }
 
+# ============================================================
+# opencode 平台函数
+# ============================================================
+
 # 创建插件和skills目录
-create_directories() {
+opencode_create_directories() {
     local aet_dir="$HOME/.config/opencode/aet"
     
     log_info "创建插件和skills目录..."
@@ -203,7 +224,7 @@ create_directories() {
 }
 
 # 创建commands目录的符号链接
-create_commands_symlinks() {
+opencode_create_commands_symlinks() {
     local aet_dir="$HOME/.config/opencode/aet"
     local commands_dir="$HOME/.config/opencode/commands"
     
@@ -313,7 +334,7 @@ init_global_config() {
 }
 
 # 验证安装
-verify_installation() {
+opencode_verify_installation() {
     log_info "验证安装..."
     
     if [ ! -f "$HOME/.config/opencode/plugins/aet.js" ]; then
@@ -328,12 +349,361 @@ verify_installation() {
         log_error "commands目录不存在"
     fi
     
+    # 检查公共模块目录
+    local aet_utils_dir
+    if [ -L "$HOME/.config/opencode/aet" ]; then
+        aet_utils_dir="$(readlink -f "$HOME/.config/opencode/aet")/.platform/utils"
+    else
+        aet_utils_dir="$HOME/.config/opencode/aet/.platform/utils"
+    fi
+    if [ ! -d "$aet_utils_dir" ]; then
+        log_error "公共模块目录不存在: $aet_utils_dir"
+    fi
+    
     # 检查至少有一个commands符号链接
     if [ ! -L "$HOME/.config/opencode/commands/aet-init.md" ]; then
         log_error "commands符号链接不存在"
     fi
     
     log_success "安装验证通过"
+}
+
+# ============================================================
+# xiaoO 平台函数
+# ============================================================
+
+xiaoo_install_hooker_plugin() {
+    local aet_root="$1"
+    local config_file="$2"
+
+    log_info "安装 Hooker 插件..."
+
+    local plugin_json="${aet_root}/.xiaoo/hookers/plugin.json"
+
+    [ -f "${plugin_json}" ] || log_error "plugin.json 不存在: ${plugin_json}"
+
+    # 幂等：已注册则跳过
+    if grep -qF "${plugin_json}" "${config_file}" 2>/dev/null; then
+        log_info "plugin.json 已注册"
+        return
+    fi
+
+    # [hooker] 段不存在，直接创建
+    if ! grep -q '^\[hooker\]' "${config_file}" 2>/dev/null; then
+        {
+            echo ""
+            echo "[hooker]"
+            echo "plugins = [\"${plugin_json}\"]"
+            echo 'default = "All"'
+        } >> "${config_file}"
+        log_success "已注册 plugin.json 到 config.toml"
+        return
+    fi
+
+    # [hooker] 已存在，添加 plugin_json 到 plugins
+    local existing_plugins
+    existing_plugins=$(grep '^plugins[[:space:]]*=' "${config_file}" 2>/dev/null || true)
+
+    local tmp_file
+    tmp_file=$(mktemp)
+
+    if [ -n "${existing_plugins}" ]; then
+        # 已有 plugins 行，追加到数组
+        if [[ "${existing_plugins}" =~ \[\][[:space:]]*$ ]]; then
+            sed "s|^plugins[[:space:]]*=.*|plugins = [\"${plugin_json}\"]|" "${config_file}" > "${tmp_file}"
+        else
+            sed "/^plugins/s|]|, \"${plugin_json}\"]|" "${config_file}" > "${tmp_file}"
+        fi
+    else
+        # 无 plugins 行，在 [hooker] 后新增
+        awk -v plugin_line="plugins = [\"${plugin_json}\"]" '
+        /^\[hooker\]/ { print; print plugin_line; next }
+        { print }
+        ' "${config_file}" > "${tmp_file}"
+    fi
+
+    mv "${tmp_file}" "${config_file}"
+    log_success "已注册 plugin.json 到 config.toml"
+}
+
+xiaoo_install_commands() {
+    local aet_root="$1"
+    local command_dir="$2"
+    local commands_src="${aet_root}/commands"
+
+    log_info "链接命令文件..."
+
+    if [ ! -d "${commands_src}" ]; then
+        log_error "commands 目录不存在: ${commands_src}"
+    fi
+
+    mkdir -p "${command_dir}"
+
+    # 清理旧的 aet- 命令符号链接或文件
+    rm -f "${command_dir}"/aet-* 2>/dev/null
+
+    local count=0
+    for cmd_file in "${commands_src}"/*.md; do
+        [ -f "${cmd_file}" ] || continue
+        local filename=$(basename "${cmd_file}")
+        ln -s "${cmd_file}" "${command_dir}/aet-${filename}"
+        count=$((count + 1))
+    done
+
+    log_success "已链接 ${count} 个命令文件"
+}
+
+xiaoo_install_tools() {
+    local aet_root="$1"
+    local tools_dir="$2"
+    local src_tools="${aet_root}/.xiaoo/tools"
+
+    log_info "链接工具文件..."
+
+    mkdir -p "${tools_dir}"
+
+    if [ "$(cd -P "${src_tools}" 2>/dev/null && pwd -P)" = "$(cd -P "${tools_dir}" 2>/dev/null && pwd -P)" ]; then
+        log_info "源与目标相同，跳过"
+        return
+    fi
+
+    if [ ! -d "${src_tools}" ]; then
+        log_warn "工具源目录不存在: ${src_tools}"
+        return
+    fi
+
+    # 创建符号链接（跳过 tools.toml）
+    local count=0
+    for f in "${src_tools}"/*; do
+        [ -f "$f" ] || continue
+        local filename=$(basename "$f")
+        [ "${filename}" = "tools.toml" ] && continue
+        rm -f "${tools_dir}/${filename}"
+        ln -s "$f" "${tools_dir}/${filename}"
+        count=$((count + 1))
+    done
+
+    log_success "工具链接完成（${count} 个文件）"
+}
+
+xiaoo_install_xiaoo_files() {
+    local aet_root="$1"
+    local xiaoo_home="$2"
+    local src_dir="${aet_root}/.xiaoo"
+
+    log_info "链接 xiaoO专用JS文件..."
+
+    local count=0
+    for src_file in "${src_dir}"/*.js; do
+        [ -f "${src_file}" ] || continue
+        local filename=$(basename "${src_file}")
+        rm -rf "${xiaoo_home}/${filename}"
+        ln -s "${src_file}" "${xiaoo_home}/${filename}"
+        count=$((count + 1))
+    done
+
+    log_success "已链接 ${count} 个专用JS文件"
+}
+
+xiaoo_install_skills() {
+    local aet_root="$1"
+    local skills_dir="$2"
+    local aet_skills="${aet_root}/skills"
+
+    log_info "链接 Skills..."
+
+    if [ ! -d "${aet_skills}" ]; then
+        log_warn "Skills 目录不存在，跳过"
+        return
+    fi
+
+    local count=0
+    for skill_dir in "${aet_skills}"/*/; do
+        [ -d "${skill_dir}" ] || continue
+        local skill_name=$(basename "${skill_dir}")
+        rm -rf "${skills_dir}/${skill_name}"
+        ln -s "${skill_dir}" "${skills_dir}/${skill_name}"
+        count=$((count + 1))
+    done
+
+    log_success "已链接 ${count} 个 Skills"
+}
+
+# 配置 agents 段：交互询问用户设置 main agent 的 workspace 路径
+xiaoo_install_agents_config() {
+    local aet_root="$1"
+    local config_file="$2"
+
+    log_info "配置项目目录..."
+
+    # 交互询问 workspace
+    local workspace=""
+
+    safe_read "请设置项目目录：" workspace
+
+    # 去除首尾引号和空格
+    workspace=$(echo "${workspace}" | sed 's/^["'"'"']*//;s/["'"'"']*$//' | xargs)
+
+    [ -z "${workspace}" ] && log_error "项目目录不能为空，请重新运行安装并填写有效的目录路径"
+    [ ! -d "${workspace}" ] && log_error "项目目录不存在: ${workspace}，请确认路径后重新运行安装"
+
+    # 幂等：已存在相同配置则跳过
+    if grep -q "workspace = \"${workspace}\"" "${config_file}" 2>/dev/null; then
+        log_info "agents 配置已存在"
+        return
+    fi
+
+    # 移除 [agents] 整个段（包括 [[agents.list]] 子段），重新写入
+    local tmp_file
+    tmp_file=$(mktemp)
+    awk '
+    /^\[agents\]/ { skip = 1; next }
+    skip && /^\[/ && !/^\[\[agents/ { skip = 0 }
+    !skip { print }
+    ' "${config_file}" > "${tmp_file}"
+
+    # 追加新的 agents 段
+    {
+        echo ""
+        echo "[agents]"
+        echo 'default_agent_id = "main"'
+        echo ""
+        echo "[[agents.list]]"
+        echo "id = \"main\""
+        echo "workspace = \"${workspace}\""
+    } >> "${tmp_file}"
+
+    mv "${tmp_file}" "${config_file}"
+    log_success "已配置项目目录: ${workspace}"
+}
+
+xiaoo_verify_installation() {
+    local aet_root="$1"
+    local config_file="$2"
+    local command_dir="$3"
+    local tools_dir="$4"
+    local skills_dir="$5"
+    local xiaoo_home="$6"
+
+    log_info "验证安装..."
+
+    local plugin_json="${aet_root}/.xiaoo/hookers/plugin.json"
+    if [ ! -f "${plugin_json}" ]; then
+        log_error "plugin.json 不存在"
+    fi
+
+    if ! grep -q "${plugin_json}" "${config_file}" 2>/dev/null; then
+        log_error "plugin.json 未注册到 config.toml"
+    fi
+
+    if [ ! -L "${command_dir}/aet-init.md" ]; then
+        log_error "commands 符号链接不存在"
+    fi
+
+    if [ ! -L "${tools_dir}" ] && [ ! -d "${tools_dir}" ]; then
+        log_error "tools 目录不存在"
+    fi
+
+    if [ ! -L "${xiaoo_home}/hook-utils.js" ]; then
+        log_error "xiaoo 专用 JS 文件链接不存在"
+    fi
+
+    log_success "安装验证通过"
+}
+
+xiaoo_start_daemon() {
+    local config_file="$1"
+    local workspace="$2"
+
+    if ! command -v xiaoo-daemon >/dev/null 2>&1; then
+        log_warn "未找到 xiaoo-daemon 命令，请手动启动: xiaoo-daemon --config ${config_file} --host 127.0.0.1 --port 18080"
+        return
+    fi
+
+    # 已有 daemon 在运行则先杀掉
+    if pgrep -f "xiaoo-daemon.*--port 18080" >/dev/null 2>&1; then
+        log_info "xiaoO daemon 已在运行中，正在重启..."
+        pkill -f "xiaoo-daemon.*--port 18080" 2>/dev/null
+        sleep 1
+    fi
+
+    log_info "后台启动 xiaoO daemon..."
+    cd "${workspace}" && nohup xiaoo-daemon --config "${config_file}" --host 127.0.0.1 --port 18080 >> "${HOME}/.xiaoo/xiaoo_daemon.log" 2>&1 &
+    disown
+    log_success "xiaoO daemon 已在后台启动 (127.0.0.1:18080)"
+}
+
+xiaoo_main() {
+    echo "=== AET xiaoO 平台安装 ==="
+    echo ""
+
+    check_dependencies
+
+    resolve_aet_root
+    local aet_root="${AET_ROOT}"
+    log_info "AET 根目录: ${aet_root}"
+    echo ""
+
+    local xiaoo_config_dir="${HOME}/.config/xiaoo"
+    local xiaoo_command_dir="${HOME}/.xiaoo/commands"
+    local xiaoo_tools_dir="${HOME}/.xiaoo/tools"
+    local xiaoo_home="${HOME}/.xiaoo"
+    local xiaoo_skills_dir="${HOME}/.xiaoo/skills"
+    local xiaoo_config_file="${xiaoo_config_dir}/config.toml"
+
+    mkdir -p "${xiaoo_config_dir}"
+    mkdir -p "${xiaoo_command_dir}"
+    mkdir -p "${xiaoo_tools_dir}"
+    mkdir -p "${xiaoo_skills_dir}"
+
+    [ ! -f "${xiaoo_config_file}" ] && touch "${xiaoo_config_file}"
+
+    xiaoo_install_hooker_plugin "${aet_root}" "${xiaoo_config_file}"
+    xiaoo_install_commands "${aet_root}" "${xiaoo_command_dir}"
+    xiaoo_install_tools "${aet_root}" "${xiaoo_tools_dir}"
+    xiaoo_install_xiaoo_files "${aet_root}" "${xiaoo_home}"
+    xiaoo_install_skills "${aet_root}" "${xiaoo_skills_dir}"
+    xiaoo_install_agents_config "${aet_root}" "${xiaoo_config_file}"
+    xiaoo_verify_installation "${aet_root}" "${xiaoo_config_file}" "${xiaoo_command_dir}" "${xiaoo_tools_dir}" "${xiaoo_skills_dir}" "${xiaoo_home}"
+
+    install_knowledge_graph
+    init_global_config
+
+    local workspace=$(grep '^workspace = ' "${xiaoo_config_file}" | head -1 | sed 's/^workspace = "\(.*\)"/\1/')
+    xiaoo_start_daemon "${xiaoo_config_file}" "${workspace}"
+
+    echo ""
+    log_success "AET 安装成功！"
+    echo ""
+    echo "您现在可以使用 AET 了！"
+}
+
+opencode_main() {
+    echo "=== AET opencode 平台安装 ==="
+    echo ""
+
+    check_dependencies
+
+    resolve_aet_root
+
+    if [ "$install_mode" = "local" ]; then
+        log_info "模式: 本地安装（开发模式）"
+    else
+        log_info "模式: 远程安装"
+    fi
+    opencode_create_directories
+    opencode_create_commands_symlinks
+    opencode_verify_installation
+
+    # 安装知识图谱工具
+    install_knowledge_graph
+
+    # 全局配置初始化
+    init_global_config
+
+    log_success "AET 安装成功！"
+    echo ""
+    echo "您现在可以使用 AET 了！"
 }
 
 # 显示帮助
@@ -355,7 +725,9 @@ show_help() {
 # 主函数
 main() {
     local install_mode="remote"
-    
+    local platform="opencode"
+    local PLATFORM_SPECIFIED=""
+
     # 解析参数
     while [[ $# -gt 0 ]]; do
         case $1 in
@@ -372,35 +744,30 @@ main() {
                 ;;
         esac
     done
-    
-    log_info "开始安装 AET..."
-    check_dependencies
-    
-    if [ "$install_mode" = "local" ]; then
-        log_info "模式: 本地安装（开发模式）"
-        source_dir=$(setup_local_source)
-        # 本地安装时，不需要复制，因为用的是符号链接
-        # 但仍需要创建插件和skills目录的链接
-        create_directories
-        create_commands_symlinks
-    else
-        log_info "模式: 远程安装"
-        download_source
-        create_directories
-        create_commands_symlinks
-    fi
-    
-    verify_installation
 
-    # 安装知识图谱工具
-    install_knowledge_graph
-    
-    # 全局配置初始化
-    init_global_config
-    
-    log_success "AET 安装成功！"
-    echo ""
-    echo "您现在可以使用 AET 了！"
+    # 交互式选择安装平台
+    if [[ -z "${PLATFORM_SPECIFIED}" ]]; then
+        echo "请选择安装平台："
+        echo "  1) opencode  - 安装到 ~/.config/opencode/"
+        echo "  2) xiaoO     - 安装到 ~/.xiaoo/"
+        echo ""
+        safe_read "请输入选项 (1 或 2，默认 1): " choice
+        case "${choice}" in
+            2|xiaoO|XIAOO) platform="xiaoO" ;;
+            *) platform="opencode" ;;
+        esac
+        log_info "已选择平台: ${platform}"
+    fi
+
+    # 分发到对应平台的安装逻辑
+    case "${platform}" in
+        xiaoO)
+            xiaoo_main
+            ;;
+        opencode)
+            opencode_main
+            ;;
+    esac
 }
 
 main "$@"

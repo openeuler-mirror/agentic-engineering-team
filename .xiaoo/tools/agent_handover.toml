@@ -1,0 +1,25 @@
+name = "agent_handover"
+description = "Hand over control from current AET agent to the next stage agent in the workflow"
+timeout_ms = 10000
+
+[input_schema]
+type = "object"
+required = ["target_agent", "context", "checkpoint_id"]
+
+[input_schema.properties.target_agent]
+type = "string"
+description = "The agent ID to hand over to (e.g. 'implement', 'test')"
+
+[input_schema.properties.context]
+type = "string"
+description = "Handover context describing what was accomplished and what the next agent should do"
+
+[input_schema.properties.checkpoint_id]
+type = "string"
+description = "Required checkpoint ID for the workflow"
+
+[exec]
+command = "node"
+args = ["~/.xiaoo/aet/.xiaoo/tools/agent_handover.js"]
+stdin = "json"
+stdout = "text"

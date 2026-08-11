@@ -6,7 +6,7 @@ description: |
   design, and DFx strategy. Use when: (1) you have completed requirements analysis and need to
   produce a requirements design specification, (2) you need to clarify how requirements integrate
   into the existing system, (3) you need module-level change planning with frozen zones and
-  interface contracts, (4) you need to produce a SDD-style design document, or any requirements
+  interface contracts, (4) you need to produce a structured requirements design document, or any requirements
   design and architecture design tasks.
 metadata:
   pattern: pipeline
@@ -132,7 +132,7 @@ Load `workflows/sop-generation.md` and execute the document generation workflow.
 
 <output>
 
-Requirements Design Specification (SDD-style document)
+Requirements Design Specification (RDS)
 
 </output>
 

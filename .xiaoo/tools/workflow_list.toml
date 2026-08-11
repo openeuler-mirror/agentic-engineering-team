@@ -1,0 +1,12 @@
+name = "workflow_list"
+description = "List all available AET workflow scenarios"
+timeout_ms = 5000
+
+[input_schema]
+type = "object"
+
+[exec]
+command = "node"
+args = ["~/.xiaoo/aet/.xiaoo/tools/workflow_list.js"]
+stdin = "json"
+stdout = "text"

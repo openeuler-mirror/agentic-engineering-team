@@ -3,7 +3,6 @@
 ![Version](https://img.shields.io/badge/version-1.1.0-blue)
 ![License](https://img.shields.io/badge/license-MulanPSL--2.0-green)
 ![Node](https://img.shields.io/badge/node-%3E%3D14.0.0-brightgreen)
-![Skills](https://img.shields.io/badge/skills-44-orange)
 ![Platform](https://img.shields.io/badge/platform-OpenCode-lightgrey)
 
 > AET (Agentic Engineering Team) 全流程 AI 辅助研发底座/引擎：通过多个专用 AI 智能体有序协作，覆盖从需求分析、设计、编码、测试到发布、运维的软件研发全生命周期。
@@ -45,13 +44,13 @@ AET 通过多智能体编排、断点恢复和可配置工作流解决上述问�
 
 - **四层分层架构** — 命令层 → 编排 Skill 层 → Agent 层 → 原子 Skill 层，各层职责清晰、可独立扩展。阶段产物（设计文档、开发计划、验证报告）以 Markdown 固化，直接作为下一阶段的输入上下文。
 
-- **围栏模块保护 (Fence)** — 设计阶段自动将文件划分为允许修改、禁止修改和条件修改三类。AI 在开发时自动遵守围栏边界，防止越界修改破坏模块依赖。围栏在三个保护点（设计、实现、PR 前）反复校验。
+- **围栏模块保护 (Fence)** — 实现阶段首步（开发计划生成）自动将文件划分为允许修改、禁止修改和条件修改三类。AI 在开发时自动遵守围栏边界，防止越界修改破坏模块依赖。围栏在三个保护点（开发计划生成、实现、PR 前）反复校验。
 
 - **可配置工作流** — Agent 执行顺序和用户确认点 (Hook) 通过 JSON 完全自定义。三级配置（全局模板、项目模板、项目配置）支持团队在不修改核心代码的前提下适配不同流程。
 
 - **断点恢复 (Checkpoint)** — 任务快照记录各阶段完整状态。长程任务中断后从最新断点恢复，无需从头执行，降低计算资源重复消耗。
 
-- **42 个原子技能** — 模块化 Skill 体系覆盖分析、设计、实现、测试、代码审查、发布管理、文档生成、安全与 CVE 分析。技能采用渐进式披露模式，按需展示复杂度。
+- **原子技能** — 模块化 Skill 体系覆盖分析、设计、实现、测试、代码审查、发布管理、文档生成、安全与 CVE 分析。技能采用渐进式披露模式，按需展示复杂度。
 
 - **自动化版本发布** — 检测上次 Release 后的代码变更，分析 commit 类型（feat/fix/docs/refactor），推断版本号（major/minor/patch），生成 Release Notes 并自动创建平台 Release。
 
@@ -109,8 +108,8 @@ ls -la ~/.config/opencode/commands/aet-*.md
 AET 自动完成以下流程：
 
 1. 认领 Issue，创建特性分支
-2. 生成三份设计文档：RAS（需求分析规范）、RDS（需求设计规范）、SDD（软件设计文档）
-3. 基于围栏配置生成开发计划
+2. 生成两份设计文档：RAS（需求分析规范）、RDS（需求设计规范）
+3. 生成开发计划：DPS（开发计划规范，含围栏配置）
 4. 使用 TDD（红 → 绿 → 重构）实现功能
 5. 对照需求验证功能完整性
 6. 提示用户通过 `/aet-pr` 提交 PR
@@ -168,7 +167,7 @@ AET 采用四层分层架构，依赖方向严格自上而下：
 
 ### 设计优势
 
-- **基于产物的协作**：各阶段输出 Markdown 产物（RAS、RDS、SDD、实现计划、验证报告），直接作为下一阶段的上下文，消除角色间沟通成本。
+- **基于产物的协作**：各阶段输出 Markdown 产物（RAS、RDS、DPS、验证报告），直接作为下一阶段的上下文，消除角色间沟通成本。
 - **渐进式披露**：Skill 以简洁描述开头，需要时再展开完整复杂度，保持 Agent 提示词聚焦，避免上下文窗口溢出。
 - **平台抽象**：所有平台 API 操作（Issue、PR、Release）通过统一的 `platform-api.js` 接口处理，一套代码支持 GitHub、GitLab、Gitee、AtomGit、GitCode。
 
@@ -249,14 +248,14 @@ AET 采用四层分层架构，依赖方向严格自上而下：
 .
 ├── agents/                  # Agent 定义（含系统提示词）
 │   ├── router/             # Aet-Router：协调入口、Feature 认领
-│   ├── design/             # Aet-Design：RAS、RDS、SDD 生成
-│   ├── implement/          # Aet-Implement：TDD + 编码 + 验证
+│   ├── design/             # Aet-Design：RAS、RDS 生成
+│   ├── implement/          # Aet-Implement：DPS（dev-plan）+ TDD + 编码 + 验证
 │   ├── test/               # Aet-Test：集成测试（扩展中）
 │   ├── bugfix/             # Aet-Bugfix：诊断与修复规划
 │   ├── doc/                # Aet-Doc：README、手册、技术分析、API 文档、翻译、检查、mdbook 构建
 │   ├── general/            # Aet-General：通用任务处理
 │   └── release/            # Aet-Release：版本管理
-├── skills/                  # SKILL定义
+├── skills/                  # SKILL.md 定义
 │   ├── aet-req-analysis/
 │   ├── aet-req-design/
 │   ├── aet-implementing-requirement/

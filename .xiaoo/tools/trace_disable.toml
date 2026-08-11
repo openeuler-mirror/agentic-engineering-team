@@ -1,0 +1,12 @@
+name = "trace_disable"
+description = "Disable LLM request/response trace logging. No new LLM calls will be recorded."
+timeout_ms = 5000
+
+[input_schema]
+type = "object"
+
+[exec]
+command = "node"
+args = ["~/.xiaoo/aet/.xiaoo/tools/trace_disable.js"]
+stdin = "json"
+stdout = "text"

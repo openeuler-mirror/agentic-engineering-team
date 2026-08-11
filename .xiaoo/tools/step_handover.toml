@@ -1,0 +1,25 @@
+name = "step_handover"
+description = "Hand over to the next step within the current AET agent's workflow. Example: step_handover({ context: 'Completed platform analysis.' }) or step_handover({ context: '...', step: 'development_plan' })"
+timeout_ms = 10000
+
+[input_schema]
+type = "object"
+required = ["context"]
+
+[input_schema.properties.context]
+type = "string"
+description = "Required. Summary of current step work to pass to the next step."
+
+[input_schema.properties.step]
+type = "string"
+description = "Optional. Target step_id to jump to (forward to skip steps, or backward to redo). Defaults to the next step."
+
+[input_schema.properties.checkpoint_id]
+type = "string"
+description = "Optional checkpoint ID; if omitted, uses the current active checkpoint"
+
+[exec]
+command = "node"
+args = ["~/.xiaoo/aet/.xiaoo/tools/step_handover.js"]
+stdin = "json"
+stdout = "text"

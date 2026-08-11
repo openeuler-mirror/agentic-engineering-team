@@ -1,0 +1,12 @@
+name = "checkpoint_list_active"
+description = "List all active and interrupted AET workflow checkpoints"
+timeout_ms = 5000
+
+[input_schema]
+type = "object"
+
+[exec]
+command = "node"
+args = ["~/.xiaoo/aet/.xiaoo/tools/checkpoint_list_active.js"]
+stdin = "json"
+stdout = "text"

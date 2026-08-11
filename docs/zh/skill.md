@@ -4,7 +4,7 @@
 
 ## 概述
 
-Skill（技能）是 AET 的核心功能单元。每个 Skill 定义为 `SKILL.md` 文件，描述其用途、触发场景和工作流程。AET 提供 42 个 Skill，分为三个层级。
+Skill（技能）是 AET 的核心功能单元。每个 Skill 定义为 `SKILL.md` 文件，描述其用途、触发场景和工作流程。AET 预置多个 Skill，分为三个层级。
 
 ## Skill 层级结构
 
@@ -86,16 +86,6 @@ Skill（技能）是 AET 的核心功能单元。每个 Skill 定义为 `SKILL.m
 | :--- | :--- | :--- |
 | `aet-setup-config` | 编排 | 项目配置初始化 |
 | `aet-interacting-with-users` | 原子 | 用户交互 |
-
-### 设计/UX
-
-| Skill | 层级 | 用途 |
-| :--- | :--- | :--- |
-| `frontend-design` | 编排 | 前端设计 |
-| `ui-ux-pro-max` | 编排 | UI/UX 设计 |
-| `prototype-quality-check` | 原子 | 原型质量检查 |
-| `slide-height-checker` | 原子 | 幻灯片高度检查 |
-| `patent-fetch` | 原子 | 专利信息检索 |
 
 ## Skill 调用方式
 
