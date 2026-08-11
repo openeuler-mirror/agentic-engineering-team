@@ -1,0 +1,12 @@
+name = "trace_status"
+description = "Check the current trace logging status. Shows whether trace is enabled/disabled and the trace directory location."
+timeout_ms = 5000
+
+[input_schema]
+type = "object"
+
+[exec]
+command = "node"
+args = ["~/.xiaoo/aet/.xiaoo/tools/trace_status.js"]
+stdin = "json"
+stdout = "text"

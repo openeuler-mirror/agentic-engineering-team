@@ -2,7 +2,7 @@
 name: aet-req-dev-plan
 description: |
   Development plan skill - transforms the approved requirements design specification
-  into an executable development plan (SDD-style) tailored for Agent-oriented
+  into an executable development plan (DPS-style) tailored for Agent-oriented
   programming: concrete coding tasks with acceptance criteria, organized into
   execution waves and grounded in the CURRENT state of the codebase. Use when:
   (1) you have completed requirements design and need to produce a development
@@ -123,7 +123,7 @@ Load `workflows/sop-generation.md` and execute the document generation workflow.
 <input>
 
 - **Requirements Analysis Specification (Mandatory)**：The IR document produced by `aet-req-analysis`.
-- **Requirements Design Specification (Mandatory)**：The SDD document produced by `aet-req-design`. Read it thoroughly to absorb design decisions, module-change fences, interface contracts, SR/AR decomposition, and DFx targets.
+- **Requirements Design Specification (Mandatory)**：The RDS document produced by `aet-req-design`. Read it thoroughly to absorb design decisions, module-change fences, interface contracts, SR/AR decomposition, and DFx targets.
 - **Current Project Codebase (Mandatory)**：Need to analyze the project's existing code to ground every task in real file paths and current implementation state.
 - **Current Project Codebase Analysis Document (Recommended)**：The entry path is usually located at `<projectDir>/.aet/project-analysis/SKILL.md`. If available, this must be read to deepen understanding and align with the project's "Golden Development Principles."
 - **Reference Project Codebase (Optional)**：External codebase that can be referenced to assist with the plan.
@@ -135,7 +135,7 @@ Load `workflows/sop-generation.md` and execute the document generation workflow.
 
 <output>
 
-Development Plan (SDD-style document) — `dev-plan.md`
+Development Plan (DPS-style document) — `dev-plan.md`
 
 </output>
 
