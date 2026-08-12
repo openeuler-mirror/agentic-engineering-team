@@ -3,7 +3,7 @@
  *
  * 从 aet.js 抽离的配置管理模块。
  * 配置优先级：项目 config.json > 项目 templates/workflow.json > 全局 templates/workflow.json
- * 同时管理全局配置 (~/.aet/config.json)，包含 trace、codePlatform、knowledgeGraph 等跨项目设置
+ * 同时管理全局配置 (~/.aet/config.json)，包含 trace、codePlatform 等跨项目设置
  */
 
 const path = require('path');
