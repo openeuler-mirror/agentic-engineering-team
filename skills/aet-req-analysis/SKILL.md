@@ -132,6 +132,15 @@ All user-facing prompts must be in the user's locale language. If user locale is
 
 **Completion: Clarity — no unresolved ambiguities remain, user has confirmed all questions, scenarios identified, key specifications designed, functional impact analyzed**
 
+### [S1.0] Environment Setup
+
+- Load the `aet-design-env` skill to obtain its script path.
+- Detect available libraries and their paths:
+  ```
+  node <aet-design-env path>/aet-design-env/scripts/aet-design-env.mjs context scenario-lib function-lib sdr-lib
+  ```
+- Interpret the detected library metadata (scenario-lib / function-lib / sdr-lib presence + paths) from the command's stdout.
+
 ### [S1.1] Lightweight Codebase Scan
 
 If the project codebase is accessible, perform a lightweight scan of key components to establish preliminary technical context. Use this context to formulate questions.
