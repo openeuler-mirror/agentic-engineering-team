@@ -8,7 +8,6 @@ description: |
   requirement document, (3) the user needs to add clarifications or instructions
   at specific locations in a requirement document, (4) the aet-req-review pipeline
   reaches S3 (Interactive Revision), or any user-driven requirement refinement tasks.
-disable-model-invocation: true
 metadata:
   pattern: pipeline
   stages: 4

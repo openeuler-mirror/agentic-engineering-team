@@ -1,0 +1,29 @@
+{
+  "version": "1.0",
+  "_comment": "全局配置 - 包含跨项目共享的敏感信息和全局设置",
+  "_note": "此文件永不覆盖，只能用户手动修改",
+  "codePlatform": {
+    "_comment": "代码托管平台配置：包含多平台 Token",
+    "platforms": {
+      "_comment": "多平台配置：每个平台包含 type、token、apiBaseUrl",
+      "gitcode": {
+        "type": "gitcode",
+        "_token_comment": "GitCode/AtomGit 平台 Token，支持环境变量引用：${ATOMGIT_TOKEN}",
+        "apiBaseUrl": "https://api.atomgit.com/api/v5",
+        "token": ""
+      },
+      "github": {
+        "type": "github",
+        "_token_comment": "GitHub 平台 Token，支持环境变量引用：${GITHUB_TOKEN}",
+        "apiBaseUrl": "https://api.github.com",
+        "token": ""
+      },
+      "gitlab": {
+        "type": "gitlab",
+        "_token_comment": "GitLab 平台 Token 支持环境变量引用：${GITLAB_TOKEN}",
+        "apiBaseUrl": "https://gitlab.com/api/v4",
+        "token": ""
+      }
+    }
+  }
+}

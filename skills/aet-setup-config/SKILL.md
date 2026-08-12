@@ -1,6 +1,7 @@
 ---
 name: aet-setup-config
 description: Initialize project configuration for AET. Creates .aet/config.json with repository information (upstream/fork). Token is configured in global config (~/.aet/config.json). Use when setting up a new project or when project configuration is missing.
+user-invocable: false
 ---
 
 # Configuration Setup

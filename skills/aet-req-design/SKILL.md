@@ -8,7 +8,6 @@ description: |
   into the existing system, (3) you need module-level change planning with frozen zones and
   interface contracts, (4) you need to produce a structured requirements design document, or any requirements
   design and architecture design tasks.
-disable-model-invocation: true
 metadata:
   pattern: pipeline
   stages: 4

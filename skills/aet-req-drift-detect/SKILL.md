@@ -3,7 +3,6 @@ name: aet-req-drift-detect
 description: |
   Requirements drift detection — compare requirements/specifications against implementation code to find intent gaps, behavior mismatches, and undocumented changes.
   Use when: (1) verifying implementation matches requirements, (2) auditing whether a requirement was fully delivered, (3) checking if requirements doc is still accurate, (4) PR review against acceptance criteria, (5) any "does the code match the spec" or "需求漂移" or "需求对齐" verification task.
-disable-model-invocation: false
 metadata:
   pattern: pipeline
   stages: 5
