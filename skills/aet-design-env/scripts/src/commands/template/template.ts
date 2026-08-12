@@ -157,7 +157,7 @@ export function getCurrentTime(): string {
 export function parseArgs(argv: string[]): ParsedArgs {
   if (argv.length < 1) {
     console.error('Usage: template <template-set-path>');
-    console.error('Example: template skills/aet-req-analysis/scripts/_templates/req-analysis');
+    console.error('Example: template skills/aet-req-analysis/references/_templates/req-analysis');
     process.exit(1);
   }
   return { templateSetPath: argv[0] };

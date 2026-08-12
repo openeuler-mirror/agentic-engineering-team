@@ -1,0 +1,12 @@
+{
+  "rule": {
+    "tag": "aet-design-env-rule",
+    "content": ""
+  },
+  "permissions": {
+    "deny": {
+      "read": [],
+      "write": []
+    }
+  }
+}

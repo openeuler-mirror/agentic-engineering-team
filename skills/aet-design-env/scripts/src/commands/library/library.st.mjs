@@ -12,6 +12,12 @@
  * output is deterministic across invocations; the ORIG CLI still embeds
  * process.argv[1]. The two CLIs emit different hints, so ST filters both.
  *
+ * NOTE: the legacy `library-browser.mjs` baseline has been removed (library
+ * browsing is now owned by aet-design-env). When ORIG_CLI is absent the suite
+ * skips gracefully (see main) rather than hard-failing; a future rewrite should
+ * replace the cross-CLI diff with a golden-snapshot assertion against the NEW
+ * CLI's own output to restore a regression net.
+ *
  * Run:  npm run st      (from skills/aet-design-env/scripts/src)
  *   or: node library.st.mjs
  */
@@ -138,8 +144,16 @@ async function main() {
       process.exit(2);
     }
     if (!existsSync(ORIG_CLI)) {
-      console.error(`ORIG_CLI not found: ${ORIG_CLI} — skills/aet-req-analysis must be present.`);
-      process.exit(2);
+      // The original library-browser.mjs (aet-req-analysis/scripts/) was removed
+      // when library browsing was centralized into aet-design-env. This ST was an
+      // equivalence check against that legacy CLI; with the baseline gone, there is
+      // nothing to diff against. Skip gracefully instead of hard-failing.
+      console.warn(
+        `SKIP: ORIG_CLI not found: ${ORIG_CLI} — the legacy library-browser.mjs ` +
+        `has been removed (library browsing is now owned by aet-design-env). ` +
+        `This equivalence ST has no baseline to compare against.`
+      );
+      process.exit(0);
     }
 
     console.log('=== ST: aet-design-env library vs original library-browser ===\n');

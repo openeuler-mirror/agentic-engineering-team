@@ -4777,18 +4777,21 @@ var plugin3 = {
 import { existsSync as existsSync13, statSync as statSync6 } from "node:fs";
 import { join as join10 } from "node:path";
 var TOP_TAG = "sdr";
+var SECURITY_TAG = "security";
+var RELIABILITY_TAG = "reliability";
 var SDR_TAG = "sdr-library";
-var SEC_TAG = "sec-func-specs";
-var SDR_FILE = "sdr_library.yml";
-var SEC_FILE = "sec_func_specs.yml";
-function buildSdrBlock(root, allExist) {
-  const filePath = join10(root, ".aet", SDR_FILE);
-  if (allExist) {
+var SEC_SPECS_TAG = "sec-func-specs";
+var SEC_SDR_FILE = "security_sdr_library.yml";
+var REL_SDR_FILE = "reliability_sdr_library.yml";
+var SEC_SPECS_FILE = "sec_func_specs.yml";
+function buildSecuritySdrBlock(root, secSdrExists) {
+  const filePath = join10(root, ".aet", SEC_SDR_FILE);
+  if (secSdrExists) {
     return [
       `<${SDR_TAG}>`,
       `<exists>true</exists>`,
       `<path>${filePath}</path>`,
-      `<instruction>SDR \u5E93\u7528\u4E8E\u8FDB\u884C\u5404\u4E2A\u529F\u80FD\u7684SDR\u5206\u6790\u3002\u7981\u6B62\u76F4\u63A5\u8BFB\u53D6\u8BE5 YAML \u6587\u4EF6\u5185\u5BB9\uFF08\u8282\u70B9\u53EF\u80FD\u6781\u591A\uFF0Cread \u4F1A\u6C61\u67D3\u4E0A\u4E0B\u6587\uFF09\u3002\u8BF7\u4F7F\u7528\u5BF9\u5E94\u811A\u672C\u8BFB\u53D6\u3002`,
+      `<instruction>\u5B89\u5168 SDR \u5E93\u7528\u4E8E\u8FDB\u884C\u5404\u4E2A\u529F\u80FD\u7684\u5B89\u5168 SDR \u5206\u6790\u3002\u7981\u6B62\u76F4\u63A5\u8BFB\u53D6\u8BE5 YAML \u6587\u4EF6\u5185\u5BB9\uFF08\u8282\u70B9\u53EF\u80FD\u6781\u591A\uFF0Cread \u4F1A\u6C61\u67D3\u4E0A\u4E0B\u6587\uFF09\u3002\u8BF7\u4F7F\u7528\u5BF9\u5E94\u811A\u672C\u8BFB\u53D6\u3002`,
       `</instruction>`,
       `</${SDR_TAG}>`
     ].join("\n");
@@ -4796,41 +4799,73 @@ function buildSdrBlock(root, allExist) {
   return [
     `<${SDR_TAG}>`,
     `<exists>false</exists>`,
-    `<instruction>SDR \u5E93\u7528\u4E8E\u8FDB\u884C\u5404\u4E2A\u529F\u80FD\u7684SDR\u5206\u6790\u3002\u5F53\u524D\u9879\u76EE\u672A\u63D0\u4F9B SDR \u5E93\uFF0C\u8BF7\u5728\u6CA1\u6709\u8BE5\u5E93\u7684\u60C5\u51B5\u4E0B\u7EE7\u7EED\u5DE5\u4F5C\u3002</instruction>`,
+    `<instruction>\u5B89\u5168 SDR \u5E93\u7528\u4E8E\u8FDB\u884C\u5404\u4E2A\u529F\u80FD\u7684\u5B89\u5168 SDR \u5206\u6790\u3002\u5F53\u524D\u9879\u76EE\u672A\u63D0\u4F9B\u5B89\u5168 SDR \u5E93\uFF0C\u8BF7\u5728\u6CA1\u6709\u8BE5\u5E93\u7684\u60C5\u51B5\u4E0B\u7EE7\u7EED\u5DE5\u4F5C\u3002</instruction>`,
     `</${SDR_TAG}>`
   ].join("\n");
 }
-function buildSecBlock(root, allExist) {
-  const filePath = join10(root, ".aet", SEC_FILE);
-  if (allExist) {
+function buildSecFuncSpecsBlock(root, secSdrExists, secSpecsExists) {
+  const effective = secSdrExists && secSpecsExists;
+  const filePath = join10(root, ".aet", SEC_SPECS_FILE);
+  if (effective) {
     return [
-      `<${SEC_TAG}>`,
+      `<${SEC_SPECS_TAG}>`,
       `<exists>true</exists>`,
       `<path>${filePath}</path>`,
-      `<instruction>\u5B89\u5168\u529F\u80FD\u89C4\u8303\u5E93\u4E2D\u7684\u89C4\u8303\u4E0ESDR\u5173\u8054\uFF0C\u7528\u4E8E\u5177\u4F53\u5206\u6790\u6BCF\u4E00\u9879SDR\u3002\u7981\u6B62\u76F4\u63A5\u8BFB\u53D6\u8BE5 YAML \u6587\u4EF6\u5185\u5BB9\uFF08\u8282\u70B9\u53EF\u80FD\u6781\u591A\uFF0Cread \u4F1A\u6C61\u67D3\u4E0A\u4E0B\u6587\uFF09\u3002\u8BF7\u4F7F\u7528\u5BF9\u5E94\u811A\u672C\u8BFB\u53D6\u3002`,
+      `<instruction>\u5B89\u5168\u529F\u80FD\u89C4\u8303\u5E93\u4E2D\u7684\u89C4\u8303\u4E0E\u5B89\u5168 SDR \u5173\u8054\uFF0C\u7528\u4E8E\u5177\u4F53\u5206\u6790\u6BCF\u4E00\u9879\u5B89\u5168 SDR\u3002\u7981\u6B62\u76F4\u63A5\u8BFB\u53D6\u8BE5 YAML \u6587\u4EF6\u5185\u5BB9\uFF08\u8282\u70B9\u53EF\u80FD\u6781\u591A\uFF0Cread \u4F1A\u6C61\u67D3\u4E0A\u4E0B\u6587\uFF09\u3002\u8BF7\u4F7F\u7528\u5BF9\u5E94\u811A\u672C\u8BFB\u53D6\u3002`,
       `</instruction>`,
-      `</${SEC_TAG}>`
+      `</${SEC_SPECS_TAG}>`
     ].join("\n");
   }
   return [
-    `<${SEC_TAG}>`,
+    `<${SEC_SPECS_TAG}>`,
     `<exists>false</exists>`,
-    `<instruction>\u5B89\u5168\u529F\u80FD\u89C4\u8303\u5E93\u4E2D\u7684\u89C4\u8303\u4E0ESDR\u5173\u8054\uFF0C\u7528\u4E8E\u5177\u4F53\u5206\u6790\u6BCF\u4E00\u9879SDR\u3002\u5F53\u524D\u9879\u76EE\u672A\u63D0\u4F9B\u5B89\u5168\u529F\u80FD\u89C4\u8303\u5E93\u3002</instruction>`,
-    `</${SEC_TAG}>`
+    `<instruction>\u5B89\u5168\u529F\u80FD\u89C4\u8303\u5E93\u4E2D\u7684\u89C4\u8303\u4E0E\u5B89\u5168 SDR \u5173\u8054\uFF0C\u7528\u4E8E\u5177\u4F53\u5206\u6790\u6BCF\u4E00\u9879\u5B89\u5168 SDR\u3002\u5F53\u524D\u9879\u76EE\u672A\u63D0\u4F9B\u5B89\u5168\u529F\u80FD\u89C4\u8303\u5E93\u3002</instruction>`,
+    `</${SEC_SPECS_TAG}>`
+  ].join("\n");
+}
+function buildReliabilitySdrBlock(root, relSdrExists) {
+  const filePath = join10(root, ".aet", REL_SDR_FILE);
+  if (relSdrExists) {
+    return [
+      `<${SDR_TAG}>`,
+      `<exists>true</exists>`,
+      `<path>${filePath}</path>`,
+      `<instruction>\u53EF\u9760\u6027 SDR \u5E93\u7528\u4E8E\u8FDB\u884C\u5404\u4E2A\u529F\u80FD\u7684\u53EF\u9760\u6027 SDR \u5206\u6790\u3002\u7981\u6B62\u76F4\u63A5\u8BFB\u53D6\u8BE5 YAML \u6587\u4EF6\u5185\u5BB9\uFF08\u8282\u70B9\u53EF\u80FD\u6781\u591A\uFF0Cread \u4F1A\u6C61\u67D3\u4E0A\u4E0B\u6587\uFF09\u3002\u8BF7\u4F7F\u7528\u5BF9\u5E94\u811A\u672C\u8BFB\u53D6\u3002`,
+      `</instruction>`,
+      `</${SDR_TAG}>`
+    ].join("\n");
+  }
+  return [
+    `<${SDR_TAG}>`,
+    `<exists>false</exists>`,
+    `<instruction>\u53EF\u9760\u6027 SDR \u5E93\u7528\u4E8E\u8FDB\u884C\u5404\u4E2A\u529F\u80FD\u7684\u53EF\u9760\u6027 SDR \u5206\u6790\u3002\u5F53\u524D\u9879\u76EE\u672A\u63D0\u4F9B\u53EF\u9760\u6027 SDR \u5E93\uFF0C\u8BF7\u5728\u6CA1\u6709\u8BE5\u5E93\u7684\u60C5\u51B5\u4E0B\u7EE7\u7EED\u5DE5\u4F5C\u3002</instruction>`,
+    `</${SDR_TAG}>`
   ].join("\n");
 }
 var plugin4 = {
   name: "sdr-lib",
-  description: `\u63A2\u6D4B .aet/${SDR_FILE} \u4E0E .aet/${SEC_FILE} \u662F\u5426\u5B58\u5728\uFF0C\u8F93\u51FA\u8DEF\u5F84\u4E0E\u6D4F\u89C8\u6307\u4EE4`,
+  description: `\u63A2\u6D4B .aet/${SEC_SDR_FILE}\u3001.aet/${SEC_SPECS_FILE}\u3001.aet/${REL_SDR_FILE} \u662F\u5426\u5B58\u5728\uFF0C\u8F93\u51FA\u8DEF\u5F84\u4E0E\u6D4F\u89C8\u6307\u4EE4`,
   run(root) {
-    const sdrPath = join10(root, ".aet", SDR_FILE);
-    const secPath = join10(root, ".aet", SEC_FILE);
-    const sdrExists = existsSync13(sdrPath) && statSync6(sdrPath).isFile();
-    const secExists = existsSync13(secPath) && statSync6(secPath).isFile();
-    const allExist = sdrExists && secExists;
+    const secSdrPath = join10(root, ".aet", SEC_SDR_FILE);
+    const relSdrPath = join10(root, ".aet", REL_SDR_FILE);
+    const secSpecsPath = join10(root, ".aet", SEC_SPECS_FILE);
+    const secSdrExists = existsSync13(secSdrPath) && statSync6(secSdrPath).isFile();
+    const relSdrExists = existsSync13(relSdrPath) && statSync6(relSdrPath).isFile();
+    const secSpecsExists = existsSync13(secSpecsPath) && statSync6(secSpecsPath).isFile();
+    const securityBlock = [
+      `<${SECURITY_TAG}>`,
+      buildSecuritySdrBlock(root, secSdrExists),
+      buildSecFuncSpecsBlock(root, secSdrExists, secSpecsExists),
+      `</${SECURITY_TAG}>`
+    ].join("\n");
+    const reliabilityBlock = [
+      `<${RELIABILITY_TAG}>`,
+      buildReliabilitySdrBlock(root, relSdrExists),
+      `</${RELIABILITY_TAG}>`
+    ].join("\n");
     return `<${TOP_TAG}>
-${buildSdrBlock(root, allExist)}
-${buildSecBlock(root, allExist)}
+${securityBlock}
+${reliabilityBlock}
 </${TOP_TAG}>`;
   }
 };
@@ -4984,7 +5019,7 @@ function getCurrentTime() {
 function parseArgs(argv) {
   if (argv.length < 1) {
     console.error("Usage: template <template-set-path>");
-    console.error("Example: template skills/aet-req-analysis/scripts/_templates/req-analysis");
+    console.error("Example: template skills/aet-req-analysis/references/_templates/req-analysis");
     process.exit(1);
   }
   return { templateSetPath: argv[0] };
@@ -5293,7 +5328,7 @@ import { basename as basename3, join as join13 } from "node:path";
 function parseArgs2(argv) {
   if (argv.length < 1) {
     console.error("Usage: checklist <checklist-set-path>");
-    console.error("Example: checklist skills/aet-req-analysis/scripts/_templates/req-analysis");
+    console.error("Example: checklist skills/aet-req-analysis/references/_templates/req-analysis");
     process.exit(1);
   }
   return { checklistSetPath: argv[0] };

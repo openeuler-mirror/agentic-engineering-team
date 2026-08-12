@@ -29,23 +29,46 @@ import { fileURLToPath } from 'node:url';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(__dirname, '..', '..', '..', '..', '..', '..');
 const BUNDLE = resolve(REPO_ROOT, 'skills/aet-design-env/scripts/aet-design-env.mjs');
+const CONFIG_PATH = join(REPO_ROOT, 'skills/aet-design-env/config/agents.json');
 
-// Files produced by "setup all" — all 8 agents × their managed files.
-const ALL_PRODUCED_FILES = [
-  '.claude/rules/aet-design-env.md',
+// Whether the default config carries any deny patterns. Permission writers
+// (settings.local.json, hooks.json, cli.json, opencode.json, omp pre-hook)
+// only WRITE when there is something to deny — with an empty deny config they
+// skip, so no permission files are produced. Rule writers always run, so rule
+// files (CLAUDE.md/@import, *.mdc, AGENTS.md, GEMINI.md, .opencode/.trae)
+// are produced regardless. All deny-gated expectations below are conditional
+// on HAS_DENY so the ST stays green with either an empty or a populated config.
+const config = JSON.parse(readFileSync(CONFIG_PATH, 'utf-8'));
+const HAS_DENY =
+  (config.permissions?.deny?.read?.length ?? 0) > 0 ||
+  (config.permissions?.deny?.write?.length ?? 0) > 0;
+
+// Deny-gated permission files (produced only when HAS_DENY).
+const PERMISSION_FILES = [
   '.claude/settings.local.json',
-  'CLAUDE.md',
-  'AGENTS.md',
   '.codex/hooks.json',
-  '.cursor/rules/aet-design-env.mdc',
   '.cursor/cli.json',
-  'GEMINI.md',
   '.gemini/settings.json',
-  '.opencode/agents/aet-design-env.md',
   'opencode.json',
   '.omp/hooks/pre/aet-design-env.ts',
-  '.trae/rules/aet-design-env.md',
   '.trae/hooks.json',
+];
+
+// Rule files produced by "setup all" regardless of deny config.
+const RULE_FILES = [
+  '.claude/rules/aet-design-env.md',
+  '.cursor/rules/aet-design-env.mdc',
+  '.opencode/agents/aet-design-env.md',
+  '.trae/rules/aet-design-env.md',
+];
+
+// Files produced by "setup all" — rule writers + deny-gated permission writers.
+const ALL_PRODUCED_FILES = [
+  'CLAUDE.md',
+  'AGENTS.md',
+  'GEMINI.md',
+  ...RULE_FILES,
+  ...(HAS_DENY ? PERMISSION_FILES : []),
 ];
 
 // Files that uninstall SHOULD remove (PRODUCED — hash-tracked, owned by us).
@@ -53,17 +76,8 @@ const ALL_PRODUCED_FILES = [
 // (inline_tag targets or ruleConfigPath) and are preserved on uninstall
 // even if we created them fresh (they are conceptually user-owned).
 const REMOVABLE_FILES = [
-  '.claude/rules/aet-design-env.md',
-  '.claude/settings.local.json',
-  '.codex/hooks.json',
-  '.cursor/rules/aet-design-env.mdc',
-  '.cursor/cli.json',
-  '.gemini/settings.json',
-  '.opencode/agents/aet-design-env.md',
-  'opencode.json',
-  '.omp/hooks/pre/aet-design-env.ts',
-  '.trae/rules/aet-design-env.md',
-  '.trae/hooks.json',
+  ...RULE_FILES,
+  ...(HAS_DENY ? PERMISSION_FILES : []),
 ];
 
 // Files that are PRESERVED on uninstall (RECOVERED — user-owned).
@@ -73,14 +87,9 @@ const PRESERVED_FILES = [
   'GEMINI.md',
 ];
 
-const JSON_FILES = [
-  '.claude/settings.local.json',
-  '.codex/hooks.json',
-  '.cursor/cli.json',
-  '.gemini/settings.json',
-  'opencode.json',
-  '.trae/hooks.json',
-];
+const JSON_FILES = HAS_DENY
+  ? PERMISSION_FILES.filter((f) => f.endsWith('.json'))
+  : [];
 
 let passed = 0;
 let failed = 0;
@@ -147,7 +156,7 @@ function testFreshSetupAll() {
       'manifest exists'
     );
 
-    // JSON files are valid
+    // JSON files are valid (only when deny config is non-empty → files exist)
     for (const f of JSON_FILES) {
       try {
         JSON.parse(readFileSync(join(root, f), 'utf-8'));
@@ -159,22 +168,17 @@ function testFreshSetupAll() {
       }
     }
 
-    // .ts hook file has expected structure
-    const tsContent = readFileSync(join(root, '.omp/hooks/pre/aet-design-env.ts'), 'utf-8');
-    check(tsContent.includes('import type { HookAPI }'), '.omp/hooks .ts has HookAPI import');
-    check(tsContent.includes('export default function'), '.omp/hooks .ts has export default');
-    check(tsContent.includes('pi.on("tool_call"'), '.omp/hooks .ts has pi.on hook');
+    // .ts hook file has expected structure (produced only when deny is non-empty)
+    if (HAS_DENY) {
+      const tsContent = readFileSync(join(root, '.omp/hooks/pre/aet-design-env.ts'), 'utf-8');
+      check(tsContent.includes('import type { HookAPI }'), '.omp/hooks .ts has HookAPI import');
+      check(tsContent.includes('export default function'), '.omp/hooks .ts has export default');
+      check(tsContent.includes('pi.on("tool_call"'), '.omp/hooks .ts has pi.on hook');
+    }
 
-    // Rule files have content
-    const ruleFiles = [
-      '.claude/rules/aet-design-env.md',
-      '.cursor/rules/aet-design-env.mdc',
-      '.opencode/agents/aet-design-env.md',
-      '.trae/rules/aet-design-env.md',
-    ];
-    for (const f of ruleFiles) {
-      const content = readFileSync(join(root, f), 'utf-8');
-      check(content.length > 100, `${f} has rule content (>100 chars)`);
+    // Rule files exist (content is intentionally empty in the default config)
+    for (const f of RULE_FILES) {
+      check(existsSync(join(root, f)), `${f} exists`);
     }
 
     // Cursor + Trae rules have alwaysApply frontmatter
@@ -223,17 +227,16 @@ function testCoexistence() {
 
     runCmd('all', [], root);
 
-    // Pre-existing deny entries PRESERVED
+    // Pre-existing deny entries PRESERVED (default config deny is empty →
+    // setup must not touch the user's existing deny list)
     const claudeSettings = JSON.parse(
       readFileSync(join(root, '.claude/settings.local.json'), 'utf-8')
     );
     const deny = claudeSettings.permissions?.deny ?? [];
     check(deny.includes('Read(./.env)'), 'pre-existing Read(./.env) preserved');
     check(deny.includes('Write(./secrets/*)'), 'pre-existing Write(./secrets/*) preserved');
-
-    // Our deny entries ADDED (not replacing)
-    check(deny.includes('Read(scripts/src/)'), 'our Read(scripts/src/) added');
-    check(deny.includes('Edit(scripts/src/)'), 'our Edit(scripts/src/) added');
+    check(!deny.includes('Read(scripts/src/)'), 'empty deny config adds no Read(scripts/src/)');
+    check(!deny.includes('Edit(scripts/src/)'), 'empty deny config adds no Edit(scripts/src/)');
 
     // AGENTS.md user content PRESERVED + tag INJECTED
     const agentsMd = readFileSync(join(root, 'AGENTS.md'), 'utf-8');
@@ -314,24 +317,17 @@ function testUninstallUserModified() {
   try {
     runCmd('all', [], root);
 
-    // Modify a produced file (simulating user edits)
-    const settingsPath = join(root, '.claude/settings.local.json');
-    const settings = JSON.parse(readFileSync(settingsPath, 'utf-8'));
-    settings.permissions.deny.push('Read(./user-added)');
-    writeFileSync(settingsPath, JSON.stringify(settings, null, 2));
+    // Modify a produced file (simulating user edits) — use the always-produced
+    // rule file; the deny-gated settings file may not exist with empty deny.
+    const rulePath = join(root, '.claude/rules/aet-design-env.md');
+    writeFileSync(rulePath, readFileSync(rulePath, 'utf-8') + '\n# user-added-note\n');
 
     runCmd('uninstall', ['all'], root);
 
     // User-modified file PRESERVED (hash mismatch)
-    check(
-      existsSync(settingsPath),
-      '.claude/settings.local.json preserved (user-modified)'
-    );
-    const after = JSON.parse(readFileSync(settingsPath, 'utf-8'));
-    check(
-      after.permissions?.deny?.includes('Read(./user-added)'),
-      'user addition preserved after uninstall'
-    );
+    check(existsSync(rulePath), '.claude/rules/aet-design-env.md preserved (user-modified)');
+    const after = readFileSync(rulePath, 'utf-8');
+    check(after.includes('# user-added-note'), 'user addition preserved after uninstall');
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -350,10 +346,12 @@ function testSingleAgent() {
       existsSync(join(root, '.claude/rules/aet-design-env.md')),
       '.claude/rules/aet-design-env.md exists (claude only)'
     );
-    check(
-      existsSync(join(root, '.claude/settings.local.json')),
-      '.claude/settings.local.json exists (claude only)'
-    );
+    if (HAS_DENY) {
+      check(
+        existsSync(join(root, '.claude/settings.local.json')),
+        '.claude/settings.local.json exists (claude only)'
+      );
+    }
 
     // Other agents' files ABSENT — proves single-agent isolation, not "all"
     const absent = [
@@ -378,7 +376,10 @@ function testSingleAgent() {
     check(existsSync(manifestPath), 'manifest exists for single-agent setup');
     const manifest = JSON.parse(readFileSync(manifestPath, 'utf-8'));
     const tracked = Object.keys(manifest.files || {});
-    for (const f of ['.claude/rules/aet-design-env.md', 'CLAUDE.md', '.claude/settings.local.json']) {
+    const claudeTracked = HAS_DENY
+      ? ['.claude/rules/aet-design-env.md', 'CLAUDE.md', '.claude/settings.local.json']
+      : ['.claude/rules/aet-design-env.md', 'CLAUDE.md'];
+    for (const f of claudeTracked) {
       check(tracked.includes(f), `manifest tracks ${f}`);
     }
     for (const f of ['opencode.json', '.codex/hooks.json', 'AGENTS.md', 'GEMINI.md']) {
@@ -407,15 +408,14 @@ function testStatus() {
     check(r1.stdout.includes('recovered'), 'status shows "recovered" section');
 
     // Modify a produced file → status reports it under "modified"
-    const settingsPath = join(root, '.claude/settings.local.json');
-    const settings = JSON.parse(readFileSync(settingsPath, 'utf-8'));
-    settings.permissions.deny.push('Read(./user-modified-for-status)');
-    writeFileSync(settingsPath, JSON.stringify(settings, null, 2));
+    // (rule file is always produced; settings.local.json is deny-gated)
+    const rulePath = join(root, '.claude/rules/aet-design-env.md');
+    writeFileSync(rulePath, readFileSync(rulePath, 'utf-8') + '\n# user-modified-for-status\n');
 
     const r2 = runCmd('status', [], root);
     check(r2.stdout.includes('modified'), 'status reports "modified" section after user edit');
     check(
-      r2.stdout.includes('.claude/settings.local.json'),
+      r2.stdout.includes('.claude/rules/aet-design-env.md'),
       'status lists the modified file path'
     );
   } finally {
@@ -430,18 +430,17 @@ function testUninstallForce() {
   try {
     runCmd('all', [], root);
 
-    // Modify a produced file (hash mismatch — would be preserved without --force)
-    const settingsPath = join(root, '.claude/settings.local.json');
-    const settings = JSON.parse(readFileSync(settingsPath, 'utf-8'));
-    settings.permissions.deny.push('Read(./user-added-for-force-test)');
-    writeFileSync(settingsPath, JSON.stringify(settings, null, 2));
+    // Modify a produced file (hash mismatch — would be preserved without --force).
+    // Rule file is always produced; settings.local.json is deny-gated.
+    const rulePath = join(root, '.claude/rules/aet-design-env.md');
+    writeFileSync(rulePath, readFileSync(rulePath, 'utf-8') + '\n# user-added-for-force-test\n');
 
     runCmd('uninstall', ['all', '--force'], root);
 
     // User-modified file REMOVED by --force (contrast with Test 5, no --force → preserved)
     check(
-      !existsSync(settingsPath),
-      '.claude/settings.local.json REMOVED by uninstall --force (was modified)'
+      !existsSync(rulePath),
+      '.claude/rules/aet-design-env.md REMOVED by uninstall --force (was modified)'
     );
 
     // RECOVERED files STILL preserved even with --force (recovered is unconditional)

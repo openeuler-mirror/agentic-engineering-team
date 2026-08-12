@@ -22,14 +22,19 @@
 
 #### Tiered Library Browsing
 
-Execute the script to browse the function library, progressively expanding directory nodes as required. The first argument must be the **exact path** to the library file:
+Run the `aet-design-env` `library` subcommand via the `bash` tool to browse the function library, progressively expanding directory nodes as required. The first argument must be the **exact path** to the library file:
 
 ```bash
 # Root-level browsing (directory nodes collapsed, displaying sub-content previews only)
-node <skill path>/scripts/library-browser.mjs <function_library.yml>
+node <aet-design-env path>/aet-design-env/scripts/aet-design-env.mjs library <function_library.yml>
 
 # Batch expand multiple directory nodes
-node <skill path>/scripts/library-browser.mjs <function_library.yml> <id1> <id2> <id3>
+node <aet-design-env path>/aet-design-env/scripts/aet-design-env.mjs library <function_library.yml> <id1> <id2> <id3>
+
+# Search nodes by keyword (scoped to the whole library or to an expanded sub-tree)
+# NOTE: `-s` keyword search is auxiliary only — it cannot replace tiered browsing and risks missing nodes.
+#       Use at most 3 keyword searches; then always fall back to expanding the tree from the root.
+node <aet-design-env path>/aet-design-env/scripts/aet-design-env.mjs library <function_library.yml> -s <keyword>
 ```
 
 </guideline>
@@ -77,9 +82,10 @@ This step is **mandatory** if function library data is provided in the context.
 <constraint>
 
 - DO NOT modify the function library file directly. The library represents immutable baseline knowledge; updates must go through separate maintenance workflows. Record impacts solely within the design documentation.
+- DO NOT rely on `-s` keyword search to cover the library on its own — tiered tree expansion is the primary method. Cap `-s` searches at 3 keyword combinations, then always fall back to expanding from the root.
 - DO NOT defaults to classifying all functions as "Add" due to the absence of a library. Assess Add/Delete/Modify based on actual system existence.
 - DO NOT read the raw function library file directly; the file is too long and its structural hierarchy is prone to introducing noise.
-- DO NOT use reading tools to view the `library-browser.mjs` source code—execute it directly via bash.
+- DO NOT use reading tools to view the `aet-design-env.mjs` source code—execute the `library` subcommand directly via bash.
 
 </constraint>
 

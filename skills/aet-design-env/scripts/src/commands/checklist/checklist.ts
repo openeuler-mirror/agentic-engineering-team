@@ -53,7 +53,7 @@ export type ChecklistComponentLookupResult =
 export function parseArgs(argv: string[]): ParsedChecklistArgs {
   if (argv.length < 1) {
     console.error('Usage: checklist <checklist-set-path>');
-    console.error('Example: checklist skills/aet-req-analysis/scripts/_templates/req-analysis');
+    console.error('Example: checklist skills/aet-req-analysis/references/_templates/req-analysis');
     process.exit(1);
   }
   return { checklistSetPath: argv[0] };

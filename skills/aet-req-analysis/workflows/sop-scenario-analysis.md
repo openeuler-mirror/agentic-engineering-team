@@ -28,14 +28,19 @@ The fundamental purpose is to **support capability derivation**: by exhaustively
 
 #### Tiered Library Browsing
 
-Execute the script to browse the scenario library, expanding directory nodes progressively as needed. The first argument must be the **exact path** to the scenario library YAML file:
+Run the `aet-design-env` `library` subcommand via the `bash` tool to browse the scenario library, expanding directory nodes progressively as needed. The first argument must be the **exact path** to the scenario library YAML file:
 
 ```bash
 # Root-level browsing (directory nodes collapsed, displaying sub-content previews only)
-node <skill path>/scripts/library-browser.mjs <xxx/scenario-library.yml>
+node <aet-design-env path>/aet-design-env/scripts/aet-design-env.mjs library <xxx/scenario-library.yml>
 
 # Batch expand multiple directory nodes
-node <skill path>/scripts/library-browser.mjs <xxx/scenario-library.yml> <id1> <id2> <id3>
+node <aet-design-env path>/aet-design-env/scripts/aet-design-env.mjs library <xxx/scenario-library.yml> <id1> <id2> <id3>
+
+# Search nodes by keyword (scoped to the whole library or to an expanded sub-tree)
+# NOTE: `-s` keyword search is auxiliary only — it cannot replace tiered browsing and risks missing nodes.
+#       Use at most 3 keyword searches; then always fall back to expanding the tree from the root.
+node <aet-design-env path>/aet-design-env/scripts/aet-design-env.mjs library <xxx/scenario-library.yml> -s <keyword>
 ```
 
 </guideline>
@@ -89,9 +94,10 @@ For each identified scenario, define the Happy Path, Alternative Paths, and Crit
 <constraint>
 
 - DO NOT describe library contents from memory—always execute the script to inspect the actual data.
+- DO NOT rely on `-s` keyword search to cover the library on its own — tiered tree expansion is the primary method. Cap `-s` searches at 3 keyword combinations, then always fall back to expanding from the root.
 - DO NOT match scenarios purely by literal keyword proximity. Keyword similarity $\neq$ business alignment. Anchor by Actor and business problem first, and rigorously re-verify "instant matches".
 - DO NOT read the raw library file directly; the file is too long and its structural hierarchy is prone to introducing noise.
-- DO NOT use reading tools to view the `library-browser.mjs` source code—execute it directly via bash.
+- DO NOT use reading tools to view the `aet-design-env.mjs` source code—execute the `library` subcommand directly via bash.
 
 </constraint>
 

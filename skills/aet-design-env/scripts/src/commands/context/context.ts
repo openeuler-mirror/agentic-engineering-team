@@ -36,12 +36,20 @@
  *                          with exists/path/instruction (use library subcommand to browse)
  *   - function-lib       : probes .aet/function_library.yml, emits <function-library>
  *                          with exists/path/instruction (use library subcommand to browse)
- *   - sdr-lib            : probes .aet/sdr_library.yml AND .aet/sec_func_specs.yml,
- *                          emits <sdr> wrapping <sdr-library> + <sec-func-specs>
- *                          sub-blocks, each with exists/path/instruction.
- *                          Joint degradation: the two files form ONE
- *                          composite library — if EITHER is missing, BOTH
- *                          sub-blocks report exists=false (no <path>).
+ *   - sdr-lib            : probes .aet/security_sdr_library.yml,
+ *                          .aet/sec_func_specs.yml, and
+ *                          .aet/reliability_sdr_library.yml, emits <sdr>
+ *                          wrapping <security> (<sdr-library> +
+ *                          <sec-func-specs>) and <reliability>
+ *                          (<sdr-library>) sub-blocks. The security and
+ *                          reliability groups are INDEPENDENT — each is
+ *                          judged from its own main library file.
+ *                          sec_func_specs.yml is an OPTIONAL appendage
+ *                          of the security group with a ONE-WAY
+ *                          dependency: it reports exists=true ONLY when
+ *                          the security main library is also present
+ *                          (security主库不在→specs强制false). The
+ *                          reliability group has NO specs sub-block.
  *   - fmea-lib           : probes .aet/fmea_library.yml, emits <fmea-library>
  *                          with exists/path/instruction (use library subcommand
  *                          to browse the fault-mode library).
