@@ -1,0 +1,22 @@
+{
+  "name": "aet-design-env-scripts",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Dev toolchain for aet-design-env scripts – build, test, typecheck",
+  "scripts": {
+    "build": "node build.mjs",
+    "test": "node node_modules/vitest/vitest.mjs run",
+    "test:watch": "node node_modules/vitest/vitest.mjs",
+    "st": "node commands/library/library.st.mjs && node commands/template/template.st.mjs && node commands/check/check.st.mjs && node commands/context/context.st.mjs && node commands/setup/setup.st.mjs && node commands/checklist/checklist.st.mjs",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/js-yaml": "^4",
+    "@types/node": "^20",
+    "esbuild": "^0.28.2",
+    "js-yaml": "^4",
+    "typescript": "^5.3",
+    "vitest": "^4.1.10"
+  }
+}

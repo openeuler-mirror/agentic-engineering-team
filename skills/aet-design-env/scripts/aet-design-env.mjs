@@ -7,15 +7,15 @@
  */
 
 // index.ts
-import { readFileSync as readFileSync12, statSync as statSync10 } from "node:fs";
+import { readFileSync as readFileSync12, statSync as statSync11 } from "node:fs";
 import { createHash as createHash2 } from "node:crypto";
 import { fileURLToPath as fileURLToPath2 } from "node:url";
 
-// setup/index.ts
+// commands/setup/index.ts
 import { readFileSync as readFileSync7, rmSync as rmSync2 } from "node:fs";
 import { join as join6, basename } from "node:path";
 
-// setup/manifest.ts
+// commands/setup/manifest.ts
 import {
   mkdirSync,
   writeFileSync,
@@ -33,7 +33,7 @@ import { join, dirname, resolve as resolve2, sep as sep2, posix as posix2 } from
 import { tmpdir } from "node:os";
 import { createHash } from "node:crypto";
 
-// setup/path-safe.ts
+// commands/setup/path-safe.ts
 import { lstatSync, statSync } from "node:fs";
 import { resolve, isAbsolute, relative, sep, posix } from "node:path";
 function assertNoBackslash(rel) {
@@ -56,8 +56,7 @@ function assertNoDotDot(rel) {
 }
 function isPathInside(child, root) {
   const rel = relative(resolve(root), resolve(child));
-  if (!rel)
-    return false;
+  if (!rel) return false;
   return !rel.startsWith("..") && !isAbsolute(rel);
 }
 function assertContained(rel, root) {
@@ -75,8 +74,7 @@ function assertNotSymlink(p) {
       throw new Error(`symlink not allowed: ${p}`);
     }
   } catch (e) {
-    if (e?.message?.startsWith("symlink"))
-      throw e;
+    if (e?.message?.startsWith("symlink")) throw e;
   }
 }
 function assertSafeRelativePath(rel, root) {
@@ -101,15 +99,14 @@ function isRegularFile(p) {
   }
 }
 
-// setup/manifest.ts
+// commands/setup/manifest.ts
 var MANIFEST_VERSION = 1;
 function sha256(data) {
   return createHash("sha256").update(data).digest("hex");
 }
 function ensureSafeDirectory(root, target) {
   const rel = target.startsWith(root) ? target.slice(root.length).replace(/^[/\\]+/, "") : "";
-  if (!rel)
-    return;
+  if (!rel) return;
   const parts = rel.split(/[/\\]+/).filter(Boolean);
   let acc = root;
   for (const part of parts) {
@@ -250,10 +247,8 @@ var SetupManifest = class _SetupManifest {
           continue;
         }
         const actual = sha256(readFileSync(abs));
-        if (actual === expectedHash)
-          out.present.push(key);
-        else
-          out.modified.push(key);
+        if (actual === expectedHash) out.present.push(key);
+        else out.modified.push(key);
       } catch {
         out.missing.push(key);
       }
@@ -315,13 +310,11 @@ var SetupManifest = class _SetupManifest {
           try {
             rmdirSync(dir);
           } catch (e) {
-            if (e?.code !== "ENOTEMPTY" && e?.code !== "ENOENT")
-              throw e;
+            if (e?.code !== "ENOTEMPTY" && e?.code !== "ENOENT") throw e;
           }
         }
       } catch (e) {
-        if (e?.code !== "ENOENT")
-          throw e;
+        if (e?.code !== "ENOENT") throw e;
       }
     }
     if (existsSync(this.manifestPath)) {
@@ -332,8 +325,7 @@ var SetupManifest = class _SetupManifest {
         try {
           rmdirSync(dir);
         } catch (e) {
-          if (e?.code !== "ENOTEMPTY" && e?.code !== "ENOENT")
-            throw e;
+          if (e?.code !== "ENOTEMPTY" && e?.code !== "ENOENT") throw e;
         }
         dir = dirname(dir);
       }
@@ -384,16 +376,14 @@ var SetupManifest = class _SetupManifest {
    */
   static load(key, projectRoot2) {
     const m = new _SetupManifest(key, projectRoot2);
-    if (!existsSync(m.manifestPath))
-      return null;
+    if (!existsSync(m.manifestPath)) return null;
     let raw;
     try {
       raw = JSON.parse(readFileSync(m.manifestPath, "utf-8"));
     } catch {
       return null;
     }
-    if (!raw || typeof raw !== "object" || Array.isArray(raw))
-      return null;
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
     if (raw.integration !== key) {
       throw new Error(
         `manifest integration mismatch: file says ${JSON.stringify(raw.integration)} but requested ${JSON.stringify(key)}`
@@ -416,7 +406,7 @@ var SetupManifest = class _SetupManifest {
   }
 };
 
-// setup/base-agent.ts
+// commands/setup/base-agent.ts
 import { existsSync as existsSync8, readFileSync as readFileSync6 } from "node:fs";
 import { join as join5 } from "node:path";
 
@@ -435,8 +425,7 @@ var loader = {};
 var common = {};
 var hasRequiredCommon;
 function requireCommon() {
-  if (hasRequiredCommon)
-    return common;
+  if (hasRequiredCommon) return common;
   hasRequiredCommon = 1;
   function isNothing(subject) {
     return typeof subject === "undefined" || subject === null;
@@ -445,10 +434,8 @@ function requireCommon() {
     return typeof subject === "object" && subject !== null;
   }
   function toArray(sequence) {
-    if (Array.isArray(sequence))
-      return sequence;
-    else if (isNothing(sequence))
-      return [];
+    if (Array.isArray(sequence)) return sequence;
+    else if (isNothing(sequence)) return [];
     return [sequence];
   }
   function extend(target, source) {
@@ -482,14 +469,12 @@ function requireCommon() {
 var exception;
 var hasRequiredException;
 function requireException() {
-  if (hasRequiredException)
-    return exception;
+  if (hasRequiredException) return exception;
   hasRequiredException = 1;
   function formatError(exception2, compact) {
     let where = "";
     const message = exception2.reason || "(unknown reason)";
-    if (!exception2.mark)
-      return message;
+    if (!exception2.mark) return message;
     if (exception2.mark.name) {
       where += 'in "' + exception2.mark.name + '" ';
     }
@@ -522,8 +507,7 @@ function requireException() {
 var snippet;
 var hasRequiredSnippet;
 function requireSnippet() {
-  if (hasRequiredSnippet)
-    return snippet;
+  if (hasRequiredSnippet) return snippet;
   hasRequiredSnippet = 1;
   const common2 = requireCommon();
   function getLine(buffer, lineStart, lineEnd, position, maxLineLength) {
@@ -549,16 +533,11 @@ function requireSnippet() {
   }
   function makeSnippet(mark, options) {
     options = Object.create(options || null);
-    if (!mark.buffer)
-      return null;
-    if (!options.maxLength)
-      options.maxLength = 79;
-    if (typeof options.indent !== "number")
-      options.indent = 1;
-    if (typeof options.linesBefore !== "number")
-      options.linesBefore = 3;
-    if (typeof options.linesAfter !== "number")
-      options.linesAfter = 2;
+    if (!mark.buffer) return null;
+    if (!options.maxLength) options.maxLength = 79;
+    if (typeof options.indent !== "number") options.indent = 1;
+    if (typeof options.linesBefore !== "number") options.linesBefore = 3;
+    if (typeof options.linesAfter !== "number") options.linesAfter = 2;
     const re = /\r?\n|\r|\0/g;
     const lineStarts = [0];
     const lineEnds = [];
@@ -571,14 +550,12 @@ function requireSnippet() {
         foundLineNo = lineStarts.length - 2;
       }
     }
-    if (foundLineNo < 0)
-      foundLineNo = lineStarts.length - 1;
+    if (foundLineNo < 0) foundLineNo = lineStarts.length - 1;
     let result = "";
     const lineNoLength = Math.min(mark.line + options.linesAfter, lineEnds.length).toString().length;
     const maxLineLength = options.maxLength - (options.indent + lineNoLength + 3);
     for (let i = 1; i <= options.linesBefore; i++) {
-      if (foundLineNo - i < 0)
-        break;
+      if (foundLineNo - i < 0) break;
       const line2 = getLine(
         mark.buffer,
         lineStarts[foundLineNo - i],
@@ -592,8 +569,7 @@ function requireSnippet() {
     result += common2.repeat(" ", options.indent) + padStart((mark.line + 1).toString(), lineNoLength) + " | " + line.str + "\n";
     result += common2.repeat("-", options.indent + lineNoLength + 3 + line.pos) + "^\n";
     for (let i = 1; i <= options.linesAfter; i++) {
-      if (foundLineNo + i >= lineEnds.length)
-        break;
+      if (foundLineNo + i >= lineEnds.length) break;
       const line2 = getLine(
         mark.buffer,
         lineStarts[foundLineNo + i],
@@ -611,8 +587,7 @@ function requireSnippet() {
 var type;
 var hasRequiredType;
 function requireType() {
-  if (hasRequiredType)
-    return type;
+  if (hasRequiredType) return type;
   hasRequiredType = 1;
   const YAMLException2 = requireException();
   const TYPE_CONSTRUCTOR_OPTIONS = [
@@ -676,8 +651,7 @@ function requireType() {
 var schema;
 var hasRequiredSchema;
 function requireSchema() {
-  if (hasRequiredSchema)
-    return schema;
+  if (hasRequiredSchema) return schema;
   hasRequiredSchema = 1;
   const YAMLException2 = requireException();
   const Type2 = requireType();
@@ -731,10 +705,8 @@ function requireSchema() {
     } else if (Array.isArray(definition)) {
       explicit = explicit.concat(definition);
     } else if (definition && (Array.isArray(definition.implicit) || Array.isArray(definition.explicit))) {
-      if (definition.implicit)
-        implicit = implicit.concat(definition.implicit);
-      if (definition.explicit)
-        explicit = explicit.concat(definition.explicit);
+      if (definition.implicit) implicit = implicit.concat(definition.implicit);
+      if (definition.explicit) explicit = explicit.concat(definition.explicit);
     } else {
       throw new YAMLException2("Schema.extend argument should be a Type, [ Type ], or a schema definition ({ implicit: [...], explicit: [...] })");
     }
@@ -768,8 +740,7 @@ function requireSchema() {
 var str;
 var hasRequiredStr;
 function requireStr() {
-  if (hasRequiredStr)
-    return str;
+  if (hasRequiredStr) return str;
   hasRequiredStr = 1;
   const Type2 = requireType();
   str = new Type2("tag:yaml.org,2002:str", {
@@ -783,8 +754,7 @@ function requireStr() {
 var seq;
 var hasRequiredSeq;
 function requireSeq() {
-  if (hasRequiredSeq)
-    return seq;
+  if (hasRequiredSeq) return seq;
   hasRequiredSeq = 1;
   const Type2 = requireType();
   seq = new Type2("tag:yaml.org,2002:seq", {
@@ -798,8 +768,7 @@ function requireSeq() {
 var map;
 var hasRequiredMap;
 function requireMap() {
-  if (hasRequiredMap)
-    return map;
+  if (hasRequiredMap) return map;
   hasRequiredMap = 1;
   const Type2 = requireType();
   map = new Type2("tag:yaml.org,2002:map", {
@@ -813,8 +782,7 @@ function requireMap() {
 var failsafe;
 var hasRequiredFailsafe;
 function requireFailsafe() {
-  if (hasRequiredFailsafe)
-    return failsafe;
+  if (hasRequiredFailsafe) return failsafe;
   hasRequiredFailsafe = 1;
   const Schema2 = requireSchema();
   failsafe = new Schema2({
@@ -829,13 +797,11 @@ function requireFailsafe() {
 var _null;
 var hasRequired_null;
 function require_null() {
-  if (hasRequired_null)
-    return _null;
+  if (hasRequired_null) return _null;
   hasRequired_null = 1;
   const Type2 = requireType();
   function resolveYamlNull(data) {
-    if (data === null)
-      return true;
+    if (data === null) return true;
     const max = data.length;
     return max === 1 && data === "~" || max === 4 && (data === "null" || data === "Null" || data === "NULL");
   }
@@ -874,13 +840,11 @@ function require_null() {
 var bool;
 var hasRequiredBool;
 function requireBool() {
-  if (hasRequiredBool)
-    return bool;
+  if (hasRequiredBool) return bool;
   hasRequiredBool = 1;
   const Type2 = requireType();
   function resolveYamlBoolean(data) {
-    if (data === null)
-      return false;
+    if (data === null) return false;
     const max = data.length;
     return max === 4 && (data === "true" || data === "True" || data === "TRUE") || max === 5 && (data === "false" || data === "False" || data === "FALSE");
   }
@@ -913,8 +877,7 @@ function requireBool() {
 var int;
 var hasRequiredInt;
 function requireInt() {
-  if (hasRequiredInt)
-    return int;
+  if (hasRequiredInt) return int;
   hasRequiredInt = 1;
   const common2 = requireCommon();
   const Type2 = requireType();
@@ -928,27 +891,23 @@ function requireInt() {
     return c >= 48 && c <= 57;
   }
   function resolveYamlInteger(data) {
-    if (data === null)
-      return false;
+    if (data === null) return false;
     const max = data.length;
     let index = 0;
     let hasDigits = false;
-    if (!max)
-      return false;
+    if (!max) return false;
     let ch = data[index];
     if (ch === "-" || ch === "+") {
       ch = data[++index];
     }
     if (ch === "0") {
-      if (index + 1 === max)
-        return true;
+      if (index + 1 === max) return true;
       ch = data[++index];
       if (ch === "b") {
         index++;
         for (; index < max; index++) {
           ch = data[index];
-          if (ch !== "0" && ch !== "1")
-            return false;
+          if (ch !== "0" && ch !== "1") return false;
           hasDigits = true;
         }
         return hasDigits && isFinite(parseYamlInteger(data));
@@ -956,8 +915,7 @@ function requireInt() {
       if (ch === "x") {
         index++;
         for (; index < max; index++) {
-          if (!isHexCode(data.charCodeAt(index)))
-            return false;
+          if (!isHexCode(data.charCodeAt(index))) return false;
           hasDigits = true;
         }
         return hasDigits && isFinite(parseYamlInteger(data));
@@ -965,8 +923,7 @@ function requireInt() {
       if (ch === "o") {
         index++;
         for (; index < max; index++) {
-          if (!isOctCode(data.charCodeAt(index)))
-            return false;
+          if (!isOctCode(data.charCodeAt(index))) return false;
           hasDigits = true;
         }
         return hasDigits && isFinite(parseYamlInteger(data));
@@ -978,8 +935,7 @@ function requireInt() {
       }
       hasDigits = true;
     }
-    if (!hasDigits)
-      return false;
+    if (!hasDigits) return false;
     return isFinite(parseYamlInteger(data));
   }
   function parseYamlInteger(data) {
@@ -987,20 +943,15 @@ function requireInt() {
     let sign = 1;
     let ch = value[0];
     if (ch === "-" || ch === "+") {
-      if (ch === "-")
-        sign = -1;
+      if (ch === "-") sign = -1;
       value = value.slice(1);
       ch = value[0];
     }
-    if (value === "0")
-      return 0;
+    if (value === "0") return 0;
     if (ch === "0") {
-      if (value[1] === "b")
-        return sign * parseInt(value.slice(2), 2);
-      if (value[1] === "x")
-        return sign * parseInt(value.slice(2), 16);
-      if (value[1] === "o")
-        return sign * parseInt(value.slice(2), 8);
+      if (value[1] === "b") return sign * parseInt(value.slice(2), 2);
+      if (value[1] === "x") return sign * parseInt(value.slice(2), 16);
+      if (value[1] === "o") return sign * parseInt(value.slice(2), 8);
     }
     return sign * parseInt(value, 10);
   }
@@ -1042,8 +993,7 @@ function requireInt() {
 var float;
 var hasRequiredFloat;
 function requireFloat() {
-  if (hasRequiredFloat)
-    return float;
+  if (hasRequiredFloat) return float;
   hasRequiredFloat = 1;
   const common2 = requireCommon();
   const Type2 = requireType();
@@ -1055,8 +1005,7 @@ function requireFloat() {
     "^(?:[-+]?\\.(?:inf|Inf|INF)|\\.(?:nan|NaN|NAN))$"
   );
   function resolveYamlFloat(data) {
-    if (data === null)
-      return false;
+    if (data === null) return false;
     if (!YAML_FLOAT_PATTERN.test(data)) {
       return false;
     }
@@ -1129,8 +1078,7 @@ function requireFloat() {
 var json;
 var hasRequiredJson;
 function requireJson() {
-  if (hasRequiredJson)
-    return json;
+  if (hasRequiredJson) return json;
   hasRequiredJson = 1;
   json = requireFailsafe().extend({
     implicit: [
@@ -1145,8 +1093,7 @@ function requireJson() {
 var core;
 var hasRequiredCore;
 function requireCore() {
-  if (hasRequiredCore)
-    return core;
+  if (hasRequiredCore) return core;
   hasRequiredCore = 1;
   core = requireJson();
   return core;
@@ -1154,8 +1101,7 @@ function requireCore() {
 var timestamp;
 var hasRequiredTimestamp;
 function requireTimestamp() {
-  if (hasRequiredTimestamp)
-    return timestamp;
+  if (hasRequiredTimestamp) return timestamp;
   hasRequiredTimestamp = 1;
   const Type2 = requireType();
   const YAML_DATE_REGEXP = new RegExp(
@@ -1165,22 +1111,17 @@ function requireTimestamp() {
     "^([0-9][0-9][0-9][0-9])-([0-9][0-9]?)-([0-9][0-9]?)(?:[Tt]|[ \\t]+)([0-9][0-9]?):([0-9][0-9]):([0-9][0-9])(?:\\.([0-9]*))?(?:[ \\t]*(Z|([-+])([0-9][0-9]?)(?::([0-9][0-9]))?))?$"
   );
   function resolveYamlTimestamp(data) {
-    if (data === null)
-      return false;
-    if (YAML_DATE_REGEXP.exec(data) !== null)
-      return true;
-    if (YAML_TIMESTAMP_REGEXP.exec(data) !== null)
-      return true;
+    if (data === null) return false;
+    if (YAML_DATE_REGEXP.exec(data) !== null) return true;
+    if (YAML_TIMESTAMP_REGEXP.exec(data) !== null) return true;
     return false;
   }
   function constructYamlTimestamp(data) {
     let fraction = 0;
     let delta = null;
     let match = YAML_DATE_REGEXP.exec(data);
-    if (match === null)
-      match = YAML_TIMESTAMP_REGEXP.exec(data);
-    if (match === null)
-      throw new Error("Date resolve error");
+    if (match === null) match = YAML_TIMESTAMP_REGEXP.exec(data);
+    if (match === null) throw new Error("Date resolve error");
     const year = +match[1];
     const month = +match[2] - 1;
     const day = +match[3];
@@ -1201,12 +1142,10 @@ function requireTimestamp() {
       const tzHour = +match[10];
       const tzMinute = +(match[11] || 0);
       delta = (tzHour * 60 + tzMinute) * 6e4;
-      if (match[9] === "-")
-        delta = -delta;
+      if (match[9] === "-") delta = -delta;
     }
     const date = new Date(Date.UTC(year, month, day, hour, minute, second, fraction));
-    if (delta)
-      date.setTime(date.getTime() - delta);
+    if (delta) date.setTime(date.getTime() - delta);
     return date;
   }
   function representYamlTimestamp(object) {
@@ -1224,8 +1163,7 @@ function requireTimestamp() {
 var merge;
 var hasRequiredMerge;
 function requireMerge() {
-  if (hasRequiredMerge)
-    return merge;
+  if (hasRequiredMerge) return merge;
   hasRequiredMerge = 1;
   const Type2 = requireType();
   function resolveYamlMerge(data) {
@@ -1240,23 +1178,19 @@ function requireMerge() {
 var binary;
 var hasRequiredBinary;
 function requireBinary() {
-  if (hasRequiredBinary)
-    return binary;
+  if (hasRequiredBinary) return binary;
   hasRequiredBinary = 1;
   const Type2 = requireType();
   const BASE64_MAP = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=\n\r";
   function resolveYamlBinary(data) {
-    if (data === null)
-      return false;
+    if (data === null) return false;
     let bitlen = 0;
     const max = data.length;
     const map2 = BASE64_MAP;
     for (let idx = 0; idx < max; idx++) {
       const code = map2.indexOf(data.charAt(idx));
-      if (code > 64)
-        continue;
-      if (code < 0)
-        return false;
+      if (code > 64) continue;
+      if (code < 0) return false;
       bitlen += 6;
     }
     return bitlen % 8 === 0;
@@ -1336,37 +1270,29 @@ function requireBinary() {
 var omap;
 var hasRequiredOmap;
 function requireOmap() {
-  if (hasRequiredOmap)
-    return omap;
+  if (hasRequiredOmap) return omap;
   hasRequiredOmap = 1;
   const Type2 = requireType();
   const _hasOwnProperty = Object.prototype.hasOwnProperty;
   const _toString = Object.prototype.toString;
   function resolveYamlOmap(data) {
-    if (data === null)
-      return true;
-    const objectKeys = [];
+    if (data === null) return true;
+    const objectKeys = {};
     const object = data;
     for (let index = 0, length = object.length; index < length; index += 1) {
       const pair = object[index];
       let pairHasKey = false;
-      if (_toString.call(pair) !== "[object Object]")
-        return false;
+      if (_toString.call(pair) !== "[object Object]") return false;
       let pairKey;
       for (pairKey in pair) {
         if (_hasOwnProperty.call(pair, pairKey)) {
-          if (!pairHasKey)
-            pairHasKey = true;
-          else
-            return false;
+          if (!pairHasKey) pairHasKey = true;
+          else return false;
         }
       }
-      if (!pairHasKey)
-        return false;
-      if (objectKeys.indexOf(pairKey) === -1)
-        objectKeys.push(pairKey);
-      else
-        return false;
+      if (!pairHasKey) return false;
+      if (_hasOwnProperty.call(objectKeys, pairKey)) return false;
+      Object.defineProperty(objectKeys, pairKey, { value: true });
     }
     return true;
   }
@@ -1383,30 +1309,25 @@ function requireOmap() {
 var pairs;
 var hasRequiredPairs;
 function requirePairs() {
-  if (hasRequiredPairs)
-    return pairs;
+  if (hasRequiredPairs) return pairs;
   hasRequiredPairs = 1;
   const Type2 = requireType();
   const _toString = Object.prototype.toString;
   function resolveYamlPairs(data) {
-    if (data === null)
-      return true;
+    if (data === null) return true;
     const object = data;
     const result = new Array(object.length);
     for (let index = 0, length = object.length; index < length; index += 1) {
       const pair = object[index];
-      if (_toString.call(pair) !== "[object Object]")
-        return false;
+      if (_toString.call(pair) !== "[object Object]") return false;
       const keys = Object.keys(pair);
-      if (keys.length !== 1)
-        return false;
+      if (keys.length !== 1) return false;
       result[index] = [keys[0], pair[keys[0]]];
     }
     return true;
   }
   function constructYamlPairs(data) {
-    if (data === null)
-      return [];
+    if (data === null) return [];
     const object = data;
     const result = new Array(object.length);
     for (let index = 0, length = object.length; index < length; index += 1) {
@@ -1426,19 +1347,16 @@ function requirePairs() {
 var set;
 var hasRequiredSet;
 function requireSet() {
-  if (hasRequiredSet)
-    return set;
+  if (hasRequiredSet) return set;
   hasRequiredSet = 1;
   const Type2 = requireType();
   const _hasOwnProperty = Object.prototype.hasOwnProperty;
   function resolveYamlSet(data) {
-    if (data === null)
-      return true;
+    if (data === null) return true;
     const object = data;
     for (const key in object) {
       if (_hasOwnProperty.call(object, key)) {
-        if (object[key] !== null)
-          return false;
+        if (object[key] !== null) return false;
       }
     }
     return true;
@@ -1456,8 +1374,7 @@ function requireSet() {
 var _default;
 var hasRequired_default;
 function require_default() {
-  if (hasRequired_default)
-    return _default;
+  if (hasRequired_default) return _default;
   hasRequired_default = 1;
   _default = requireCore().extend({
     implicit: [
@@ -1475,8 +1392,7 @@ function require_default() {
 }
 var hasRequiredLoader;
 function requireLoader() {
-  if (hasRequiredLoader)
-    return loader;
+  if (hasRequiredLoader) return loader;
   hasRequiredLoader = 1;
   const common2 = requireCommon();
   const YAMLException2 = requireException();
@@ -1669,8 +1585,7 @@ function requireLoader() {
   function commitAnchorTransaction(state) {
     const transaction = state.anchorMapTransactions.pop();
     const transactions = state.anchorMapTransactions;
-    if (transactions.length === 0)
-      return;
+    if (transactions.length === 0) return;
     const parent = transactions[transactions.length - 1];
     const names = Object.keys(transaction);
     for (let index = 0, length = names.length; index < length; index += 1) {
@@ -2269,8 +2184,7 @@ function requireLoader() {
     const _anchor = state.anchor;
     const _result = [];
     let detected = false;
-    if (state.firstTabInLine !== -1)
-      return false;
+    if (state.firstTabInLine !== -1) return false;
     if (state.anchor !== null) {
       storeAnchor(state, state.anchor, _result);
     }
@@ -2330,8 +2244,7 @@ function requireLoader() {
     let valueNode = null;
     let atExplicitKey = false;
     let detected = false;
-    if (state.firstTabInLine !== -1)
-      return false;
+    if (state.firstTabInLine !== -1) return false;
     if (state.anchor !== null) {
       storeAnchor(state, state.anchor, _result);
     }
@@ -2444,8 +2357,7 @@ function requireLoader() {
     let tagHandle;
     let tagName;
     let ch = state.input.charCodeAt(state.position);
-    if (ch !== 33)
-      return false;
+    if (ch !== 33) return false;
     if (state.tag !== null) {
       throwError(state, "duplication of a tag property");
     }
@@ -2515,8 +2427,7 @@ function requireLoader() {
   }
   function readAnchorProperty(state) {
     let ch = state.input.charCodeAt(state.position);
-    if (ch !== 38)
-      return false;
+    if (ch !== 38) return false;
     if (state.anchor !== null) {
       throwError(state, "duplication of an anchor property");
     }
@@ -2533,8 +2444,7 @@ function requireLoader() {
   }
   function readAlias(state) {
     let ch = state.input.charCodeAt(state.position);
-    if (ch !== 42)
-      return false;
+    if (ch !== 42) return false;
     ch = state.input.charCodeAt(++state.position);
     const _position = state.position;
     while (ch !== 0 && !isWsOrEol(ch) && !isFlowIndicator(ch)) {
@@ -2760,16 +2670,14 @@ function requireLoader() {
           } while (ch !== 0 && !isEol(ch));
           break;
         }
-        if (isEol(ch))
-          break;
+        if (isEol(ch)) break;
         _position = state.position;
         while (ch !== 0 && !isWsOrEol(ch)) {
           ch = state.input.charCodeAt(++state.position);
         }
         directiveArgs.push(state.input.slice(_position, state.position));
       }
-      if (ch !== 0)
-        readLineBreak(state);
+      if (ch !== 0) readLineBreak(state);
       if (_hasOwnProperty.call(directiveHandlers, directiveName)) {
         directiveHandlers[directiveName](state, directiveName, directiveArgs);
       } else {
@@ -2856,8 +2764,7 @@ function requireLoader() {
 var dumper = {};
 var hasRequiredDumper;
 function requireDumper() {
-  if (hasRequiredDumper)
-    return dumper;
+  if (hasRequiredDumper) return dumper;
   hasRequiredDumper = 1;
   const common2 = requireCommon();
   const YAMLException2 = requireException();
@@ -2925,8 +2832,7 @@ function requireDumper() {
   ];
   const DEPRECATED_BASE60_SYNTAX = /^[-+]?[0-9_]+(?::[0-9_]+)+(?:\.[0-9_]*)?$/;
   function compileStyleMap(schema2, map2) {
-    if (map2 === null)
-      return {};
+    if (map2 === null) return {};
     const result = {};
     const keys = Object.keys(map2);
     for (let index = 0, length = keys.length; index < length; index += 1) {
@@ -3000,8 +2906,7 @@ function requireDumper() {
         line = string.slice(position, next + 1);
         position = next + 1;
       }
-      if (line.length && line !== "\n")
-        result += ind;
+      if (line.length && line !== "\n") result += ind;
       result += line;
     }
     return result;
@@ -3123,7 +3028,7 @@ function requireDumper() {
     return quotingType === QUOTING_TYPE_DOUBLE ? STYLE_DOUBLE : STYLE_SINGLE;
   }
   function writeScalar(state, string, level, iskey, inblock) {
-    state.dump = function() {
+    state.dump = (function() {
       if (string.length === 0) {
         return state.quotingType === QUOTING_TYPE_DOUBLE ? '""' : "''";
       }
@@ -3162,7 +3067,7 @@ function requireDumper() {
         default:
           throw new YAMLException2("impossible error: invalid scalar style");
       }
-    }();
+    })();
   }
   function blockHeader(string, indentPerLevel) {
     const indentIndicator = needIndentIndicator(string) ? String(indentPerLevel) : "";
@@ -3176,12 +3081,12 @@ function requireDumper() {
   }
   function foldString(string, width) {
     const lineRe = /(\n+)([^\n]*)/g;
-    let result = function() {
+    let result = (function() {
       let nextLF = string.indexOf("\n");
       nextLF = nextLF !== -1 ? nextLF : string.length;
       lineRe.lastIndex = nextLF;
       return foldLine(string.slice(0, nextLF), width);
-    }();
+    })();
     let prevMoreIndented = string[0] === "\n" || string[0] === " ";
     let moreIndented;
     let match;
@@ -3195,8 +3100,7 @@ function requireDumper() {
     return result;
   }
   function foldLine(line, width) {
-    if (line === "" || line[0] === " ")
-      return line;
+    if (line === "" || line[0] === " ") return line;
     const breakRe = / [^ ]/g;
     let match;
     let start = 0;
@@ -3229,8 +3133,7 @@ function requireDumper() {
       const escapeSeq = ESCAPE_SEQUENCES[char];
       if (!escapeSeq && isPrintable(char)) {
         result += string[i];
-        if (char >= 65536)
-          result += string[i + 1];
+        if (char >= 65536) result += string[i + 1];
       } else {
         result += escapeSeq || encodeHex(char);
       }
@@ -3246,8 +3149,7 @@ function requireDumper() {
         value = state.replacer.call(object, String(index), value);
       }
       if (writeNode(state, level, value, false, false) || typeof value === "undefined" && writeNode(state, level, null, false, false)) {
-        if (_result !== "")
-          _result += "," + (!state.condenseFlow ? " " : "");
+        if (_result !== "") _result += "," + (!state.condenseFlow ? " " : "");
         _result += state.dump;
       }
     }
@@ -3283,10 +3185,8 @@ function requireDumper() {
     const objectKeyList = Object.keys(object);
     for (let index = 0, length = objectKeyList.length; index < length; index += 1) {
       let pairBuffer = "";
-      if (_result !== "")
-        pairBuffer += ", ";
-      if (state.condenseFlow)
-        pairBuffer += '"';
+      if (_result !== "") pairBuffer += ", ";
+      if (state.condenseFlow) pairBuffer += '"';
       const objectKey = objectKeyList[index];
       let objectValue = object[objectKey];
       if (state.replacer) {
@@ -3295,8 +3195,7 @@ function requireDumper() {
       if (!writeNode(state, level, objectKey, false, false)) {
         continue;
       }
-      if (state.dump.length > 1024)
-        pairBuffer += "? ";
+      if (state.dump.length > 1024) pairBuffer += "? ";
       pairBuffer += state.dump + (state.condenseFlow ? '"' : "") + ":" + (state.condenseFlow ? "" : " ");
       if (!writeNode(state, level, objectValue, false, false)) {
         continue;
@@ -3450,8 +3349,7 @@ function requireDumper() {
       } else if (type2 === "[object Undefined]") {
         return false;
       } else {
-        if (state.skipInvalid)
-          return false;
+        if (state.skipInvalid) return false;
         throw new YAMLException2("unacceptable kind of an object to dump " + type2);
       }
       if (state.tag !== null && state.tag !== "?") {
@@ -3505,14 +3403,12 @@ function requireDumper() {
   function dump2(input, options) {
     options = options || {};
     const state = new State(options);
-    if (!state.noRefs)
-      getDuplicateReferences(input, state);
+    if (!state.noRefs) getDuplicateReferences(input, state);
     let value = input;
     if (state.replacer) {
       value = state.replacer.call({ "": value }, "", value);
     }
-    if (writeNode(state, 0, value, true, true))
-      return state.dump + "\n";
+    if (writeNode(state, 0, value, true, true)) return state.dump + "\n";
     return "";
   }
   dumper.dump = dump2;
@@ -3520,8 +3416,7 @@ function requireDumper() {
 }
 var hasRequiredJsYaml;
 function requireJsYaml() {
-  if (hasRequiredJsYaml)
-    return jsYaml;
+  if (hasRequiredJsYaml) return jsYaml;
   hasRequiredJsYaml = 1;
   const loader2 = requireLoader();
   const dumper2 = requireDumper();
@@ -3606,15 +3501,13 @@ function pluginTemplateLookupOrder(pluginName, templateSetName, relPath) {
 }
 function resolvePluginTemplateFile(pluginName, templateSetName, relPath) {
   for (const candidate of pluginTemplateLookupOrder(pluginName, templateSetName, relPath)) {
-    if (existsSync2(candidate))
-      return candidate;
+    if (existsSync2(candidate)) return candidate;
   }
   return null;
 }
 function pluginExists(pluginName) {
   for (const dir of pluginDirLookupOrder(pluginName)) {
-    if (existsSync2(dir))
-      return true;
+    if (existsSync2(dir)) return true;
   }
   return false;
 }
@@ -3627,8 +3520,7 @@ function loadPluginConfig(pluginName) {
       break;
     }
   }
-  if (!filePath)
-    return null;
+  if (!filePath) return null;
   let raw;
   try {
     const text = readFileSync2(filePath, "utf-8");
@@ -3657,17 +3549,14 @@ function loadPluginConfig(pluginName) {
     const shieldsMap = obj.shields;
     const normalized = {};
     for (const [setName, list] of Object.entries(shieldsMap)) {
-      if (list === void 0 || list === null)
-        continue;
+      if (list === void 0 || list === null) continue;
       if (!Array.isArray(list)) {
         throw new Error(`plugin.json 'shields["${setName}"]' must be an array of strings: ${filePath}`);
       }
       const filtered = list.filter((s) => typeof s === "string" && s.length > 0);
-      if (filtered.length > 0)
-        normalized[setName] = filtered;
+      if (filtered.length > 0) normalized[setName] = filtered;
     }
-    if (Object.keys(normalized).length > 0)
-      cfg.shields = normalized;
+    if (Object.keys(normalized).length > 0) cfg.shields = normalized;
   }
   return cfg;
 }
@@ -3675,8 +3564,7 @@ function loadActivePlugin() {
   const projPath = join2(projectRoot(), ".aet", "design", "design.json");
   const homePath = join2(userHome(), ".aet", "design", "design.json");
   const filePath = existsSync2(projPath) ? projPath : existsSync2(homePath) ? homePath : null;
-  if (!filePath)
-    return null;
+  if (!filePath) return null;
   let raw;
   try {
     raw = JSON.parse(readFileSync2(filePath, "utf-8"));
@@ -3689,14 +3577,14 @@ function loadActivePlugin() {
   if (!Object.prototype.hasOwnProperty.call(raw, "plugin")) {
     throw new Error(`design.json 'plugin' field is required (set to a plugin name, or null to disable the chain): ${filePath}`);
   }
-  const plugin5 = raw.plugin;
-  if (plugin5 === null) {
+  const plugin6 = raw.plugin;
+  if (plugin6 === null) {
     return null;
   }
-  if (typeof plugin5 !== "string" || plugin5.length === 0) {
+  if (typeof plugin6 !== "string" || plugin6.length === 0) {
     throw new Error(`design.json 'plugin' field must be a non-empty string or null (use null to disable the chain): ${filePath}`);
   }
-  return plugin5;
+  return plugin6;
 }
 function loadYaml(filePath) {
   const text = readFileSync2(filePath, "utf-8");
@@ -3787,26 +3675,24 @@ var DEFAULT_TYPE_LABELS = {
   scene: "\u573A\u666F"
 };
 
-// setup/strategies/rule/separate-file.ts
+// commands/setup/strategies/rule/separate-file.ts
 import { existsSync as existsSync4, readFileSync as readFileSync3 } from "node:fs";
 import { join as join3 } from "node:path";
 
-// setup/strategies/shared.ts
+// commands/setup/strategies/shared.ts
 import { existsSync as existsSync3, mkdirSync as mkdirSync2 } from "node:fs";
 import { dirname as dirname3 } from "node:path";
 function ensureParentDir(filePath) {
   const parentDir = dirname3(filePath);
-  if (!existsSync3(parentDir))
-    mkdirSync2(parentDir, { recursive: true });
+  if (!existsSync3(parentDir)) mkdirSync2(parentDir, { recursive: true });
 }
 
-// setup/strategies/rule/separate-file.ts
+// commands/setup/strategies/rule/separate-file.ts
 var SeparateFileRuleStrategy = class {
   key = "separate_file";
   apply(ctx, manifest) {
     const result = { rule: "skipped", config: "skipped" };
-    if (!ctx.ruleFile)
-      return result;
+    if (!ctx.ruleFile) return result;
     assertSafeRelativePath(ctx.ruleFile, ctx.cwd);
     const ruleFile = join3(ctx.cwd, ctx.ruleFile);
     const cfgFile = ctx.ruleConfigPath ? (assertSafeRelativePath(ctx.ruleConfigPath, ctx.cwd), join3(ctx.cwd, ctx.ruleConfigPath)) : void 0;
@@ -3868,15 +3754,14 @@ ${rawFm}
 ${content.slice(match[0].length)}`;
 }
 
-// setup/strategies/rule/inline-tag.ts
+// commands/setup/strategies/rule/inline-tag.ts
 import { existsSync as existsSync5 } from "node:fs";
 import { join as join4 } from "node:path";
 var InlineTagRuleStrategy = class {
   key = "inline_tag";
   apply(ctx, manifest) {
     const result = { rule: "skipped", config: "skipped" };
-    if (!ctx.targetFile || !ctx.tag)
-      return result;
+    if (!ctx.targetFile || !ctx.tag) return result;
     assertSafeRelativePath(ctx.targetFile, ctx.cwd);
     const target = join4(ctx.cwd, ctx.targetFile);
     const r = injectRuleInlineTag(target, ctx.tag, ctx.ruleContent);
@@ -3891,8 +3776,7 @@ var InlineTagRuleStrategy = class {
 function injectRuleInlineTag(targetPath, tag, content) {
   const existing = readFileText(targetPath);
   const { content: newContent, changed } = stitchTaggedSection(existing, tag, content);
-  if (!changed)
-    return "unchanged";
+  if (!changed) return "unchanged";
   ensureParentDir(targetPath);
   writeFileText(targetPath, newContent);
   return "written";
@@ -3932,11 +3816,10 @@ ${after.replace(/^\n+/, "")}`, changed: true };
 `, changed: true };
 }
 
-// setup/strategies/permission/base.ts
+// commands/setup/strategies/permission/base.ts
 import { existsSync as existsSync6, readFileSync as readFileSync4, writeFileSync as writeFileSync3 } from "node:fs";
 function loadJsonConfig(permFile) {
-  if (!existsSync6(permFile))
-    return {};
+  if (!existsSync6(permFile)) return {};
   try {
     const parsed = JSON.parse(readFileSync4(permFile, "utf-8"));
     return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
@@ -3949,13 +3832,12 @@ function saveJsonConfig(permFile, data) {
   writeFileSync3(permFile, JSON.stringify(data, null, 2) + "\n", "utf-8");
 }
 
-// setup/strategies/permission/json-deny-array-base.ts
+// commands/setup/strategies/permission/json-deny-array-base.ts
 var JsonDenyArrayWriter = class {
   setVersion = false;
   apply(ctx) {
     const existing = loadJsonConfig(ctx.permFile);
-    if (this.setVersion)
-      existing.version = 1;
+    if (this.setVersion) existing.version = 1;
     existing.permissions = existing.permissions || {};
     existing.permissions.deny = existing.permissions.deny || [];
     const denyArr = existing.permissions.deny;
@@ -3970,28 +3852,27 @@ var JsonDenyArrayWriter = class {
         changed = true;
       }
     }
-    if (!changed)
-      return { updated: false, skipped: true };
+    if (!changed) return { updated: false, skipped: true };
     saveJsonConfig(ctx.permFile, existing);
     return { updated: true, skipped: false };
   }
 };
 
-// setup/strategies/permission/claude-settings.ts
+// commands/setup/strategies/permission/claude-settings.ts
 var ClaudeSettingsWriter = class extends JsonDenyArrayWriter {
   format = "claude_settings";
   writeTool = "Edit";
   setVersion = false;
 };
 
-// setup/strategies/permission/cursor-settings.ts
+// commands/setup/strategies/permission/cursor-settings.ts
 var CursorSettingsWriter = class extends JsonDenyArrayWriter {
   format = "cursor_settings";
   writeTool = "Write";
   setVersion = true;
 };
 
-// setup/strategies/permission/opencode-json.ts
+// commands/setup/strategies/permission/opencode-json.ts
 var OpencodeJsonWriter = class {
   format = "opencode_json";
   apply(ctx) {
@@ -4003,8 +3884,7 @@ var OpencodeJsonWriter = class {
     ];
     let changed = false;
     for (const { tool, paths } of toolPaths) {
-      if (!paths || paths.length === 0)
-        continue;
+      if (!paths || paths.length === 0) continue;
       const existingVal = existing.permission[tool];
       let rules;
       if (typeof existingVal === "string") {
@@ -4022,14 +3902,13 @@ var OpencodeJsonWriter = class {
       }
       existing.permission[tool] = rules;
     }
-    if (!changed)
-      return { updated: false, skipped: true };
+    if (!changed) return { updated: false, skipped: true };
     saveJsonConfig(ctx.permFile, existing);
     return { updated: true, skipped: false };
   }
 };
 
-// setup/strategies/permission/text-ignore.ts
+// commands/setup/strategies/permission/text-ignore.ts
 var CursorIgnoreWriter = class {
   format = "cursor_ignore";
   apply(ctx) {
@@ -4050,7 +3929,7 @@ var CursorIgnoreWriter = class {
   }
 };
 
-// setup/strategies/permission/python-hook-base.ts
+// commands/setup/strategies/permission/python-hook-base.ts
 var PythonHookWriter = class {
   setVersion = true;
   buildCondition(joinedPatterns) {
@@ -4077,14 +3956,12 @@ var PythonHookWriter = class {
       }]
     };
     const existing = loadJsonConfig(ctx.permFile);
-    if (this.setVersion)
-      existing.version = existing.version ?? 1;
+    if (this.setVersion) existing.version = existing.version ?? 1;
     existing.hooks = existing.hooks ?? {};
     existing.hooks[this.eventName] = existing.hooks[this.eventName] ?? [];
     const arr = existing.hooks[this.eventName];
     if (!arr.some((e) => {
-      if (!e.hooks)
-        return false;
+      if (!e.hooks) return false;
       return e.hooks.some((h) => h.command && h.command.includes(escapedScript));
     })) {
       arr.push(hookEntry);
@@ -4095,7 +3972,7 @@ var PythonHookWriter = class {
   }
 };
 
-// setup/strategies/permission/codex-hooks.ts
+// commands/setup/strategies/permission/codex-hooks.ts
 var CodexHooksWriter = class extends PythonHookWriter {
   format = "codex_hooks";
   matcher = "Bash|Edit|Write";
@@ -4107,7 +3984,7 @@ var CodexHooksWriter = class extends PythonHookWriter {
   }
 };
 
-// setup/strategies/permission/trae-hooks.ts
+// commands/setup/strategies/permission/trae-hooks.ts
 var TraeHooksWriter = class extends PythonHookWriter {
   format = "trae_hooks";
   matcher = "Read|Edit|Write";
@@ -4119,7 +3996,7 @@ var TraeHooksWriter = class extends PythonHookWriter {
   }
 };
 
-// setup/strategies/permission/gemini-hooks.ts
+// commands/setup/strategies/permission/gemini-hooks.ts
 var GeminiHooksWriter = class extends PythonHookWriter {
   format = "gemini_hooks";
   matcher = "*";
@@ -4135,7 +4012,7 @@ var GeminiHooksWriter = class extends PythonHookWriter {
   }
 };
 
-// setup/strategies/permission/omp-hooks.ts
+// commands/setup/strategies/permission/omp-hooks.ts
 import { existsSync as existsSync7, readFileSync as readFileSync5, writeFileSync as writeFileSync4 } from "node:fs";
 function patternToRegex(p) {
   return p.replace(/[.*+?^$()|[\]\\/]/g, "\\$&").replace(/\\\*/g, "[^/]+");
@@ -4217,7 +4094,7 @@ var OmpHooksWriter = class {
   }
 };
 
-// setup/strategies/permission/none.ts
+// commands/setup/strategies/permission/none.ts
 var NoneWriter = class {
   format = "none";
   apply(_ctx) {
@@ -4225,29 +4102,26 @@ var NoneWriter = class {
   }
 };
 
-// setup/strategies/index.ts
+// commands/setup/strategies/index.ts
 var RULE_STRATEGY_REGISTRY = /* @__PURE__ */ new Map();
 var PERMISSION_WRITER_REGISTRY = /* @__PURE__ */ new Map();
 var _builtinsRegistered = false;
 function registerRuleStrategy(strategy) {
-  if (!strategy.key)
-    throw new Error("RuleStrategy key must be non-empty");
+  if (!strategy.key) throw new Error("RuleStrategy key must be non-empty");
   if (RULE_STRATEGY_REGISTRY.has(strategy.key)) {
     throw new Error(`RuleStrategy '${strategy.key}' already registered`);
   }
   RULE_STRATEGY_REGISTRY.set(strategy.key, strategy);
 }
 function registerPermissionWriter(writer) {
-  if (!writer.format)
-    throw new Error("PermissionWriter format must be non-empty");
+  if (!writer.format) throw new Error("PermissionWriter format must be non-empty");
   if (PERMISSION_WRITER_REGISTRY.has(writer.format)) {
     throw new Error(`PermissionWriter '${writer.format}' already registered`);
   }
   PERMISSION_WRITER_REGISTRY.set(writer.format, writer);
 }
 function registerBuiltinStrategies() {
-  if (_builtinsRegistered)
-    return;
+  if (_builtinsRegistered) return;
   registerRuleStrategy(new SeparateFileRuleStrategy());
   registerRuleStrategy(new InlineTagRuleStrategy());
   registerPermissionWriter(new ClaudeSettingsWriter());
@@ -4263,7 +4137,7 @@ function registerBuiltinStrategies() {
 }
 registerBuiltinStrategies();
 
-// setup/base-agent.ts
+// commands/setup/base-agent.ts
 var BaseAgent = class {
   /** Path relative to project root (separate_file only). */
   ruleFile;
@@ -4339,13 +4213,11 @@ var BaseAgent = class {
             manifest.recordExisting(t.file, true);
           }
         }
-        if (r.note)
-          permNotes.push(`${t.file}: ${r.note}`);
+        if (r.note) permNotes.push(`${t.file}: ${r.note}`);
       }
       outcome.perms = anyUpdated ? "updated" : anySkipped ? "skipped" : "updated";
       outcome.permsFile = targets.map((t) => t.file).join(", ");
-      if (permNotes.length > 0)
-        outcome.note = permNotes.join("; ");
+      if (permNotes.length > 0) outcome.note = permNotes.join("; ");
     }
     return outcome;
   }
@@ -4364,8 +4236,7 @@ var BaseAgent = class {
 };
 var _cachedConfig = null;
 function loadSetupConfig() {
-  if (_cachedConfig)
-    return _cachedConfig;
+  if (_cachedConfig) return _cachedConfig;
   const configPath = join5(skillRoot(), "config", "agents.json");
   const raw = JSON.parse(readFileSync6(configPath, "utf-8"));
   if (!raw.rule || !raw.permissions) {
@@ -4375,7 +4246,7 @@ function loadSetupConfig() {
   return _cachedConfig;
 }
 
-// setup/agents/claude.ts
+// commands/setup/agents/claude.ts
 var ClaudeAgent = class extends BaseAgent {
   key = "claude";
   name = "Claude Code";
@@ -4389,7 +4260,7 @@ var ClaudeAgent = class extends BaseAgent {
   ];
 };
 
-// setup/agents/codex.ts
+// commands/setup/agents/codex.ts
 var CodexAgent = class extends BaseAgent {
   key = "codex";
   name = "Codex CLI";
@@ -4402,7 +4273,7 @@ var CodexAgent = class extends BaseAgent {
   ];
 };
 
-// setup/agents/cursor-agent.ts
+// commands/setup/agents/cursor-agent.ts
 var CursorAgent = class extends BaseAgent {
   key = "cursor-agent";
   name = "Cursor IDE";
@@ -4415,7 +4286,7 @@ var CursorAgent = class extends BaseAgent {
   ];
 };
 
-// setup/agents/gemini.ts
+// commands/setup/agents/gemini.ts
 var GeminiAgent = class extends BaseAgent {
   key = "gemini";
   name = "Gemini CLI";
@@ -4428,7 +4299,7 @@ var GeminiAgent = class extends BaseAgent {
   ];
 };
 
-// setup/agents/omp.ts
+// commands/setup/agents/omp.ts
 var OmpAgent = class extends BaseAgent {
   key = "omp";
   name = "Oh My Pi";
@@ -4441,7 +4312,7 @@ var OmpAgent = class extends BaseAgent {
   ];
 };
 
-// setup/agents/opencode.ts
+// commands/setup/agents/opencode.ts
 var OpenCodeAgent = class extends BaseAgent {
   key = "opencode";
   name = "OpenCode";
@@ -4455,7 +4326,7 @@ var OpenCodeAgent = class extends BaseAgent {
   ];
 };
 
-// setup/agents/pi.ts
+// commands/setup/agents/pi.ts
 var PiAgent = class extends BaseAgent {
   key = "pi";
   name = "Pi Coding Agent";
@@ -4465,7 +4336,7 @@ var PiAgent = class extends BaseAgent {
   tag = "aet-design-env-rule";
 };
 
-// setup/agents/trae.ts
+// commands/setup/agents/trae.ts
 var TraeAgent = class extends BaseAgent {
   key = "trae";
   name = "Trae IDE";
@@ -4478,11 +4349,10 @@ var TraeAgent = class extends BaseAgent {
   ];
 };
 
-// setup/registry.ts
+// commands/setup/registry.ts
 var AGENT_REGISTRY = /* @__PURE__ */ new Map();
 function registerAgent(a) {
-  if (!a.key)
-    throw new Error(`Agent ${a.constructor.name} has empty key`);
+  if (!a.key) throw new Error(`Agent ${a.constructor.name} has empty key`);
   if (AGENT_REGISTRY.has(a.key)) {
     throw new Error(`Agent key already registered: ${a.key} (duplicate from ${a.constructor.name})`);
   }
@@ -4490,11 +4360,9 @@ function registerAgent(a) {
 }
 function resolveAgent(input) {
   const lc = input.toLowerCase();
-  if (AGENT_REGISTRY.has(lc))
-    return AGENT_REGISTRY.get(lc);
+  if (AGENT_REGISTRY.has(lc)) return AGENT_REGISTRY.get(lc);
   for (const a of AGENT_REGISTRY.values()) {
-    if (a.aliases.includes(lc))
-      return a;
+    if (a.aliases.includes(lc)) return a;
   }
   return void 0;
 }
@@ -4503,8 +4371,7 @@ function agentKeys() {
 }
 var _builtinsRegistered2 = false;
 function registerBuiltinAgents() {
-  if (_builtinsRegistered2)
-    return;
+  if (_builtinsRegistered2) return;
   _builtinsRegistered2 = true;
   registerAgent(new ClaudeAgent());
   registerAgent(new CodexAgent());
@@ -4516,7 +4383,7 @@ function registerBuiltinAgents() {
   registerAgent(new TraeAgent());
 }
 
-// setup/index.ts
+// commands/setup/index.ts
 var MANIFEST_KEY = basename(skillRoot());
 registerBuiltinAgents();
 function printHeader(name, key) {
@@ -4568,8 +4435,7 @@ function runSetup(argv) {
       }
     }
     manifest.save();
-    if (hadError)
-      process.exitCode = 1;
+    if (hadError) process.exitCode = 1;
     console.log(`
 Setup complete for all ${agentKeys().length} agents.`);
     console.log(`Manifest: ${manifest.manifestPath}`);
@@ -4620,26 +4486,22 @@ Manifest: .aet/design/.manifest/${MANIFEST_KEY}.json`);
   if (check.present.length > 0) {
     console.log(`
   present (hash matches, safe to uninstall):`);
-    for (const k of check.present)
-      console.log(`    ${k}`);
+    for (const k of check.present) console.log(`    ${k}`);
   }
   if (check.modified.length > 0) {
     console.log(`
   modified (hash differs \u2014 preserved on uninstall):`);
-    for (const k of check.modified)
-      console.log(`    ${k}`);
+    for (const k of check.modified) console.log(`    ${k}`);
   }
   if (check.recovered.length > 0) {
     console.log(`
   recovered (pre-existing, never removed):`);
-    for (const k of check.recovered)
-      console.log(`    ${k}`);
+    for (const k of check.recovered) console.log(`    ${k}`);
   }
   if (check.missing.length > 0) {
     console.log(`
   missing (already removed):`);
-    for (const k of check.missing)
-      console.log(`    ${k}`);
+    for (const k of check.missing) console.log(`    ${k}`);
   }
 }
 function runUninstall(argv) {
@@ -4656,13 +4518,11 @@ function runUninstall(argv) {
     const result2 = manifest.uninstall(force);
     console.log(`
 Uninstalled ${result2.removed.length} file(s):`);
-    for (const k of result2.removed)
-      console.log(`  removed: ${k}`);
+    for (const k of result2.removed) console.log(`  removed: ${k}`);
     if (result2.skipped.length > 0) {
       console.log(`
 Skipped ${result2.skipped.length} file(s):`);
-      for (const k of result2.skipped)
-        console.log(`  skipped: ${k}`);
+      for (const k of result2.skipped) console.log(`  skipped: ${k}`);
     }
     return;
   }
@@ -4701,30 +4561,26 @@ Skipped ${result2.skipped.length} file(s):`);
       result.skipped.push(rel);
     }
   }
-  if (result.removed.length > 0)
-    manifest.save();
+  if (result.removed.length > 0) manifest.save();
   console.log(`
 Uninstalled ${result.removed.length} file(s) for ${agent.name}:`);
-  for (const k of result.removed)
-    console.log(`  removed: ${k}`);
+  for (const k of result.removed) console.log(`  removed: ${k}`);
   if (result.skipped.length > 0) {
     console.log(`
 Skipped ${result.skipped.length} file(s):`);
-    for (const k of result.skipped)
-      console.log(`  skipped: ${k}`);
+    for (const k of result.skipped) console.log(`  skipped: ${k}`);
   }
 }
 
-// context.ts
-import { existsSync as existsSync14, statSync as statSync7, realpathSync } from "node:fs";
+// commands/context/context.ts
+import { existsSync as existsSync15, statSync as statSync8, realpathSync } from "node:fs";
 import { resolve as resolve4 } from "node:path";
 
-// context/project-analysis.ts
+// commands/context/project-analysis.ts
 import { existsSync as existsSync10, readdirSync as readdirSync2, readFileSync as readFileSync8 } from "node:fs";
 import { join as join7 } from "node:path";
 function ensureStringPath(input) {
-  if (typeof input === "string")
-    return input;
+  if (typeof input === "string") return input;
   if (input && typeof input === "object" && typeof input.path === "string") {
     return input.path;
   }
@@ -4738,51 +4594,41 @@ function extractFrontmatter(content) {
   return match ? match[1] : "";
 }
 function readMarkdownFile(filePath) {
-  if (!filePath)
-    return null;
-  if (!existsSync10(filePath))
-    return null;
+  if (!filePath) return null;
+  if (!existsSync10(filePath)) return null;
   return readFileSync8(filePath, "utf-8");
 }
 function readMarkdownMetadata(filePath) {
   const content = readMarkdownFile(filePath);
-  if (!content)
-    return null;
+  if (!content) return null;
   const metadata = extractFrontmatter(content);
   return metadata || null;
 }
 function extractDescriptionFromFrontmatter(frontmatter) {
-  if (!frontmatter || typeof frontmatter !== "string")
-    return null;
+  if (!frontmatter || typeof frontmatter !== "string") return null;
   const match = frontmatter.match(/^description:\s*(?:["'](.+?)["']|(.+))$/m);
   return match ? (match[1] || match[2]).trim() : null;
 }
 function findCaseInsensitiveFile(dirPath, filename) {
-  if (!dirPath || !filename)
-    return null;
-  if (!existsSync10(dirPath))
-    return null;
+  if (!dirPath || !filename) return null;
+  if (!existsSync10(dirPath)) return null;
   const lowerTarget = filename.toLowerCase();
   const files = readdirSync2(dirPath);
   const match = files.find((f) => f.toLowerCase() === lowerTarget);
   return match ? join7(dirPath, match) : null;
 }
 function getMarkdownFiles(dirPath) {
-  if (!dirPath)
-    return [];
-  if (!existsSync10(dirPath))
-    return [];
+  if (!dirPath) return [];
+  if (!existsSync10(dirPath)) return [];
   const files = readdirSync2(dirPath);
   return files.filter((f) => f && f.toLowerCase().endsWith(".md")).map((f) => join7(dirPath, f));
 }
 function formatProjectAnalysis(projectRootInput) {
   try {
     const root = ensureStringPath(projectRootInput);
-    if (!root)
-      return null;
+    if (!root) return null;
     const analysisDir = join7(root, ".aet", "project-analysis");
-    if (!existsSync10(analysisDir))
-      return null;
+    if (!existsSync10(analysisDir)) return null;
     const architecturePath = findCaseInsensitiveFile(analysisDir, "Architecture.md");
     const modulesPath = findCaseInsensitiveFile(analysisDir, "Modules.md");
     const componentsDir = join7(analysisDir, "components");
@@ -4857,8 +4703,7 @@ function formatProjectAnalysis(projectRootInput) {
   } catch (err) {
     const e = err;
     console.error("[project-analysis] formatProjectAnalysis error:", e.message);
-    if (e.stack)
-      console.error(e.stack);
+    if (e.stack) console.error(e.stack);
     return null;
   }
 }
@@ -4868,7 +4713,7 @@ var plugin = {
   run: (root) => formatProjectAnalysis(root)
 };
 
-// context/scenario-library.ts
+// commands/context/scenario-library.ts
 import { existsSync as existsSync11, statSync as statSync4 } from "node:fs";
 import { join as join8 } from "node:path";
 var FILENAME = "scenario_library.yml";
@@ -4898,7 +4743,7 @@ var plugin2 = {
   }
 };
 
-// context/function-library.ts
+// commands/context/function-library.ts
 import { existsSync as existsSync12, statSync as statSync5 } from "node:fs";
 import { join as join9 } from "node:path";
 var FILENAME2 = "function_library.yml";
@@ -4928,7 +4773,7 @@ var plugin3 = {
   }
 };
 
-// context/sdr-library.ts
+// commands/context/sdr-library.ts
 import { existsSync as existsSync13, statSync as statSync6 } from "node:fs";
 import { join as join10 } from "node:path";
 var TOP_TAG = "sdr";
@@ -4990,15 +4835,46 @@ ${buildSecBlock(root, allExist)}
   }
 };
 
-// context/index.ts
+// commands/context/fmea-library.ts
+import { existsSync as existsSync14, statSync as statSync7 } from "node:fs";
+import { join as join11 } from "node:path";
+var FILENAME3 = "fmea_library.yml";
+var XML_TAG3 = "fmea-library";
+var plugin5 = {
+  name: "fmea-lib",
+  description: `\u63A2\u6D4B .aet/${FILENAME3} \u662F\u5426\u5B58\u5728\uFF0C\u8F93\u51FA\u8DEF\u5F84\u4E0E\u6D4F\u89C8\u6307\u4EE4`,
+  run(root) {
+    const filePath = join11(root, ".aet", FILENAME3);
+    const exists = existsSync14(filePath) && statSync7(filePath).isFile();
+    if (exists) {
+      return [
+        `<${XML_TAG3}>`,
+        `<exists>true</exists>`,
+        `<path>${filePath}</path>`,
+        `<instruction>FMEA \u5E93\u7528\u4E8E\u63CF\u8FF0\u7CFB\u7EDF\u5404\u529F\u80FD\u7684\u6545\u969C\u6A21\u5F0F\u4E0E\u5F71\u54CD\u5206\u6790\uFF0C\u662F\u53EF\u9760\u6027\u5206\u6790\u4FA7\u8F93\u5165\u3002\u7981\u6B62\u76F4\u63A5\u8BFB\u53D6\u8BE5 YAML \u6587\u4EF6\u5185\u5BB9\u3002\u8BF7\u7528\u4E13\u7528\u811A\u672C\u9010\u7EA7\u9605\u8BFB\u6545\u969C\u6A21\u5F0F\u5E93\u3002`,
+        `</instruction>`,
+        `</${XML_TAG3}>`
+      ].join("\n");
+    }
+    return [
+      `<${XML_TAG3}>`,
+      `<exists>false</exists>`,
+      `<instruction>FMEA \u5E93\u7528\u4E8E\u63CF\u8FF0\u7CFB\u7EDF\u5404\u529F\u80FD\u7684\u6545\u969C\u6A21\u5F0F\u4E0E\u5F71\u54CD\u5206\u6790\uFF0C\u662F\u53EF\u9760\u6027\u5206\u6790\u4FA7\u8F93\u5165\u3002\u5F53\u524D\u9879\u76EE\u672A\u63D0\u4F9B FMEA \u5E93\u3002</instruction>`,
+      `</${XML_TAG3}>`
+    ].join("\n");
+  }
+};
+
+// commands/context/index.ts
 var plugins = [
   plugin,
   plugin2,
   plugin3,
-  plugin4
+  plugin4,
+  plugin5
 ];
 
-// context.ts
+// commands/context/context.ts
 function listPlugins() {
   console.error("Available context plugins:");
   for (const p of plugins) {
@@ -5031,7 +4907,7 @@ function runContext(argv) {
   if (rootOverride !== null) {
     let isDir = false;
     try {
-      isDir = existsSync14(rootOverride) && statSync7(rootOverride).isDirectory();
+      isDir = existsSync15(rootOverride) && statSync8(rootOverride).isDirectory();
     } catch {
       isDir = false;
     }
@@ -5053,10 +4929,8 @@ function runContext(argv) {
     const missing = [];
     for (const p of plugins) {
       const r = p.run(root);
-      if (r)
-        outputs2.push(r);
-      else
-        missing.push(p.name);
+      if (r) outputs2.push(r);
+      else missing.push(p.name);
     }
     if (outputs2.length === 0) {
       console.error("No context metadata found in this project.");
@@ -5080,10 +4954,8 @@ function runContext(argv) {
       continue;
     }
     const r = p.run(root);
-    if (r)
-      outputs.push(r);
-    else
-      console.error(`[${name}] no data found`);
+    if (r) outputs.push(r);
+    else console.error(`[${name}] no data found`);
   }
   if (notFound.length > 0) {
     console.error(`Unknown plugins: ${notFound.join(", ")}`);
@@ -5094,9 +4966,9 @@ function runContext(argv) {
   }
 }
 
-// template.ts
-import { readFileSync as readFileSync9, existsSync as existsSync15 } from "node:fs";
-import { basename as basename2, join as join11 } from "node:path";
+// commands/template/template.ts
+import { readFileSync as readFileSync9, existsSync as existsSync16 } from "node:fs";
+import { basename as basename2, join as join12 } from "node:path";
 function getCurrentTime() {
   const now = /* @__PURE__ */ new Date();
   const year = now.getFullYear();
@@ -5133,8 +5005,7 @@ function parseFrontmatter2(content) {
     const line = lines[i];
     if (isBlockScalar) {
       if (line.includes(":") && !line.startsWith(" ")) {
-        if (currentKey)
-          metadata[currentKey] = blockLines.join("\n").trim();
+        if (currentKey) metadata[currentKey] = blockLines.join("\n").trim();
         isBlockScalar = false;
         blockLines = [];
         const [key, ...valueParts] = line.split(":");
@@ -5157,8 +5028,7 @@ function parseFrontmatter2(content) {
         isBlockScalar = true;
         blockLines = [];
       } else if (value) {
-        if (currentKey)
-          metadata[currentKey] = value;
+        if (currentKey) metadata[currentKey] = value;
         currentKey = null;
       }
     }
@@ -5247,8 +5117,7 @@ function buildChain(activePlugin) {
 function loadComponentFromPlugin(pluginName, templateSetName, componentName) {
   const relativePath = `components/${componentName}.md`;
   const filePath = resolvePluginTemplateFile(pluginName, templateSetName, relativePath);
-  if (!filePath)
-    return null;
+  if (!filePath) return null;
   try {
     const content = readFileSync9(filePath, "utf-8");
     return parseFrontmatter2(content);
@@ -5269,8 +5138,8 @@ function resolveComponent(chain, templateSetName, fallbackPath, componentName) {
       return { kind: "shielded" };
     }
   }
-  const fallbackFile = join11(fallbackPath, "components", `${componentName}.md`);
-  if (existsSync15(fallbackFile)) {
+  const fallbackFile = join12(fallbackPath, "components", `${componentName}.md`);
+  if (existsSync16(fallbackFile)) {
     try {
       const rawContent = readFileSync9(fallbackFile, "utf-8");
       const component = parseFrontmatter2(rawContent);
@@ -5284,16 +5153,15 @@ function resolveComponent(chain, templateSetName, fallbackPath, componentName) {
 function loadArtifactFromChain(chain, templateSetName, fallbackPath) {
   for (const pluginName of chain) {
     const filePath = resolvePluginTemplateFile(pluginName, templateSetName, "artifact.md");
-    if (!filePath)
-      continue;
+    if (!filePath) continue;
     try {
       return readFileSync9(filePath, "utf-8");
     } catch (error) {
       throw new Error(`Failed to read artifact.md from plugin ${pluginName}/${templateSetName} (${filePath}): ${error.message}`);
     }
   }
-  const fallbackFile = join11(fallbackPath, "artifact.md");
-  if (existsSync15(fallbackFile)) {
+  const fallbackFile = join12(fallbackPath, "artifact.md");
+  if (existsSync16(fallbackFile)) {
     try {
       return readFileSync9(fallbackFile, "utf-8");
     } catch (error) {
@@ -5313,8 +5181,7 @@ function loadMetadataFromChain(chain, templateSetName, fallbackPath) {
   };
   for (const pluginName of chain) {
     const filePath = resolvePluginTemplateFile(pluginName, templateSetName, "components/metadata.md");
-    if (!filePath)
-      continue;
+    if (!filePath) continue;
     try {
       const content = readFileSync9(filePath, "utf-8");
       return fillUpdateTime(content).trim();
@@ -5322,8 +5189,8 @@ function loadMetadataFromChain(chain, templateSetName, fallbackPath) {
       console.error(`Error: Failed to read metadata from plugin ${pluginName}/${templateSetName} (${filePath}): ${error.message}`);
     }
   }
-  const fallbackFile = join11(fallbackPath, "components", "metadata.md");
-  if (existsSync15(fallbackFile)) {
+  const fallbackFile = join12(fallbackPath, "components", "metadata.md");
+  if (existsSync16(fallbackFile)) {
     try {
       const content = readFileSync9(fallbackFile, "utf-8");
       return fillUpdateTime(content).trim();
@@ -5420,9 +5287,9 @@ function runTemplate(argv) {
   }
 }
 
-// checklist.ts
-import { readFileSync as readFileSync10, existsSync as existsSync16 } from "node:fs";
-import { basename as basename3, join as join12 } from "node:path";
+// commands/checklist/checklist.ts
+import { readFileSync as readFileSync10, existsSync as existsSync17 } from "node:fs";
+import { basename as basename3, join as join13 } from "node:path";
 function parseArgs2(argv) {
   if (argv.length < 1) {
     console.error("Usage: checklist <checklist-set-path>");
@@ -5434,14 +5301,12 @@ function parseArgs2(argv) {
 function loadChecklistComponentFromPlugin(pluginName, checklistSetName, componentName) {
   const relativePath = `components/${componentName}.md`;
   const filePath = resolvePluginTemplateFile(pluginName, checklistSetName, relativePath);
-  if (!filePath)
-    return null;
+  if (!filePath) return null;
   try {
     const content = readFileSync10(filePath, "utf-8");
     const parsed = parseFrontmatter(content);
     const checklist = parsed.metadata.checklist;
-    if (typeof checklist !== "string" || checklist.trim().length === 0)
-      return null;
+    if (typeof checklist !== "string" || checklist.trim().length === 0) return null;
     return checklist;
   } catch (error) {
     console.error(`Error: Failed to read component ${componentName} from plugin ${pluginName} (${filePath}): ${error.message}`);
@@ -5460,8 +5325,8 @@ function resolveChecklist(chain, checklistSetName, fallbackPath, componentName) 
       return { kind: "shielded" };
     }
   }
-  const fallbackFile = join12(fallbackPath, "components", `${componentName}.md`);
-  if (existsSync16(fallbackFile)) {
+  const fallbackFile = join13(fallbackPath, "components", `${componentName}.md`);
+  if (existsSync17(fallbackFile)) {
     try {
       const content = readFileSync10(fallbackFile, "utf-8");
       const parsed = parseFrontmatter(content);
@@ -5486,8 +5351,8 @@ function loadChecklistFromChain(chain, checklistSetName, fallbackPath) {
       }
     }
   }
-  const fallbackFile = join12(fallbackPath, "checklist.md");
-  if (existsSync16(fallbackFile)) {
+  const fallbackFile = join13(fallbackPath, "checklist.md");
+  if (existsSync17(fallbackFile)) {
     try {
       return readFileSync10(fallbackFile, "utf-8");
     } catch (error) {
@@ -5505,12 +5370,10 @@ function assembleChecklist(checklistSetPath) {
   const placeholderRegex = /\{\{([\s\S]*?)\}\}/g;
   checklist = checklist.replace(placeholderRegex, (_match, rawContent) => {
     const strippedContent = stripHtmlComments(rawContent).trim();
-    if (!strippedContent)
-      return "";
+    if (!strippedContent) return "";
     const innerRegex = /^([a-zA-Z0-9-.]+)$/;
     const innerMatch = strippedContent.match(innerRegex);
-    if (!innerMatch)
-      return "";
+    if (!innerMatch) return "";
     const componentName = innerMatch[1];
     const result = resolveChecklist(chain, checklistSetName, checklistSetPath, componentName);
     if (result.kind === "shielded") {
@@ -5536,9 +5399,9 @@ function runChecklist(argv) {
   }
 }
 
-// library.ts
-import { existsSync as existsSync17, statSync as statSync8 } from "node:fs";
-import { join as join13 } from "node:path";
+// commands/library/library.ts
+import { existsSync as existsSync18, statSync as statSync9 } from "node:fs";
+import { join as join14 } from "node:path";
 import { homedir as homedir2 } from "node:os";
 var CMD = "library";
 var PREVIEW_SAMPLE_SIZE = 3;
@@ -5546,21 +5409,47 @@ var CONFIG_FILENAME = "library-browser.config.yml";
 var CORE_FIELDS = /* @__PURE__ */ new Set(["id", "type", "name", "description", "children"]);
 function parseArgs3(argv) {
   if (argv.length < 1) {
-    console.error(`Usage: node aet-design-env.mjs ${CMD} <library.yml> [node-id1 node-id2 ...]`);
+    console.error(`Usage: node aet-design-env.mjs ${CMD} <library.yml> [-s <keyword>] [node-id1 node-id2 ...]`);
     console.error(`Example: node aet-design-env.mjs ${CMD} /path/to/scenario_library.yml 100001 100006`);
+    console.error(`Example: node aet-design-env.mjs ${CMD} -s \u652F\u4ED8 /path/to/fmea.yml`);
     process.exit(1);
   }
-  const libraryFile = argv[0];
-  const expandIds = new Set(
-    argv.slice(1).map((s) => String(s).trim()).filter(Boolean)
-  );
-  return { libraryFile, expandIds };
+  let libraryFile;
+  let search;
+  const expandIds = /* @__PURE__ */ new Set();
+  let i = 0;
+  while (i < argv.length) {
+    const arg = argv[i];
+    if (arg === "-s" || arg === "--search") {
+      const next = argv[i + 1];
+      if (next === void 0 || next.startsWith("-")) {
+        console.error(`Warning: ${arg} requires a keyword argument; ignoring.`);
+        i++;
+        continue;
+      }
+      search = String(next).trim();
+      i += 2;
+      continue;
+    }
+    if (libraryFile === void 0) {
+      libraryFile = arg;
+    } else {
+      const id = String(arg).trim();
+      if (id) expandIds.add(id);
+    }
+    i++;
+  }
+  if (libraryFile === void 0) {
+    console.error("Error: no library file given.");
+    process.exit(1);
+  }
+  return { libraryFile, expandIds, search };
 }
 function loadLibraryFile(libraryFile) {
-  if (!existsSync17(libraryFile)) {
+  if (!existsSync18(libraryFile)) {
     throw new Error(`Library file not found: ${libraryFile}`);
   }
-  const stat = statSync8(libraryFile);
+  const stat = statSync9(libraryFile);
   if (!stat.isFile()) {
     throw new Error(
       `Library path is not a file (expected a .yml/.yaml file, got a directory): ${libraryFile}`
@@ -5578,17 +5467,14 @@ function detectTypeFromLeaves(nodes) {
       if (node && typeof node === "object") {
         const t = node.type;
         if (t && t !== "directory") {
-          if (t === "scene")
-            return "scenario";
-          if (t === "function")
-            return "function";
+          if (t === "scene") return "scenario";
+          if (t === "function") return "function";
           return t;
         }
         const children = Array.isArray(node.children) ? node.children : [];
         if (children.length > 0) {
           const r = walk(children);
-          if (r)
-            return r;
+          if (r) return r;
         }
       }
     }
@@ -5619,17 +5505,17 @@ function loadLibrary(libraryFile) {
 }
 function configLookupDirs() {
   return [
-    join13(process.cwd(), ".aet", "design", "custom"),
-    join13(process.cwd(), ".aet", "design", "aet"),
-    join13(homedir2(), ".aet", "design", "custom"),
-    join13(homedir2(), ".aet", "design", "aet"),
-    join13(skillRoot(), "config")
+    join14(process.cwd(), ".aet", "design", "custom"),
+    join14(process.cwd(), ".aet", "design", "aet"),
+    join14(homedir2(), ".aet", "design", "custom"),
+    join14(homedir2(), ".aet", "design", "aet"),
+    join14(skillRoot(), "config")
   ];
 }
 function loadLibraryConfig() {
   for (const d of configLookupDirs()) {
-    const p = join13(d, CONFIG_FILENAME);
-    if (existsSync17(p)) {
+    const p = join14(d, CONFIG_FILENAME);
+    if (existsSync18(p)) {
       try {
         const cfg = loadYaml(p);
         return cfg && typeof cfg === "object" ? cfg : {};
@@ -5666,17 +5552,72 @@ function buildIndex(nodes) {
   return index;
 }
 function isDirectoryNode(node) {
-  if (node.type === "directory")
-    return true;
+  if (node.type === "directory") return true;
   return Array.isArray(node.children) && node.children.length > 0;
 }
 function previewChildren(node) {
   const children = Array.isArray(node.children) ? node.children : [];
-  if (children.length === 0)
-    return null;
+  if (children.length === 0) return null;
   const sample = children.slice(0, PREVIEW_SAMPLE_SIZE).map((c) => c.name).join(" / ");
   const more = children.length > PREVIEW_SAMPLE_SIZE ? ` ... (+${children.length - PREVIEW_SAMPLE_SIZE})` : "";
   return { total: children.length, text: `${sample}${more}` };
+}
+function formatValue(key, value, indent) {
+  if (value !== null && typeof value === "object" && !Array.isArray(value)) {
+    const entries = Object.entries(value);
+    if (entries.length === 0) {
+      return [`${indent}${key}: {}`];
+    }
+    if (entries.length === 1) {
+      const [k, v] = entries[0];
+      return [`${indent}${key}: ${k}: ${scalarize(v, inline(v))}`];
+    }
+    const lines = [`${indent}${key}:`];
+    for (const [k, v] of entries) {
+      lines.push(...formatValue(k, v, indent + "  "));
+    }
+    return lines;
+  }
+  if (Array.isArray(value) && value.length > 0) {
+    const lines = [`${indent}${key}:`];
+    for (const el of value) {
+      if (el !== null && typeof el === "object") {
+        const entries = Object.entries(el);
+        if (entries.length === 0) {
+          lines.push(`${indent}  - {}`);
+        } else if (entries.length === 1) {
+          const [k, v] = entries[0];
+          lines.push(`${indent}  - ${k}: ${scalarize(v, inline(v))}`);
+        } else {
+          lines.push(`${indent}  - ${entries[0][0]}: ${scalarize(entries[0][1], inline(entries[0][1]))}`);
+          for (const [k, v] of entries.slice(1)) {
+            lines.push(...formatValue(k, v, indent + "    "));
+          }
+        }
+      } else {
+        lines.push(`${indent}  - ${scalarize(el, inline(el))}`);
+      }
+    }
+    return lines;
+  }
+  if (Array.isArray(value) && value.length === 0) {
+    return [`${indent}${key}: []`];
+  }
+  return [`${indent}${key}: ${scalarize(value, inline(value))}`];
+}
+function scalarize(value, fallback) {
+  if (value === null || value === void 0) return "null";
+  if (typeof value === "string") return value;
+  if (typeof value === "boolean" || typeof value === "number") return String(value);
+  return fallback;
+}
+function inline(value) {
+  if (Array.isArray(value)) return `[${value.length} \u9879]`;
+  if (value !== null && typeof value === "object") {
+    const keys = Object.keys(value);
+    return keys.length === 0 ? "{}" : `{${keys.join(", ")}}`;
+  }
+  return String(value);
 }
 function renderNode(node, depth, expandIds, hideFields, lines) {
   const indent = "  ".repeat(depth);
@@ -5689,14 +5630,11 @@ function renderNode(node, depth, expandIds, hideFields, lines) {
     lines.push(`${indent}  \u63CF\u8FF0: ${node.description}`);
   }
   for (const key of Object.keys(node)) {
-    if (CORE_FIELDS.has(key))
-      continue;
-    if (hideFields.has(key))
-      continue;
+    if (CORE_FIELDS.has(key)) continue;
+    if (hideFields.has(key)) continue;
     const val = node[key];
-    if (val === null || val === void 0)
-      continue;
-    lines.push(`${indent}  ${key}: ${String(val)}`);
+    if (val === null || val === void 0) continue;
+    lines.push(...formatValue(key, val, indent + "  "));
   }
   const children = Array.isArray(node.children) ? node.children : [];
   const preview = previewChildren(node);
@@ -5711,21 +5649,84 @@ function renderNode(node, depth, expandIds, hideFields, lines) {
     }
   }
 }
-function collectExpandableIds(nodes, out = []) {
+function collectExpandableIds(nodes, out = [], exclude) {
   for (const node of nodes) {
     if (isDirectoryNode(node)) {
-      out.push(String(node.id));
+      const id = String(node.id);
+      if (!exclude || !exclude.has(id)) {
+        out.push(id);
+      }
     }
     const children = Array.isArray(node.children) ? node.children : [];
     if (children.length > 0) {
-      collectExpandableIds(children, out);
+      collectExpandableIds(children, out, exclude);
     }
   }
   return out;
 }
+function valueContains(keyword, value) {
+  if (value === null || value === void 0) return false;
+  if (Array.isArray(value)) {
+    return value.some((el) => valueContains(keyword, el));
+  }
+  if (typeof value === "object") {
+    return Object.values(value).some(
+      (v) => valueContains(keyword, v)
+    );
+  }
+  return String(value).toLowerCase().includes(keyword.toLowerCase());
+}
+function searchNodes(nodes, keyword, scopeIds) {
+  const hits = [];
+  const kw = keyword.toLowerCase();
+  function inScope(node) {
+    if (!scopeIds || scopeIds.size === 0) return true;
+    return scopeIds.has(String(node.id));
+  }
+  function walk(list, underScopeRoot) {
+    for (const node of list) {
+      if (node && typeof node === "object") {
+        const scoped = underScopeRoot || inScope(node);
+        if (scoped) {
+          const matched = Object.keys(node).some((k) => {
+            if (k === "children") return false;
+            return valueContains(kw, node[k]);
+          });
+          if (matched) hits.push(node);
+        }
+        const children = Array.isArray(node.children) ? node.children : [];
+        if (children.length > 0) walk(children, scoped);
+      }
+    }
+  }
+  walk(nodes, false);
+  return hits;
+}
+function dedupeHits(tree, hits) {
+  const byId = /* @__PURE__ */ new Map();
+  for (const h of hits) byId.set(String(h.id), h);
+  const keep = /* @__PURE__ */ new Set();
+  const result = [];
+  function walk(list) {
+    for (const node of list) {
+      const id = String(node.id);
+      if (byId.has(id)) {
+        if (!keep.has(id)) {
+          keep.add(id);
+          result.push(node);
+        }
+        continue;
+      }
+      const children = Array.isArray(node.children) ? node.children : [];
+      if (children.length > 0) walk(children);
+    }
+  }
+  walk(tree);
+  return result;
+}
 function runLibrary(argv) {
   try {
-    const { libraryFile, expandIds } = parseArgs3(argv);
+    const { libraryFile, expandIds, search } = parseArgs3(argv);
     const { type: type2, tree } = loadLibrary(libraryFile);
     const config = loadLibraryConfig();
     const { label: libLabel, hideFields } = resolveTypeMeta(type2, config);
@@ -5741,6 +5742,50 @@ function runLibrary(argv) {
     }
     if (invalid.length > 0) {
       console.error(`Warning: \u8282\u70B9 ID \u4E0D\u5B58\u5728\u4E8E${libLabel}: ${invalid.join(", ")}`);
+    }
+    if (search) {
+      const validScopes = requestedValid.slice();
+      const scope = validScopes.length > 0 ? new Set(validScopes) : void 0;
+      const rawHits = searchNodes(tree, search, scope);
+      const hits = dedupeHits(tree, rawHits);
+      const lines2 = [];
+      lines2.push(`${libLabel}\u6587\u4EF6: ${libraryFile}`);
+      if (type2) {
+        lines2.push(`${libLabel}\u7C7B\u578B: ${type2}`);
+      }
+      lines2.push(
+        scope ? `\u641C\u7D22: ${libLabel} \u5185\u5173\u952E\u8BCD "${search}"\uFF08\u8303\u56F4: ${validScopes.join(", ")}\uFF09` : `\u641C\u7D22: ${libLabel} \u5185\u5173\u952E\u8BCD "${search}"`
+      );
+      lines2.push("");
+      if (hits.length === 0) {
+        lines2.push(`\u672A\u627E\u5230\u5339\u914D "${search}" \u7684\u8282\u70B9\u3002`);
+      } else {
+        lines2.push(`\u547D\u4E2D ${hits.length} \u4E2A\u8282\u70B9:`);
+        lines2.push("");
+        const subtreeDirs = [];
+        for (const hit of hits) {
+          const entry = index.get(String(hit.id));
+          const path = entry ? entry.path : [];
+          const ancestors = path.slice(0, -1).map((p) => p.name || "(unnamed)");
+          const breadcrumb = ancestors.length > 0 ? ancestors.join(" > ") : "(\u6839\u7EA7)";
+          lines2.push(`\u8DEF\u5F84: ${breadcrumb}`);
+          lines2.push("");
+          renderNode(hit, 0, /* @__PURE__ */ new Set([String(hit.id)]), hideFields, lines2);
+          lines2.push("");
+          const kids = Array.isArray(hit.children) ? hit.children : [];
+          if (kids.length > 0) {
+            collectExpandableIds(kids, subtreeDirs);
+          }
+        }
+        lines2.push("---");
+        lines2.push(`\u53EF\u5C55\u5F00\u7684\u76EE\u5F55\u8282\u70B9 (\u5171 ${subtreeDirs.length}): ${subtreeDirs.join(", ")}`);
+        if (subtreeDirs.length > 0) {
+          const hint = subtreeDirs.slice(0, Math.min(3, subtreeDirs.length)).join(" ");
+          lines2.push(`\u63D0\u793A: \u6279\u91CF\u5C55\u5F00 \u2192 node scripts/aet-design-env.mjs library "${libraryFile}" ${hint}`);
+        }
+      }
+      console.log(lines2.join("\n"));
+      return;
     }
     const lines = [];
     lines.push(`${libLabel}\u6587\u4EF6: ${libraryFile}`);
@@ -5765,10 +5810,10 @@ function runLibrary(argv) {
       lines.push(`\u589E\u91CF\u5C55\u5F00\u8282\u70B9: ${requestedValid.join(", ")}`);
       lines.push("");
       const subtreeDirs = [];
+      const alreadyExpanded = new Set(requestedValid.map((s) => String(s)));
       for (const id of requestedValid) {
         const entry = index.get(id);
-        if (!entry)
-          continue;
+        if (!entry) continue;
         const { node, path } = entry;
         const ancestors = path.slice(0, -1).map((p) => p.name || "(unnamed)");
         const breadcrumb = ancestors.length > 0 ? ancestors.join(" > ") : "(\u6839\u7EA7)";
@@ -5777,7 +5822,7 @@ function runLibrary(argv) {
         renderNode(node, 0, /* @__PURE__ */ new Set([String(node.id)]), hideFields, lines);
         const children = Array.isArray(node.children) ? node.children : [];
         if (children.length > 0) {
-          collectExpandableIds(children, subtreeDirs);
+          collectExpandableIds(children, subtreeDirs, alreadyExpanded);
         }
         lines.push("");
       }
@@ -5795,13 +5840,12 @@ function runLibrary(argv) {
   }
 }
 
-// check.ts
-import { existsSync as existsSync18, readdirSync as readdirSync3, readFileSync as readFileSync11, statSync as statSync9 } from "node:fs";
+// commands/check/check.ts
+import { existsSync as existsSync19, readdirSync as readdirSync3, readFileSync as readFileSync11, statSync as statSync10 } from "node:fs";
 import { homedir as homedir3 } from "node:os";
-import { isAbsolute as isAbsolute3, join as join14, resolve as resolve5 } from "node:path";
+import { isAbsolute as isAbsolute3, join as join15, resolve as resolve5 } from "node:path";
 function parseArgs4(argv) {
-  if (argv.length < 1)
-    return { projectRoot: null };
+  if (argv.length < 1) return { projectRoot: null };
   return { projectRoot: argv[0] };
 }
 function readJsonSafe(filePath) {
@@ -5812,8 +5856,7 @@ function readJsonSafe(filePath) {
   }
 }
 function listPluginFolderNames(designDir) {
-  if (!existsSync18(designDir))
-    return [];
+  if (!existsSync19(designDir)) return [];
   let entries;
   try {
     entries = readdirSync3(designDir, { withFileTypes: true });
@@ -5830,17 +5873,14 @@ function pluginHasTemplateSetContent(pluginDir) {
     return false;
   }
   for (const e of entries) {
-    if (!e.isDirectory() || e.name.startsWith("."))
-      continue;
-    const templateSetDir = join14(pluginDir, e.name);
-    if (existsSync18(join14(templateSetDir, "artifact.md")))
-      return true;
-    const componentsDir = join14(templateSetDir, "components");
-    if (existsSync18(componentsDir)) {
+    if (!e.isDirectory() || e.name.startsWith(".")) continue;
+    const templateSetDir = join15(pluginDir, e.name);
+    if (existsSync19(join15(templateSetDir, "artifact.md"))) return true;
+    const componentsDir = join15(templateSetDir, "components");
+    if (existsSync19(componentsDir)) {
       try {
         const comps = readdirSync3(componentsDir, { withFileTypes: true });
-        if (comps.some((c) => c.isFile() && c.name.endsWith(".md")))
-          return true;
+        if (comps.some((c) => c.isFile() && c.name.endsWith(".md"))) return true;
       } catch {
       }
     }
@@ -5881,8 +5921,7 @@ function checkPluginJsonSchema(pluginJsonPath, issues) {
     } else {
       const shieldsMap = sh;
       for (const [setName, list] of Object.entries(shieldsMap)) {
-        if (list === void 0 || list === null)
-          continue;
+        if (list === void 0 || list === null) continue;
         if (!Array.isArray(list)) {
           issues.push({ severity: "ERROR", path: pluginJsonPath, message: `'shields["${setName}"]' must be an array of strings (got ${typeof list})` });
           continue;
@@ -5913,32 +5952,31 @@ function checkDesignJson(designJsonPath, issues) {
     issues.push({ severity: "ERROR", path: designJsonPath, message: `'plugin' field is required (set to a plugin name, or null to disable the chain)` });
     return null;
   }
-  const plugin5 = cfg.plugin;
-  if (plugin5 === null) {
+  const plugin6 = cfg.plugin;
+  if (plugin6 === null) {
     return null;
   }
-  if (typeof plugin5 !== "string" || plugin5.length === 0) {
+  if (typeof plugin6 !== "string" || plugin6.length === 0) {
     issues.push({ severity: "ERROR", path: designJsonPath, message: `'plugin' field must be a non-empty string or null (use null to disable the chain)` });
     return null;
   }
-  return plugin5;
+  return plugin6;
 }
 function runChecks() {
   const issues = [];
   const proj = process.cwd();
   const home = homedir3();
   const designDirs = [
-    { label: "project", dir: join14(proj, ".aet", "design") },
-    { label: "home", dir: join14(home, ".aet", "design") }
+    { label: "project", dir: join15(proj, ".aet", "design") },
+    { label: "home", dir: join15(home, ".aet", "design") }
   ];
   for (const { dir } of designDirs) {
-    if (!existsSync18(dir))
-      continue;
+    if (!existsSync19(dir)) continue;
     const pluginNames = listPluginFolderNames(dir);
     for (const pluginName of pluginNames) {
-      const pluginDir = join14(dir, pluginName);
-      const pluginJsonPath = join14(pluginDir, "plugin.json");
-      const hasPluginJson = existsSync18(pluginJsonPath);
+      const pluginDir = join15(dir, pluginName);
+      const pluginJsonPath = join15(pluginDir, "plugin.json");
+      const hasPluginJson = existsSync19(pluginJsonPath);
       const hasTemplateSetContent = pluginHasTemplateSetContent(pluginDir);
       if (hasPluginJson) {
         checkPluginJsonSchema(pluginJsonPath, issues);
@@ -5958,14 +5996,14 @@ function runChecks() {
       }
     }
   }
-  const projDesignPath = join14(proj, ".aet", "design", "design.json");
-  const homeDesignPath = join14(home, ".aet", "design", "design.json");
+  const projDesignPath = join15(proj, ".aet", "design", "design.json");
+  const homeDesignPath = join15(home, ".aet", "design", "design.json");
   let activePlugin = null;
   let activePluginSource = "(no design.json)";
-  if (existsSync18(projDesignPath)) {
+  if (existsSync19(projDesignPath)) {
     activePluginSource = projDesignPath;
     activePlugin = checkDesignJson(projDesignPath, issues);
-  } else if (existsSync18(homeDesignPath)) {
+  } else if (existsSync19(homeDesignPath)) {
     activePluginSource = homeDesignPath;
     activePlugin = checkDesignJson(homeDesignPath, issues);
   } else {
@@ -5996,7 +6034,7 @@ function runCheck(argv) {
       const abs = isAbsolute3(projectRoot2) ? projectRoot2 : resolve5(process.cwd(), projectRoot2);
       let st;
       try {
-        st = statSync9(abs);
+        st = statSync10(abs);
       } catch {
         console.error(`Error: path does not exist: ${abs}`);
         process.exit(1);
@@ -6056,7 +6094,7 @@ Options:
 Agents (setup): claude code, opencode, codex, geminicli, cursor, trae, omp, pi, all`;
 function printVersion() {
   const bundlePath = fileURLToPath2(import.meta.url);
-  const stat = statSync10(bundlePath);
+  const stat = statSync11(bundlePath);
   const content = readFileSync12(bundlePath);
   const hash = createHash2("sha256").update(content).digest("hex").slice(0, 12);
   console.log(`aet-design-env`);

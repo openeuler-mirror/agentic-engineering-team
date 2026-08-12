@@ -1,6 +1,6 @@
 ---
 name: aet-design-env
-description: 探测当前项目下 AET 库的存在状态（场景库/功能库/SDR 库），输出 XML 元数据供 coding agent 在进入项目时快速感知"有哪些库可用、路径在哪、如何浏览"。仅暴露 context 子命令。
+description: 探测当前项目下 AET 库的存在状态（场景库/功能库/SDR 库/FMEA 库），输出 XML 元数据供 coding agent 在进入项目时快速感知"有哪些库可用、路径在哪、如何浏览"。仅暴露 context 子命令。
 metadata:
   pattern: tool-wrapper
 ---
@@ -33,15 +33,16 @@ node scripts/aet-design-env.mjs context [--root <path>] [name...]
 ### 上下文名称
 
 | 名称 | 备注 |
-|---|---|---|
+|---|---|
 | `scenario-lib` | 用于描述用户具体业务操作场景的库 |
 | `function-lib` | 用于描述系统可复用的能力组合的库 | 
 | `sdr-lib` | 用于描述系统安全功能规范的库 |
+| `fmea-lib` | 用于描述系统各功能故障模式与影响的库 |
 
 ### 示例
 
 ```
-node scripts/aet-design-env.mjs context scenario-lib function-lib sdr-lib
+node scripts/aet-design-env.mjs context scenario-lib function-lib sdr-lib fmea-lib
 ```
 
 ## 能力2：模板组装

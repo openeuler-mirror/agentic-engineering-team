@@ -6,7 +6,7 @@ description: |
   design, and DFx strategy. Use when: (1) you have completed requirements analysis and need to
   produce a requirements design specification, (2) you need to clarify how requirements integrate
   into the existing system, (3) you need module-level change planning with frozen zones and
-  interface contracts, (4) you need to produce a structured requirements design document, or any requirements
+  interface contracts, (4) you need to produce a SDD-style design document, or any requirements
   design and architecture design tasks.
 metadata:
   pattern: pipeline
@@ -55,6 +55,15 @@ All user-facing prompts must be in the user's locale language. If user locale is
 
 ## [A1] Design Exploration
 
+### [A1.0] Environment Setup
+
+- Load the `aet-design-env` skill to obtain its script path.
+- Detect available libraries and their paths:
+  ```
+  node <aet-design-env path>/aet-design-env/scripts/aet-design-env.mjs context fmea-lib
+  ```
+- Interpret the detected library metadata (fmea-lib presence + paths) from the command's stdout.
+
 ### [A1.1] Confirm Design Materials
 
 **Completion: mandatory inputs confirmed**
@@ -77,11 +86,17 @@ Read the mandatory inputs (Requirements Analysis Specification and Project Codeb
 
 **Completion: design approach given (High Effort: feasibility-verified approach after fixes)**
 
-### [A2.1] Design and Verification
+### [A2.1] Reliability Analysis
 
-Load both `workflows/sop-design.md` and `workflows/sop-verification.md` before starting A2; ensure both files are successfully read into memory prior to any design verification steps. Then execute the design and verification workflow.
+If the `FMAE library` is available and the `aet-fmea-analysis` skill is accessible, load that skill (do not execute any analysis without the skill) and perform a failure‑mode‑based reliability analysis. Otherwise, skip this step.
 
-### [A2.2] User Confirmation
+Completion criteria: Output the reliability analysis results document.
+
+### [A2.2] Design and Verification
+
+Load both `workflows/sop-design.md` and `workflows/sop-verification.md` (Only Effort=High load sop-verification.md) before starting A2; Then execute the design and verification workflow.
+
+### [A2.3] User Confirmation
 
 - After verifying that the design meets the specifications, summarize the design and ask the user for confirmation. 
 - If verification was performed, describe the overall final solution after the fixes, NOT just the fixes themselves. User only cares about the end result.
@@ -126,13 +141,14 @@ Load `workflows/sop-generation.md` and execute the document generation workflow.
 - **Reference Project Codebase (Optional)**：External codebase that can be referenced to assist with the design.
 - **Reference Project Codebase Analysis Document (Optional)**：If available, this must be read to accelerate the exploration process.
 - **Domain Materials (Optional)**：Domain architecture analysis / Compliance requirements / Specific domain needs.
+- **FMEA 库 (Optional)**：Fault mode and effects analysis library (detected via `fmea-lib` in [A1.0]); feeds reliability-related design decisions (fault detection / isolation / recovery).
 - **Design References (Optional)**：Existing system design specifications / Modules.
 
 </input>
 
 <output>
 
-Requirements Design Specification (RDS)
+Requirements Design Specification (SDD-style document)
 
 </output>
 
@@ -140,10 +156,10 @@ Requirements Design Specification (RDS)
 
 - IF missing mandatory input (Requirements Analysis Specification or Project Codebase), THEN refuse execution and explain missing prerequisites to the user.
 - IF mandatory workflow SOP files are missing/inaccessible, THEN abort and list which files must be provided before proceeding.
-- Execution precedence: Mandatory prechecks → Stage sequence (A1→A2→A3→A4) → Allowed exceptions (effort-based skip of A2.1 verification, user skip of A4).
+- Execution precedence: Mandatory prechecks → Stage sequence (A1→A2→A3→A4) → Allowed exceptions (effort-based skip of A2.2 verification, user skip of A4).
 - IF user requests skipping a stage other than A4, THEN refuse and explain why that stage is sequentially required (only A4 review can be declined).
-- Execution precedence: Mandatory prechecks → Stage sequence (A1→A2→A3→A4) → Allowed exceptions (effort-based skip of A2.1 verification, user skip of A4).
-- Effort thresholds: Low skips A2.1 verification; Medium skips A2.1 verification; High requires A2.1 verification.
+- Execution precedence: Mandatory prechecks → Stage sequence (A1→A2→A3→A4) → Allowed exceptions (effort-based skip of A2.2 verification, user skip of A4).
+- Effort thresholds: Low skips A2.2 verification; Medium skips A2.2 verification; High requires A2.2 verification.
 
 </condition>
 
