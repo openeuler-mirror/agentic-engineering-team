@@ -2,9 +2,62 @@
 
 ## 1. 前置条件
 
-- xiaoO 已安装（`xiaoo-daemon` 命令可用）
+- xiaoO 已安装（`xiaoo`、`xiaoo-daemon` 命令可用）
 
 ## 2. 安装
+
+### 2.1 RPM 包安装（openEuler）
+
+从以下地址下载 RPM 包：
+
+```
+https://eulermaker.openeuler.openatom.cn/package/download?osProject=openEuler-24.03-LTS-SP3:epol&packageName=xiaoO
+```
+
+需要安装以下 4 个包：
+
+- `xiaoO`
+- `xiaoO-skills`
+- `xiaoO-moirai`
+- `xiaoO-hookers`
+
+安装命令：
+
+```bash
+sudo rpm -ivh xiaoO-*.rpm \
+  xiaoO-skills-*.rpm \
+  xiaoO-moirai-*.rpm \
+  xiaoO-hookers-*.rpm
+```
+
+示例：
+
+```bash
+sudo rpm -ivh xiaoO-0.1.3-2.oe2403sp3.x86_64.rpm \
+  xiaoO-skills-0.1.3-2.oe2403sp3.x86_64.rpm \
+  xiaoO-moirai-0.1.3-2.oe2403sp3.x86_64.rpm \
+  xiaoO-hookers-0.1.3-2.oe2403sp3.x86_64.rpm
+```
+
+### 2.2 源码安装
+
+从 GitCode 克隆源码：
+
+```bash
+git clone https://gitcode.com/openeuler/xiaoO
+cd xiaoO
+```
+
+编译安装 TUI 和 daemon：
+
+```bash
+cargo install --path apps/endside   # 安装 TUI (xiaoo)
+cargo install --path apps/serverside # 安装 daemon (xiaoo-daemon)
+```
+
+配置 `xiaoo` 的 `config.toml` 文件，详见 [xiaoO README](https://gitcode.com/openeuler/xiaoO) 文档。
+
+### 2.3 脚本安装
 
 在 AET 源码目录下执行安装脚本：
 
@@ -54,7 +107,10 @@ curl -fsSL https://raw.atomgit.com/openeuler/agentic-engineering-team/raw/master
 
 ### 3.1 启动 xiaoO TUI
 
+> **注意：** 启动 xiaoO 前一定要先 `cd` 到安装时设置的项目目录，否则 AET 命令将无法正确识别项目上下文。
+
 ```bash
+cd /你的项目目录
 xiaoo
 ```
 
