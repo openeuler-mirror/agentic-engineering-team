@@ -32,22 +32,11 @@ class CreatePrCommand extends BaseCommand {
         throw new Error('Invalid source branch format: please use branch name without username prefix');
       }
 
-      // Process head parameter: if forkOwner is configured and different from owner, and head doesn't contain colon, prepend it
-      let head = options.sourceBranch;
-      const forkOwner = this.configManager.get('forkOwner');
-      const owner = this.configManager.get('owner');
-
-      if (forkOwner && forkOwner !== owner && head && !head.includes(':')) {
-        const originalHead = head;
-        head = `${forkOwner}:${head}`;
-        this.info(`Fork configuration detected, auto-converting head parameter: "${originalHead}" → "${head}"`);
-      }
-
       // Prepare PR data
       const prData = {
         title: options.title,
         body: finalPrDescription,
-        head: head,
+        head: options.sourceBranch,
         base: options.targetBranch,
         labels: this.parseCommaSeparated(options.labels),
         draft: options.draft || false

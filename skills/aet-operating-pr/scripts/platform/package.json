@@ -7,7 +7,8 @@
     "pr-api": "./bin/pr-api.js"
   },
   "scripts": {
-    "start": "node src/index.js"
+    "start": "node src/index.js",
+    "test": "node test/pull-request-head.test.js"
   },
   "dependencies": {
     "axios": "^1.6.0",
