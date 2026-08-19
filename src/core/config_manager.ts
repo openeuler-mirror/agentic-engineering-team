@@ -44,7 +44,7 @@ export const BASELINE_CONFIG: WorkflowConfig = {
       name: 'implement',
       description: '实现智能体',
       stages: [
-        { id: 'development_plan', description: '开发计划 (SDD)，请载入skill aet-req-dev-plan，如果没有这个skill，必须询问用户' },
+        { id: 'development_plan', description: '开发计划 (DPS)，请载入skill aet-req-dev-plan，如果没有这个skill，必须询问用户' },
         { id: 'implement', description: '按开发计划执行实现' },
         { id: 'verify', description: '功能验证' },
       ],
