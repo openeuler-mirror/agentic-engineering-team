@@ -5,7 +5,8 @@
  *
  * Domain types + a registry facade over ConfigManager. A "workflow" in AET
  * is an ordered step sequence — e.g. `design` has steps
- * [requirements_analysis, requirements_design, development_plan]. There is
+ * [requirements_analysis, requirements_design] and `implement` has steps
+ * [development_plan, implement, verify]. There is
  * no separate scenario/stage 编排层; the workflow IS the step sequence.
  *
  * Per 新方案.md §2.1: this is the only module that knows the shape of the

@@ -7,8 +7,8 @@
 - **Stateful**: Core 在 `<projectRoot>/.aet/core-checkpoint/` 自管 active workflow + currentStep 状态。CLI 调用方不再传 `--workflow` / `--current-step` / `--context`。
 - **One active workflow per project root**: `CheckpointManager.findLatestActiveAny()` 返回最新 updatedAt 的 active 条目。
 - **Workflow = step sequence**（无 scenario/stage 层）。Baseline workflows（`src/core/config_manager.ts:30-60` BASELINE_CONFIG，可在 `src/config/workflow.json`/`~/.aet/config/workflow.json` 覆盖）:
-  - `design` → `requirements_analysis` / `requirements_design` / `development_plan`
-  - `implement` → `implement` / `verify`
+  - `design` → `requirements_analysis` / `requirements_design`
+  - `implement` → `development_plan` / `implement` / `verify`
   - `bugfix` → `diagnose` / `fix`
 
 ## CLI 表面

@@ -130,8 +130,8 @@ CC 插件的 `SessionStart` 钩子会在每次进入项目时自动运行 `aet p
 
 | 斜杠命令 | workflow | 步骤 |
 | --- | --- | --- |
-| `/design` | `design` | requirements_analysis → requirements_design → development_plan |
-| `/implement` | `implement` | implement → verify |
+| `/design` | `design` | requirements_analysis → requirements_design |
+| `/implement` | `implement` | development_plan → implement → verify |
 | `/bugfix` | `bugfix` | diagnose → fix |
 
 ---

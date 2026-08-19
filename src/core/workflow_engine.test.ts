@@ -7,7 +7,7 @@ import { WorkflowRegistry } from './workflow_registry.js';
 import { WorkflowEngine } from './workflow_engine.js';
 import type { InputEvent, CommandResult } from '../definitions/events.js';
 
-/** Baseline design workflow: requirements_analysis → requirements_design → development_plan. */
+/** Baseline design workflow: requirements_analysis → requirements_design. */
 const DESIGN = 'design';
 
 function makeEngine(projectConfig?: unknown): WorkflowEngine {
@@ -124,7 +124,6 @@ describe('workflow.handover', () => {
     engine.handleInit(init(DESIGN));
     engine.handleHandover(handover()); // → step 1
     engine.handleHandover(handover()); // → step 2
-    engine.handleHandover(handover()); // → step 3
     const r = engine.handleHandover(handover()); // last step → complete
     const data = expectOk(r);
     expect(data.status).toBe('workflow_complete');
