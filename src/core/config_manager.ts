@@ -38,13 +38,13 @@ export const BASELINE_CONFIG: WorkflowConfig = {
       stages: [
         { id: 'requirements_analysis', description: '需求分析，请载入skill aet-req-analysis，如果没有这个skill，必须询问用户' },
         { id: 'requirements_design', description: '需求设计规范 (RDS)' },
-        { id: 'development_plan', description: '开发计划 (SDD)' },
       ],
     },
     'implement': {
       name: 'implement',
       description: '实现智能体',
       stages: [
+        { id: 'development_plan', description: '开发计划 (DPS)，请载入skill aet-req-dev-plan，如果没有这个skill，必须询问用户' },
         { id: 'implement', description: '按开发计划执行实现' },
         { id: 'verify', description: '功能验证' },
       ],

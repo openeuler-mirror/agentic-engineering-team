@@ -144,7 +144,15 @@ describe('BASELINE_CONFIG', () => {
     expect(BASELINE_CONFIG.workflows.design.stages.map((s) => s.id)).toEqual([
       'requirements_analysis',
       'requirements_design',
+    ]);
+    expect(BASELINE_CONFIG.workflows.implement.stages.map((s) => s.id)).toEqual([
       'development_plan',
+      'implement',
+      'verify',
+    ]);
+    expect(BASELINE_CONFIG.workflows.bugfix.stages.map((s) => s.id)).toEqual([
+      'diagnose',
+      'fix',
     ]);
   });
 });

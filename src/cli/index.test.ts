@@ -79,13 +79,11 @@ describe('runCli — workflow lifecycle (json mode)', () => {
     expect(jsonOf(cont.stdout).data.status).toBe('step_resumed');
     expect(jsonOf(cont.stdout).data.currentStep).toBe('requirements_analysis');
 
-    // advance through the remaining two steps
+    // advance to step 2
     const h2 = await aet(['workflow', 'handover', '--output', 'json']);
     expect(jsonOf(h2.stdout).data.currentStep).toBe('requirements_design');
-    const h3 = await aet(['workflow', 'handover', '--output', 'json']);
-    expect(jsonOf(h3.stdout).data.currentStep).toBe('development_plan');
 
-    // final handover completes the 3-step workflow
+    // final handover completes the 2-step workflow
     const done = await aet(['workflow', 'handover', '--output', 'json']);
     expect(jsonOf(done.stdout).data.status).toBe('workflow_complete');
   });

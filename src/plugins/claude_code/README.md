@@ -141,8 +141,8 @@ for the library-consumption case.
 In Claude Code, type one of the slash commands:
 
 ```
-/design        # 3-step: requirements_analysis → requirements_design → development_plan
-/implement     # 2-step: implement → verify
+/design        # 2-step: requirements_analysis → requirements_design
+/implement     # 3-step: development_plan → implement → verify
 /bugfix        # 2-step: diagnose → fix
 ```
 
