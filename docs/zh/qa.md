@@ -1,5 +1,9 @@
 # Q&A
 
+> 文档版本：v1.0 | 更新日期：2026-08-20
+
+本文档汇总 AET 常见问题，按平台概念、架构、安装、命令、核心机制、工作流、故障排查分类解答。
+
 ## 1. 平台概览与核心概念
 
 ### Q1. AET 是什么？它解决了 AI 辅助研发的哪些普遍问题？
@@ -37,7 +41,7 @@ AET 通过多智能体编排、断点恢复和可配置工作流解决上述问�
 
 ### Q4. AET 支持哪些代码托管平台？通过什么机制统一接入？
 
-AET 主运行平台为 **OpenCode**，通过插件 `.opencode/plugins/aet.js` 集成。代码仓库平台支持 5 个：**GitHub、GitLab、GitCode**，所有平台 API 操作通过统一的 `platform-api.js` 接口处理，一套代码支持多平台。具体平台类型在项目配置中通过 `codePlatform.platform.type` 字段指定。
+AET 主运行平台为 **OpenCode**，通过插件 `.opencode/plugins/aet.js` 集成。代码仓库平台支持：**GitHub、GitLab、GitCode**，所有平台 API 操作通过统一的 `platform-api.js` 接口处理，一套代码支持多平台。具体平台类型在项目配置中通过 `codePlatform.platform.type` 字段指定。
 
 ### Q5. AET 的设计目标是什么？
 
