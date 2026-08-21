@@ -16,7 +16,7 @@ AET 通过多智能体编排、断点恢复和可配置工作流解决上述问�
 
 8 项核心特性：
 
-- **多智能体协作** — 8 个专用智能体（Router、PRD、Design、Implement、Test、Bugfix、Doc、Release）按序执行，覆盖从需求认领到 PR 提交的完整流程。
+- **多智能体协作** — 8 个专用智能体（Router、Design、Implement、Test、Bugfix、Doc、Release、General）按序执行，覆盖从需求认领到 PR 提交的完整流程。
 - **规格驱动开发 (SDD)** — 将功能树、DFx 设计、架构原则等最佳实践编码为不可篡改的基准上下文。
 - **四层分层架构** — 命令层 → 编排 Skill 层 → Agent 层 → 原子 Skill 层，各层职责清晰。
 - **围栏模块保护 (Fence)** — 文件划分为允许/禁止/条件修改三类，三个保护点反复校验。
@@ -30,14 +30,14 @@ AET 通过多智能体编排、断点恢复和可配置工作流解决上述问�
 - **Agent（智能体）** — 专门负责开发流程特定阶段的 AI 助手。AET 预置 8 个 Agent：Router、PRD、Design、Implement、Test、Bugfix、Doc、Release，每个 Agent 有独立的系统提示词，针对其阶段优化。
 - **Skill（技能）** — AET 的核心功能单元，分三个层级：
   - 命令 Skill — 用户入口，通过斜杠命令触发（如 `/aet-init`、`/aet-auto`、`/aet-bugfix`）
-  - 编排 Skill — 协调子流程，组合多个 Skill（如 `feature-management`、`aet-reviewing-code`）
+  - 编排 Skill — 协调子流程，组合多个 Skill（如 `aet-operating-pr`、`aet-reviewing-code`）
   - 原子 Skill — 执行单一职责，最小功能单元（如 `aet-analyzing-project`、`test-driven-development`）
 
 一个 Agent 可调用多个 Skill。
 
 ### Q4. AET 支持哪些代码托管平台？通过什么机制统一接入？
 
-AET 主运行平台为 **OpenCode**，通过插件 `.opencode/plugins/aet.js` 集成。代码仓库平台支持 5 个：**GitHub、GitLab、Gitee、AtomGit、GitCode**，所有平台 API 操作通过统一的 `platform-api.js` 接口处理，一套代码支持多平台。具体平台类型在项目配置中通过 `codePlatform.platform.type` 字段指定。
+AET 主运行平台为 **OpenCode**，通过插件 `.opencode/plugins/aet.js` 集成。代码仓库平台支持 5 个：**GitHub、GitLab、GitCode**，所有平台 API 操作通过统一的 `platform-api.js` 接口处理，一套代码支持多平台。具体平台类型在项目配置中通过 `codePlatform.platform.type` 字段指定。
 
 ### Q5. AET 的设计目标是什么？
 
@@ -66,7 +66,7 @@ AET 主运行平台为 **OpenCode**，通过插件 `.opencode/plugins/aet.js` �
 AET 采用四层分层架构，依赖方向**严格自上而下**：
 
 1. **用户命令层** — 9 个斜杠命令（`/aet-init`、`/aet-auto`、`/aet-bugfix` 等）
-2. **编排 Skill 层** — 协调子流程（如 `feature-management`、`aet-reviewing-code`）
+2. **编排 Skill 层** — 协调子流程（如 `aet-operating-pr`、`aet-reviewing-code`）
 3. **Agent 层** — 领域专用智能体（Router → Design → Implement → Test → Bugfix → Doc → Release）
 4. **原子 Skill 层** — 单一职责的最小功能单元
 
@@ -136,12 +136,12 @@ Aet-Implement 按顺序执行 5 步：
 三层级：
 
 - **命令 Skill** — 用户入口，通过斜杠命令触发（如 `/aet-init`、`/aet-auto`）
-- **编排 Skill** — 协调子流程，组合多个 Skill（如 `feature-management`、`aet-reviewing-code`）
+- **编排 Skill** — 协调子流程，组合多个 Skill（如 `aet-operating-pr`、`aet-reviewing-code`）
 - **原子 Skill** — 执行单一职责，最小功能单元（如 `aet-analyzing-project`、`test-driven-development`）
 
 调用方式有两种：
 
-1. **通过命令调用** — 斜杠命令自动触发对应编排 Skill，如 `/aet-auto <URL>` 触发 `feature-management` 编排 Skill。
+1. **通过命令调用** — 斜杠命令自动触发对应编排 Skill，如 `/aet-pr review` 触发 `aet-reviewing-pr` 编排 Skill。
 2. **通过 Skill 工具直接调用** — 在 OpenCode 中直接使用 Skill 工具调用任意 Skill。
 
 ### Q14. Aet-Bugfix 智能体的修复流程是什么？输入 CVE 时如何分支？
@@ -255,13 +255,15 @@ ls -la ~/.config/opencode/commands/aet-*.md
 | --- | --- | :---: |
 | `/aet-init` | 初始化项目配置 | 否 |
 | `/aet-auto <URL>` | 自动化功能开发工作流 | 是 |
-| `/aet-bugfix <描述>` | Bug 修复工作流 | 否 |
+| `/aet-bugfix <描述>` | Bug 修复工作流 | 视输入形式 |
 | `/aet-pr` | PR 管理 | 是 |
 | `/aet-issue` | Issue 管理 | 是 |
 | `/aet-release` | Release 管理 | 是 |
 | `/aet-doc` | 文档生成 | 否 |
 | `/aet-design` | 直接进入设计智能体 | 否 |
 | `/aet-implement` | 直接进入实现智能体 | 否 |
+
+> `/aet-bugfix` 是否需要 Token 取决于输入形式：直接描述 Bug 或 CVE 标识符不需要 Token；以 Issue URL 输入时需认领 Issue（调用平台 API），需要 Token。
 
 ### Q23. `/aet-auto` 命令的核心流程是什么？
 
@@ -358,7 +360,7 @@ CLI 主入口 `aet <resource> <action> [flags]`，本版本提供 8 个命令 + 
 
 CLI 是 agent-agnostic 的，不接 `--agent` 标志。调用方通过 `--output json|prompt` 声明编码方式（默认 `prompt`）。Stateful Core 契约：每个 projectRoot 只支持一个 active workflow，状态由 Core 在 `<projectRoot>/.aet/core-checkpoint/` 持有，调用方无需重复传递。
 
-### Q30. AET Router 的意图路由支持哪些工作流类型？
+### Q30. Aet-Router 的意图路由支持哪些工作流类型？
 
 Router 通过分析用户意图自动路由到合适工作流，支持 6 类：
 
@@ -592,17 +594,19 @@ DPS 对应文件 `dev-plan.md`。三份文档顺序传递：RAS → RDS → DPS�
 
 ### Q45. AET 预置了哪些内置场景？
 
-7 个内置场景：
+9 个内置场景：
 
 | 场景 ID | 名称 | 说明 |
 | :--- | :--- | :--- |
 | `feature` | 功能开发流程 | 从设计到实现、验证、PR 提交提示的完整流程 |
 | `bugfix` | Bug 修复流程 | 从问题诊断到修复、验证、PR 提交提示的流程 |
-| `design-refine` | 需求变更流程 | 基于已有设计文档进行需求变更和迭代 |
 | `config-setup` | 配置初始化流程 | 项目配置初始化 |
 | `project-analysis` | 项目分析流程 | 分析项目架构和模块依赖 |
+| `design` | 设计阶段流程 | 需求澄清、架构设计的完整设计流程 |
+| `implement` | 实现阶段流程 | 基于设计文档执行开发计划生成、代码开发、单元测试、开发验证 |
+| `design-refine` | 需求变更流程 | 基于已有设计文档进行需求变更和迭代 |
 | `release` | 发布管理流程 | 版本发布和 Release Notes 生成 |
-| `aet-prd` | PRD 生成流程 | 6 阶段 PRD 生成 |
+| `doc` | 文档生成流程 | 生成或更新项目文档（README、用户手册、技术分析、Python API 文档、文档翻译、文档质量检查、mdbook 构建等） |
 
 ### Q46. 如何创建一个全自动工作流？如何创建严格审查工作流？
 
@@ -652,7 +656,7 @@ DPS 对应文件 `dev-plan.md`。三份文档顺序传递：RAS → RDS → DPS�
 
 ### Q48. 项目配置中如何指定代码托管平台类型？
 
-在 `.aet/config.json` 中通过 `codePlatform.platform.type` 字段指定，支持 5 种类型：`gitcode`、`github`、`gitlab`、`gitee`、`atomgit`。配置示例：
+在 `.aet/config.json` 中通过 `codePlatform.platform.type` 字段指定，支持 3 种类型：`gitcode`、`github`、`gitlab`。配置示例：
 
 ```json
 {
