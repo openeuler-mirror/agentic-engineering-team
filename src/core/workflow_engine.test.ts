@@ -623,3 +623,48 @@ describe('automation mode — initWorkflow', () => {
     expect(data.automation).toBeFalsy();
   });
 });
+
+describe('automation mode — handleCaStop', () => {
+  const AUTO_STOP_WORKFLOW = {
+    workflows: {
+      'auto-stop': {
+        name: 'auto-stop',
+        description: 'ca.stop test',
+        automation: true,
+        stages: [{ id: 's1', description: 's1' }],
+      },
+    },
+  };
+
+  it('uses automation guidance prompt when automation=true and session matches', () => {
+    const engine = makeEngine(AUTO_STOP_WORKFLOW);
+    engine.handleInit({ event: 'workflow.init', payload: { name: 'auto-stop', sessionId: 'sess-A' } });
+    engine.handleHandover({ event: 'workflow.handover', payload: { sessionId: 'sess-A' } });
+    const r = engine.handleCaStop({ event: 'ca.stop', payload: { sessionId: 'sess-A' } });
+    const data = expectOk(r);
+    expect(data.status).toBe('active');
+    expect(data.automation).toBe(true);
+    expect(r.prompt).toContain('自动化');
+    expect(r.prompt).toContain('aet workflow handover');
+    // Critical: automation mode must NOT suggest USING the question tool
+    // (the existing interactive prompt says "请使用提问（question）工具").
+    // The automation prompt explicitly FORBIDS it ("禁止调用 question 工具")
+    // — that's correct and does contain the word "question", so we assert
+    // the positive suggestion phrasing is absent.
+    expect(r.prompt).not.toContain('请使用提问');
+    expect(r.prompt).not.toContain('请使用 question');
+    expect(r.prompt).toContain('禁止调用 question');
+  });
+
+  it('uses existing guidance prompt when automation=false', () => {
+    const engine = makeEngine(); // baseline design — automation=false
+    engine.handleInit({ event: 'workflow.init', payload: { name: DESIGN, sessionId: 'sess-B' } });
+    engine.handleHandover({ event: 'workflow.handover', payload: { sessionId: 'sess-B' } });
+    const r = engine.handleCaStop({ event: 'ca.stop', payload: { sessionId: 'sess-B' } });
+    const data = expectOk(r);
+    expect(data.status).toBe('active');
+    expect(data.automation).toBeFalsy();
+    // Existing prompt DOES mention question tool.
+    expect(r.prompt).toContain('question');
+  });
+});

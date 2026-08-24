@@ -507,14 +507,22 @@ export class WorkflowEngine {
 
     const workflowDef = this.registry.getWorkflow(active.workflow);
     const workflowName = workflowDef?.name ?? active.workflow;
+    const automation = workflowDef?.automation === true;
 
     return ok(
-      buildCaStopPrompt({
-        workflowName,
-        workflowId: active.workflow,
-        currentStepId: active.currentStepId,
-        checkpointId: active.checkpointId,
-      }),
+      automation
+        ? buildCaStopPromptAutomation({
+            workflowName,
+            workflowId: active.workflow,
+            currentStepId: active.currentStepId,
+            checkpointId: active.checkpointId,
+          })
+        : buildCaStopPrompt({
+            workflowName,
+            workflowId: active.workflow,
+            currentStepId: active.currentStepId,
+            checkpointId: active.checkpointId,
+          }),
       [],
       {
         status: 'active',
@@ -525,6 +533,7 @@ export class WorkflowEngine {
         checkpointId: active.checkpointId,
         sessionId: active.sessionId,
         stopGuardBlocks: blocks + 1,
+        automation,
       },
     );
   }
@@ -1214,6 +1223,31 @@ function buildCaStopPrompt(c: CaStopPromptContext): string {
     '- **否则**：请继续工作，直到工作流结束。',
     '',
     '请勿在此工作流结束前停止。',
+  ].join('\n');
+}
+
+/**
+ * Build the guidance prompt for automation-mode workflows when the agent
+ * stops producing output. Differs from {@link buildCaStopPrompt} in that:
+ *   - It does NOT suggest "use the question tool" (automation mode forbids
+ *     question tool usage — see {@link AUTOMATION_DIRECTIVE_TEXT}).
+ *   - It directs the agent to either handover (if step task done) or continue
+ *     working, based on context inference rather than user prompting.
+ * Carried as the top-level `prompt` field; surfaced by the plugin.
+ */
+function buildCaStopPromptAutomation(c: CaStopPromptContext): string {
+  return [
+    '## AET 自动化工作流进行中 — 请勿停止',
+    '',
+    `你正在执行 AET 工作流 \`${c.workflowName}\`（自动化模式），`,
+    `当前阶段：\`${c.currentStepId ?? '(尚未进入任何 step)'}\`，checkpoint：\`${c.checkpointId}\`。`,
+    '',
+    '检测到你已停止输出，请勿停止：',
+    '',
+    '- **如果当前阶段任务已完成**：调用 `aet workflow handover` 推进到下一阶段。',
+    '- **否则**：继续工作直到完成当前阶段任务后再 handover。',
+    '',
+    '自动化模式下禁止调用 question 工具，请基于上下文自行决策。',
   ].join('\n');
 }
 
