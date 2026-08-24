@@ -596,3 +596,30 @@ describe('automation mode — continueWorkflow', () => {
     expect(degraded).toBeDefined();
   });
 });
+
+describe('automation mode — initWorkflow', () => {
+  it('populates data.automation=true on workflow_started for automation workflow', () => {
+    const engine = makeEngine({
+      workflows: {
+        'auto-init': {
+          name: 'auto-init',
+          description: 'init test',
+          automation: true,
+          stages: [{ id: 's1', description: 's1' }],
+        },
+      },
+    });
+    const r = engine.handleInit(init('auto-init'));
+    const data = expectOk(r);
+    expect(data.status).toBe('workflow_started');
+    expect(data.automation).toBe(true);
+  });
+
+  it('populates data.automation=false (or undefined) for non-automation workflow', () => {
+    const engine = makeEngine(); // baseline design workflow — no automation field
+    const r = engine.handleInit(init(DESIGN));
+    const data = expectOk(r);
+    expect(data.status).toBe('workflow_started');
+    expect(data.automation).toBeFalsy();
+  });
+});

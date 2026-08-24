@@ -637,6 +637,7 @@ export class WorkflowEngine {
         nextStep: firstStepId,
         checkpointId,
         argument: payload.argument,
+        automation: workflowDef.automation === true,
       },
     );
   }
