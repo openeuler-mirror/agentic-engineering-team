@@ -964,8 +964,20 @@ export class WorkflowEngine {
     // Re-fire the current step's before hooks (re-activating
     // pre-injections like skill prompts). No after hooks — the current
     // step did not leave.
+    const automation = workflowDef.automation === true;
     const events: OutputEvent[] = [];
-    this.emitStepHooks(stepDef, 'before', events);
+
+    // Automation mode: continue also emits directive (resume after interrupt
+    // still in automation mode — the directive must be visible to the agent
+    // re-entering the workflow).
+    if (automation) {
+      events.push(out('prompt.inject_system', { text: AUTOMATION_DIRECTIVE_TEXT }));
+    }
+
+    // Pass `automation` to emitStepHooks so any `hook.prompt` in the
+    // before-boundary is degraded to non-blocking `prompt.inject` (mirrors
+    // processTransition's automation handling).
+    this.emitStepHooks(stepDef, 'before', events, automation);
 
     // Compute the next step (the step the NEXT handover would advance
     // to) so the plugin can display "next: <id>" or detect "this is the
@@ -995,6 +1007,7 @@ export class WorkflowEngine {
         nextStep: nextStepId,
         checkpointId: active.checkpointId,
         argument,
+        automation,
       },
     );
   }
@@ -1045,11 +1058,17 @@ export class WorkflowEngine {
    * Resolve all of a step's hooks for the given boundary (`before`/`after`)
    * and append the resulting OutputEvents to `events`. Steps with no `hooks`
    * or no matching-boundary hooks contribute nothing.
+   *
+   * When `automation` is true, `hook.prompt` events are degraded to
+   * non-blocking `prompt.inject` events (text preserved as a context note;
+   * the transition is NOT deferred). Mirrors `processTransition`'s automation
+   * handling for the `before` hooks re-fired by `continueWorkflow`.
    */
   private emitStepHooks(
     step: StepDefinition | null,
     at: 'before' | 'after',
     events: OutputEvent[],
+    automation: boolean = false,
   ): void {
     if (!step?.hooks) return;
     for (const h of step.hooks) {
@@ -1057,7 +1076,17 @@ export class WorkflowEngine {
       const ev = this.registry.resolveStepHook(h, {
         step: { id: step.id, description: step.description },
       });
-      if (ev) events.push(ev);
+      if (!ev) continue;
+      // Automation mode: degrade hook.prompt to non-blocking prompt.inject
+      // (preserve text as a context note; do NOT defer the transition).
+      if (ev.id === 'hook.prompt' && automation) {
+        events.push(out('prompt.inject', {
+          text: typeof ev.payload.text === 'string' ? ev.payload.text : '',
+          type: 'task',
+        }));
+        continue;
+      }
+      events.push(ev);
     }
   }
 }

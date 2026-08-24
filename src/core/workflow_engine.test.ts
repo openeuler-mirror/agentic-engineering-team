@@ -554,3 +554,45 @@ describe('automation mode — processTransition', () => {
     expect(r.events.find((e) => e.id === 'prompt.inject_system')).toBeUndefined();
   });
 });
+
+describe('automation mode — continueWorkflow', () => {
+  const AUTO_WITH_BEFORE_HOOK = {
+    workflows: {
+      'auto-before': {
+        name: 'auto-before',
+        description: 'automation with before-hook',
+        automation: true,
+        stages: [
+          {
+            id: 'step1',
+            description: 'step 1',
+            hooks: [
+              { at: 'before', event: 'hook.prompt', payload: { text: '前置确认' } },
+            ],
+          },
+          { id: 'step2', description: 'step 2' },
+        ],
+      },
+    },
+  };
+
+  it('continue emits directive and degrades before-hook hook.prompt when automation=true', () => {
+    const engine = makeEngine(AUTO_WITH_BEFORE_HOOK);
+    engine.handleInit(init('auto-before'));
+    engine.handleHandover(handover()); // enter step1
+    // continue re-emits step1's before hooks.
+    const r = engine.handleContinue({ event: 'workflow.continue', payload: {} });
+    const data = expectOk(r);
+    expect(data.status).toBe('step_resumed');
+    expect(data.automation).toBe(true);
+    expect(data.currentStep).toBe('step1');
+    // Directive emitted.
+    const directive = r.events.find((e) => e.id === 'prompt.inject_system');
+    expect(directive).toBeDefined();
+    // Before-hook hook.prompt degraded to non-blocking prompt.inject.
+    const degraded = r.events.find(
+      (e) => e.id === 'prompt.inject' && (e.payload as { text: string }).text === '前置确认',
+    );
+    expect(degraded).toBeDefined();
+  });
+});
