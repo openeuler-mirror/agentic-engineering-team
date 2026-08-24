@@ -737,6 +737,12 @@ const CHECKPOINT_COMMAND_AGENTS = {
 // command.execute.before 把命令会话记到这里，chat.message 首条消息时消费
 const pendingCheckpointCmd = new Map(); // sessionID -> { command, agentId, arguments }
 
+// command.execute.before 把「该命令映射到 automation scenario」标记记到这里，
+// experimental.chat.system.transform 消费。用于在 workflow_start 之前（即
+// currentCheckpointID 还没设置时）就注入 directive，覆盖 agent 的早期用户交互点
+// （如 Router 的 resume detection / Design 的 proactive checkpoint comparison）。
+const pendingAutomationDirective = new Map(); // sessionID -> boolean
+
 // 兼容 `aet:design` / `aet/design` / `aet-design` / `design` 等命名空间形式。
 // 安装脚本（install.sh）会把命令文件链接成 `aet-<name>.md`，因此实际命令名带 `aet-` 前缀，
 // 这里去掉命名空间分隔符和 `aet-` 前缀后再查表。
@@ -978,6 +984,23 @@ export const aetPlugin = async ({ client, directory }) => {
           agentId,
           arguments: input.arguments || '',
         });
+        // Pre-check: does this command's agentId map to an automation-mode
+        // scenario? If yes, flag the session so experimental.chat.system.transform
+        // injects the directive BEFORE workflow_start (covers agent's early
+        // user-interaction points like Router's resume detection / Design's
+        // proactive checkpoint comparison that happen before any checkpoint exists).
+        try {
+          const scenarios = configManager?.getScenarios?.() || {};
+          const mapsToAutomation = Object.values(scenarios).some(sc =>
+            sc && sc.automation === true &&
+            Array.isArray(sc.workflow) &&
+            sc.workflow.length > 0 &&
+            (sc.workflow[0]?.agent_id === agentId || sc.workflow[0]?.stage_id === agentId)
+          );
+          if (mapsToAutomation) {
+            pendingAutomationDirective.set(input.sessionID, true);
+          }
+        } catch { /* configManager not ready — skip */ }
       }
     },
 
@@ -1632,13 +1655,28 @@ export const aetPlugin = async ({ client, directory }) => {
       // and the agent in automation mode would still call the question tool,
       // blocking the workflow.
       //
-      // Per revised design: read `automation` from checkpoint directly
-      // (persisted at workflow_start time). No scenario lookup needed —
-      // config changes require restart, so re-querying workflow.json per
-      // hook would be wasted work.
+      // Two signals:
+      //   1. Active checkpoint with workflow.automation === true (set at
+      //      workflow_start time by Option A persistence).
+      //   2. pendingAutomationDirective map — set by command.execute.before
+      //      when user invokes a command whose agentId is the first agent
+      //      of an automation-mode scenario. Covers the pre-workflow_start
+      //      window where agent does proactive checkpoint comparison / resume
+      //      detection and would otherwise ask user for confirmation.
       {
+        let injectDirective = false;
+        // Signal 1: active automation checkpoint
         const cp = currentCheckpointID ? checkpointManager.getCheckpoint(currentCheckpointID) : null;
         if (cp?.workflow?.automation === true) {
+          injectDirective = true;
+        }
+        // Signal 2: pending command maps to automation scenario
+        // experimental.chat.system.transform fires per chat; input.sessionID
+        // is the current chat session
+        if (!injectDirective && input?.sessionID && pendingAutomationDirective.get(input.sessionID)) {
+          injectDirective = true;
+        }
+        if (injectDirective) {
           output.system.push(
             `<aet-run-mode>automation</aet-run-mode>
 <aet-run-mode-directive>
