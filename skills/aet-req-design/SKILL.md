@@ -188,6 +188,18 @@ Requirements Design Specification (SDD-style document)
 
 - **Ask User**: Always ask the user via available interactive tools; skip only when none exist. 
 - **Reliability Analysis**: Mandatory and non-omittable whenever the foundational data is sufficient. Execution of this step is independent of the Effort level and strictly unaffected by it.
+- **Automation Mode**: IF the system prompt contains `<aet-run-mode>automation</aet-run-mode>`:
+  - DO NOT call the question tool. Skip all user-confirmation / Socratic-dialogue steps.
+  - For each decision point that would normally ask the user: pick the recommended option
+    declared in this skill (the explicit candidate with "推荐" / "(recommended)" / "默认"
+    marker); if no recommendation is declared, infer the most reasonable choice from context
+    (requirement description / codebase / existing deliverables) and document the assumption.
+  - Append each inferred decision to the deliverable's `## 自动化决策记录` section as:
+    `- 决策点：<交互点名称> | 推断选项：<选项> | 推断依据：<依据摘要>`
+  - For optional review stages (e.g., [S3] / [A4]): skip entirely, do not enter the review
+    flow; do not emit the "是否需要进行文档审查与修订？" prompt.
+  - Required validation gates (lint / test / build) are NOT affected — they still run and
+    must pass.
 
 </patch>
 
