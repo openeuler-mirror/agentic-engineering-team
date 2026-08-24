@@ -227,6 +227,14 @@ let rootSessionID = null;
 // Hook Handling
 // ============================================
 
+function isAutomationMode(checkpointID) {
+  if (!checkpointID || !checkpointManager) return false;
+  const cp = checkpointManager.getCheckpoint(checkpointID);
+  if (!cp?.workflow?.name) return false;
+  const scenario = configManager.getScenarioConfig(cp.workflow.name);
+  return scenario?.automation === true;
+}
+
 async function triggerAfterHook(sessionID, stage, checkpointID) {
   if (!stage || !stage.after) {
     return;
@@ -240,6 +248,24 @@ async function triggerAfterHook(sessionID, stage, checkpointID) {
     const nextStage = stages[currentIdx + 1];
     if (nextStage) {
       await executeStageHandover(nextStage, null, checkpointID);
+    }
+    return;
+  }
+
+  // Automation short-circuit: confirm === auto when automation mode.
+  // Skip the user-facing session.prompt call and advance directly.
+  if (stage.after === 'confirm' && isAutomationMode(checkpointID)) {
+    const workflowName = checkpointManager.getCheckpoint(checkpointID)?.workflow.name;
+    const stages = workflowEngine.getScenarioWorkflow(workflowName);
+    const currentIdx = stages.findIndex(s => (s.stage_id || s.agent_id) === stage.stage_id || stage.agent_id);
+    const nextStage = stages[currentIdx + 1];
+    if (nextStage) {
+      await executeStageHandover(nextStage, null, checkpointID);
+    } else {
+      // Last stage: complete the checkpoint (the existing `auto` branch
+      // omits this case — automation must terminate cleanly when there
+      // is no next stage).
+      checkpointManager.completeCheckpoint(checkpointID);
     }
     return;
   }
@@ -282,6 +308,13 @@ async function triggerStepAfterHook(sessionID, agentId, agentConfig, checkpointI
   }
 
   if (stepConfig.after === 'auto') {
+    await advanceToNextStep(sessionID, agentId, agentConfig, checkpointID, stage, null);
+    return;
+  }
+
+  // Automation short-circuit: confirm === auto when automation mode.
+  // Skip the user-facing session.prompt call and advance directly.
+  if (stepConfig.after === 'confirm' && isAutomationMode(checkpointID)) {
     await advanceToNextStep(sessionID, agentId, agentConfig, checkpointID, stage, null);
     return;
   }
@@ -346,7 +379,8 @@ async function advanceToNextStep(sessionID, agentId, agentConfig, checkpointID, 
   const shouldClear = nextStepConfig.clear === true;
 
   // 检查 before hook
-  if (!nextStepConfig.before || nextStepConfig.before === 'auto') {
+  if (!nextStepConfig.before || nextStepConfig.before === 'auto' ||
+      (nextStepConfig.before === 'confirm' && isAutomationMode(checkpointID))) {
     if (shouldClear) {
       sendStepPromptWithNewSession(sessionID, agentId, checkpointID, stage, nextStepConfig);
     } else {
@@ -1595,6 +1629,25 @@ export const aetPlugin = async ({ client, directory }) => {
       }
       
       output.system.push(projectAnalysisContent);
+
+      // Automation mode directive injection (only when the active scenario
+      // has automation=true). Real-time query — never cached, so resume
+      // after workflow.json edits picks up the new value.
+      const cp = currentCheckpointID ? checkpointManager.getCheckpoint(currentCheckpointID) : null;
+      if (cp?.workflow?.name) {
+        const scenario = configManager.getScenarioConfig(cp.workflow.name);
+        if (scenario?.automation === true) {
+          output.system.push(
+            `<aet-run-mode>automation</aet-run-mode>
+<aet-run-mode-directive>
+本会话处于自动化模式。禁止调用 question 工具向用户提问。
+- 凡需用户决策处：选 SKILL.md 中已声明的推荐项；若无明确推荐项，结合上下文（需求描述 / 代码库 / 已有交付物）推断最合理选项，并在交付物末尾「## 自动化决策记录」节追加一行：- 决策点：<交互点名称> | 推断选项：<选项> | 推断依据：<依据摘要>
+- 凡标注为可选 review 的阶段（如 [S3] / [A4]）：直接跳过，不进入 review 流程
+- 不影响必经的验证类门禁（lint / test / build）：仍需全部通过
+</aet-run-mode-directive>`
+          );
+        }
+      }
     },
   };
 };
