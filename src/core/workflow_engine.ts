@@ -121,6 +121,23 @@ import { CheckpointManager, type ActiveEntry, type PendingTransition } from './c
 const HOOK_REMINDER = '执行完毕后，请再次调用 `aet workflow handover` 以继续推进。';
 
 /**
+ * Directive text injected via `prompt.inject_system` event on every
+ * handover / continue boundary of an automation-mode workflow. The agent
+ * sees this as a system-reminder (OpenCode: output.system.push; CC: degraded
+ * to additionalContext; OMP: degraded to a tagged note). SKILL.md <patch>
+ * rules key off the `<aet-run-mode>automation</aet-run-mode>` tag to switch
+ * behavior (skip question tool, pick recommended option, document
+ * assumption). Identical across old/new arch so SKILL.md is shared.
+ */
+const AUTOMATION_DIRECTIVE_TEXT = `<aet-run-mode>automation</aet-run-mode>
+<aet-run-mode-directive>
+本会话处于自动化模式。禁止调用 question 工具向用户提问。
+- 凡需用户决策处：选 SKILL.md 中已声明的推荐项；若无明确推荐项，结合上下文（需求描述 / 代码库 / 已有交付物）推断最合理选项，并在交付物末尾「## 自动化决策记录」节追加一行：- 决策点：<交互点名称> | 推断选项：<选项> | 推断依据：<依据摘要>
+- 凡标注为可选 review 的阶段（如 [S3] / [A4]）：直接跳过，不进入 review 流程
+- 不影响必经的验证类门禁（lint / test / build）：仍需全部通过
+</aet-run-mode-directive>`;
+
+/**
  * Stop-guard budget: the `ca.stop` event blocks the SAME stage + session from
  * stopping at most this many times. Once a stage+session has been prevented
  * from stopping `STOP_GUARD_MAX_BLOCKS` times, further stops are allowed to
