@@ -244,7 +244,7 @@ async function triggerAfterHook(sessionID, stage, checkpointID) {
     // 自动推进到下一阶段
     const workflowName = checkpointManager.getCheckpoint(checkpointID)?.workflow.name;
     const stages = workflowEngine.getScenarioWorkflow(workflowName);
-    const currentIdx = stages.findIndex(s => (s.stage_id || s.agent_id) === stage.stage_id || stage.agent_id);
+    const currentIdx = stages.findIndex(s => (s.stage_id || s.agent_id) === (stage.stage_id || stage.agent_id));
     const nextStage = stages[currentIdx + 1];
     if (nextStage) {
       await executeStageHandover(nextStage, null, checkpointID);
@@ -257,7 +257,7 @@ async function triggerAfterHook(sessionID, stage, checkpointID) {
   if (stage.after === 'confirm' && isAutomationMode(checkpointID)) {
     const workflowName = checkpointManager.getCheckpoint(checkpointID)?.workflow.name;
     const stages = workflowEngine.getScenarioWorkflow(workflowName);
-    const currentIdx = stages.findIndex(s => (s.stage_id || s.agent_id) === stage.stage_id || stage.agent_id);
+    const currentIdx = stages.findIndex(s => (s.stage_id || s.agent_id) === (stage.stage_id || stage.agent_id));
     const nextStage = stages[currentIdx + 1];
     if (nextStage) {
       await executeStageHandover(nextStage, null, checkpointID);
@@ -675,7 +675,14 @@ async function executeStageHandover(stage, context, checkpointID, promptForAgent
       checkpointManager.updateIndexEntry(checkpointID, checkpoint);
 
       // 检查 stage.before hook
-      if (stage.before) {
+      // Automation short-circuit: when automation mode is active, stage-level
+      // `before: 'confirm'` is downgraded to non-blocking — skip the
+      // confirm prompt and fall through to the "directly execute" path
+      // (line 705+). This mirrors triggerAfterHook / triggerStepAfterHook
+      // / advanceToNextStep confirm short-circuits; without it, automation
+      // mode would still call session.prompt with the confirm question,
+      // blocking the agent.
+      if (stage.before && !(stage.before === 'confirm' && isAutomationMode(checkpointID))) {
         const hookConfig = workflowEngine.getHookConfig(stage.before);
         if (hookConfig && hookConfig.options && hookConfig.options.length > 0) {
           const description = hookConfig.description || 'Please confirm';
@@ -1608,46 +1615,46 @@ export const aetPlugin = async ({ client, directory }) => {
     },
 
     "experimental.chat.system.transform": async (input, output) => {
-      const config = configManager.config;
-      
-      const enabled = config.projectAnalysis?.enabled !== false;
-      
-      if (!enabled) {
-        return;
-      }
-      
-      const hasProjectAnalysis = detectProjectAnalysisFolder(pluginDirectory);
-      
-      if (!hasProjectAnalysis) {
-        return;
-      }
-      
-      const projectAnalysisContent = formatProjectAnalysis(pluginDirectory);
-      
-      if (!projectAnalysisContent) {
-        return;
-      }
-      
-      output.system.push(projectAnalysisContent);
-
-      // Automation mode directive injection (only when the active scenario
-      // has automation=true). Real-time query — never cached, so resume
-      // after workflow.json edits picks up the new value.
-      const cp = currentCheckpointID ? checkpointManager.getCheckpoint(currentCheckpointID) : null;
-      if (cp?.workflow?.name) {
-        const scenario = configManager.getScenarioConfig(cp.workflow.name);
-        if (scenario?.automation === true) {
-          output.system.push(
-            `<aet-run-mode>automation</aet-run-mode>
+      // Automation mode directive injection — INDEPENDENT of project-analysis
+      // channel. Must always run when an automation-mode checkpoint is active,
+      // regardless of whether project-analysis is enabled / present. Otherwise
+      // projects that disable project-analysis would never get the directive
+      // and the agent in automation mode would still call the question tool,
+      // blocking the workflow.
+      {
+        const cp = currentCheckpointID ? checkpointManager.getCheckpoint(currentCheckpointID) : null;
+        if (cp?.workflow?.name) {
+          const scenario = configManager.getScenarioConfig(cp.workflow.name);
+          if (scenario?.automation === true) {
+            output.system.push(
+              `<aet-run-mode>automation</aet-run-mode>
 <aet-run-mode-directive>
 本会话处于自动化模式。禁止调用 question 工具向用户提问。
 - 凡需用户决策处：选 SKILL.md 中已声明的推荐项；若无明确推荐项，结合上下文（需求描述 / 代码库 / 已有交付物）推断最合理选项，并在交付物末尾「## 自动化决策记录」节追加一行：- 决策点：<交互点名称> | 推断选项：<选项> | 推断依据：<依据摘要>
 - 凡标注为可选 review 的阶段（如 [S3] / [A4]）：直接跳过，不进入 review 流程
 - 不影响必经的验证类门禁（lint / test / build）：仍需全部通过
 </aet-run-mode-directive>`
-          );
+            );
+          }
         }
       }
+
+      // Project-analysis injection (orthogonal to automation mode —
+      // gated by its own enable flag and folder presence).
+      const config = configManager.config;
+      const enabled = config.projectAnalysis?.enabled !== false;
+      if (!enabled) {
+        return;
+      }
+      const hasProjectAnalysis = detectProjectAnalysisFolder(pluginDirectory);
+      if (!hasProjectAnalysis) {
+        return;
+      }
+      const projectAnalysisContent = formatProjectAnalysis(pluginDirectory);
+      if (!projectAnalysisContent) {
+        return;
+      }
+      output.system.push(projectAnalysisContent);
     },
   };
 };
