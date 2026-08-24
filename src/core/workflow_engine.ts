@@ -106,7 +106,7 @@ import type {
   WorkflowListPayload,
   CaStopPayload,
 } from '../definitions/events.js';
-import { err, ok } from '../definitions/events.js';
+import { err, ok, out } from '../definitions/events.js';
 
 import type { StepDefinition, WorkflowDefinition, WorkflowRegistry } from './workflow_registry.js';
 import { CheckpointManager, type ActiveEntry, type PendingTransition } from './checkpoint_manager.js';
@@ -765,9 +765,32 @@ export class WorkflowEngine {
     hookEvents: OutputEvent[],
   ): CommandResult {
     const events: OutputEvent[] = [];
+    const automation = workflowDef.automation === true;
+
+    // Automation mode: auto-emit the directive on every transition. The
+    // plugin layer surfaces it as a system-reminder / additionalContext so
+    // SKILL.md <patch> rules can switch behavior (skip question tool, pick
+    // recommended option, document assumption). Emitted regardless of whether
+    // the boundary has any user-declared hooks — the directive is unconditional
+    // once the workflow is in automation mode.
+    if (automation) {
+      events.push(out('prompt.inject_system', { text: AUTOMATION_DIRECTIVE_TEXT }));
+    }
 
     for (let i = 0; i < hookEvents.length; i++) {
       const ev = hookEvents[i]!;
+      // Automation mode: degrade hook.prompt to non-blocking prompt.inject
+      // (preserve text as a context note; do NOT defer the transition). The
+      // agent still sees the original hook text — useful as a hint for what
+      // the recommended option would have been — but the step advances
+      // immediately instead of blocking on user confirmation.
+      if (ev.id === 'hook.prompt' && automation) {
+        events.push(out('prompt.inject', {
+          text: typeof ev.payload.text === 'string' ? ev.payload.text : '',
+          type: 'task',
+        }));
+        continue;
+      }
       if (ev.id === 'hook.prompt') {
         // Execute-first / BLOCKING: defer the advance, serve the hook's
         // text as the handover's top-level `prompt` (the agent sees it as
@@ -790,6 +813,7 @@ export class WorkflowEngine {
             currentStep: fromStepId,
             nextStep: toStepId,
             checkpointId: active.checkpointId,
+            automation,
           },
         );
       }
@@ -827,6 +851,7 @@ export class WorkflowEngine {
           currentStep: null,
           nextStep: null,
           checkpointId: active.checkpointId,
+          automation,
         },
       );
     }
@@ -859,6 +884,7 @@ export class WorkflowEngine {
         currentStep: toStepId,
         nextStep: nextNextStepId,
         checkpointId: active.checkpointId,
+        automation,
       },
     );
   }
