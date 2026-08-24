@@ -230,9 +230,7 @@ let rootSessionID = null;
 function isAutomationMode(checkpointID) {
   if (!checkpointID || !checkpointManager) return false;
   const cp = checkpointManager.getCheckpoint(checkpointID);
-  if (!cp?.workflow?.name) return false;
-  const scenario = configManager.getScenarioConfig(cp.workflow.name);
-  return scenario?.automation === true;
+  return cp?.workflow?.automation === true;
 }
 
 async function triggerAfterHook(sessionID, stage, checkpointID) {
@@ -1293,6 +1291,18 @@ export const aetPlugin = async ({ client, directory }) => {
 
           // 新建 session：scenario 起首阶段，或单 agent（调用方 agent 与目标不一致）
           const checkpointID = checkpointManager.createCheckpoint(name, desc);
+          // Persist `automation` flag on checkpoint at creation time. Per
+          // revised design (spec §2.4): config changes require restart to
+          // take effect, so reading automation once at workflow_start is
+          // sufficient — no need to query workflow.json on every hook
+          // trigger. The flag travels with the checkpoint through resume.
+          if (scenario?.automation === true) {
+            const initCp = checkpointManager.getCheckpoint(checkpointID);
+            if (initCp) {
+              initCp.workflow.automation = true;
+              checkpointManager.saveCheckpoint(initCp);
+            }
+          }
           currentCheckpointID = checkpointID;
           const stageToStart = isScenario ? firstStage : { agent_id: targetAgent, stage_id: targetAgent };
           await executeStageHandover(stageToStart, desc, checkpointID);
@@ -1621,21 +1631,23 @@ export const aetPlugin = async ({ client, directory }) => {
       // projects that disable project-analysis would never get the directive
       // and the agent in automation mode would still call the question tool,
       // blocking the workflow.
+      //
+      // Per revised design: read `automation` from checkpoint directly
+      // (persisted at workflow_start time). No scenario lookup needed —
+      // config changes require restart, so re-querying workflow.json per
+      // hook would be wasted work.
       {
         const cp = currentCheckpointID ? checkpointManager.getCheckpoint(currentCheckpointID) : null;
-        if (cp?.workflow?.name) {
-          const scenario = configManager.getScenarioConfig(cp.workflow.name);
-          if (scenario?.automation === true) {
-            output.system.push(
-              `<aet-run-mode>automation</aet-run-mode>
+        if (cp?.workflow?.automation === true) {
+          output.system.push(
+            `<aet-run-mode>automation</aet-run-mode>
 <aet-run-mode-directive>
 本会话处于自动化模式。禁止调用 question 工具向用户提问。
 - 凡需用户决策处：选 SKILL.md 中已声明的推荐项；若无明确推荐项，结合上下文（需求描述 / 代码库 / 已有交付物）推断最合理选项，并在交付物末尾「## 自动化决策记录」节追加一行：- 决策点：<交互点名称> | 推断选项：<选项> | 推断依据：<依据摘要>
 - 凡标注为可选 review 的阶段（如 [S3] / [A4]）：直接跳过，不进入 review 流程
 - 不影响必经的验证类门禁（lint / test / build）：仍需全部通过
 </aet-run-mode-directive>`
-            );
-          }
+          );
         }
       }
 
