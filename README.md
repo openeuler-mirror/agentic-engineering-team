@@ -54,6 +54,8 @@ AET 通过多智能体编排、断点恢复和可配置工作流解决上述问�
 
 - **自动化版本发布** — 检测上次 Release 后的代码变更，分析 commit 类型（feat/fix/docs/refactor），推断版本号（major/minor/patch），生成 Release Notes 并自动创建平台 Release。
 
+- **自动化模式 (Automation Mode)** — scenario 级 `automation: true` 开关，让 AET workflow 在 CI/CD、批量任务等场景下无人值守运行。引擎自动短路 `confirm` hook、注入 `<aet-run-mode>automation</aet-run-mode>` directive 抑制 skill 和 agent 层的用户交互点（Socratic 对话、可选 review、resume detection 等），agent 自动选推荐项推进并在交付物末尾追加 `## 自动化决策记录` 节供事后复核。验证类门禁（lint / test / build）仍必经。详见 [docs/zh/workflow.md § 自动化模式](docs/zh/workflow.md#自动化模式-automation-mode)。
+
 ---
 
 ## 快速上手

@@ -123,8 +123,8 @@ Checkpoint 是 AET 的断点恢复机制，用于解决长程任务中断问题�
 
 工作流定义了 Agent 之间的协作顺序和流程控制。关键要素包括：
 
-- **Scenario（场景）**：feature、bugfix、release、project-analysis、config-setup 等
-- **Hook（钩子）**：auto（自动进入下一阶段）或 confirm（需要用户确认）
+- **Scenario（场景）**：feature、bugfix、release、project-analysis、config-setup 等。scenario 可声明 `automation: true` 启用无人值守模式（CI/CD 适用）
+- **Hook（钩子）**：auto（自动进入下一阶段）或 confirm（需要用户确认）。`automation: true` 模式下 `confirm` 自动短路为 `auto` 行为，agent 不调 `question` 工具
 - **Step（步骤）**：Agent 内部的细粒度工作单元
 
 ### SR-AR 需求分解
