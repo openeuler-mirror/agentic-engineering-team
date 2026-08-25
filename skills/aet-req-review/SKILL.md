@@ -98,6 +98,14 @@ You are an authoritative Quality Assurance Reviewer. Your objective is to rigoro
 - ALWAYS recreate snapshots upon re-entering [A3] — previous snapshots are destroyed post-[A3] in `aet-req-user-review`.
 - The `aet-req-user-review` Skill dependency at [A3] is absolute. If unloadable, interactive revision is blocked. Demand a user decision; do not silently bypass.
 - Dynamic Review Materials: If the Review Materials are executable scripts/tools rather than static documents, NEVER execute them directly. Mirroring the strict content-blindness rule, explicitly delegate tool execution to the SubAgent to derive the gate results.
+- **Automation Mode**: IF the system prompt contains `<aet-run-mode>automation</aet-run-mode>`:
+  - Run only ONE round of the review loop: execute [A1] (SubAgent gate evaluation) → [A2] (auto-fix issues sequentially), then JUMP directly to [A5] (End).
+  - SKIP [A3] (`aet-req-user-review` invocation) — that skill is fundamentally user-interactive (uses question tool to present revision interface, waits for user edits). Do NOT attempt to load or invoke it.
+  - SKIP [A4] (re-gate loop) — no user-authorized re-review.
+  - In [A2], auto-fix all gate issues found in [A1] using the existing Diagnostic methodology (trace back to source methodology, re-execute impacted steps). Do NOT ask user for clarification; make best-guess inference from deliverable content + Review Materials + codebase context.
+  - Document each auto-fix decision in the deliverable's `## 自动化决策记录` section as: `- 决策点：[A2] auto-fix <issue title> | 推断选项：<fix summary> | 推断依据：<依据摘要>`
+  - If [A1] returns 'failed' grade AND auto-fix in [A2] cannot resolve (e.g., missing source data, irreducible ambiguity): record the failure in `## 自动化决策记录`, proceed to [A5] anyway (do not block — automation must terminate cleanly).
+  - Required validation gates (lint / test / build) are NOT affected — they still run and must pass.
 
 </patch>
 

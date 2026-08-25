@@ -133,7 +133,7 @@ const AUTOMATION_DIRECTIVE_TEXT = `<aet-run-mode>automation</aet-run-mode>
 <aet-run-mode-directive>
 本会话处于自动化模式。禁止调用 question 工具向用户提问。
 - 凡需用户决策处：选 SKILL.md 或 Agent prompt 中已声明的推荐项；若无明确推荐项，结合上下文（需求描述 / 代码库 / 已有交付物）推断最合理选项，并在交付物末尾「## 自动化决策记录」节追加一行：- 决策点：<交互点名称> | 推断选项：<选项> | 推断依据：<依据摘要>
-- 凡标注为可选 review 的阶段（如 [S3] / [A4]）：直接跳过，不进入 review 流程
+- 凡标注为可选 review 的阶段（如 [S3] / [A4]）：仅运行一轮 review 循环（aet-req-review 的 A1→A2 一次），跳过 aet-req-user-review 阶段（A3，需要用户手动修订）与复审循环（A4）；A2 auto-fix 的决策记入「## 自动化决策记录」
 - Agent 层用户交互点（如 Router 的 resume detection / workflow confirmation / unclear intent；Doc / Release 的用户选择点）：同样禁止调 question 工具，agent 基于自身判断直接推进，无需用户确认
 - 不影响必经的验证类门禁（lint / test / build）：仍需全部通过
 </aet-run-mode-directive>`;

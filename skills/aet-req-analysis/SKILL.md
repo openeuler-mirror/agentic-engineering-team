@@ -246,8 +246,7 @@ Requirements Analysis Specification (IR)
     (requirement description / codebase / existing deliverables) and document the assumption.
   - Append each inferred decision to the deliverable's `## 自动化决策记录` section as:
     `- 决策点：<交互点名称> | 推断选项：<选项> | 推断依据：<依据摘要>`
-  - For optional review stages (e.g., [S3] / [A4]): skip entirely, do not enter the review
-    flow; do not emit the "是否需要进行文档审查与修订？" prompt.
+  - For optional review stages (e.g., [S3] / [A4]): run only ONE round of review loop — invoke `aet-req-review` once, accept its A1 (gate evaluation) + A2 (auto-fix) results as final, SKIP `aet-req-user-review` stage (A3, requires user manual revision) and re-gate loop (A4). Do not emit the "是否需要进行文档审查与修订？" prompt. Document the review summary + auto-fix decisions in the deliverable's `## 自动化决策记录` section.
   - Required validation gates (lint / test / build) are NOT affected — they still run and
     must pass.
 
