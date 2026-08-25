@@ -22,7 +22,7 @@ const {
 const lib = (name) => require(path.join(AET_ROOT, '.platform/utils', name));
 
 const { ConfigManager } = lib('config-manager');
-const { formatProjectAnalysis } = lib('project-analysis');
+const { formatProjectAnalysis, detectProjectAnalysisFolder } = lib('project-analysis');
 
 function main() {
   const payload = readPayload();
@@ -43,11 +43,15 @@ function main() {
 
     let contextInjection = '';
 
-    // === 注入项目分析信息 ===
+    // === 注入项目分析信息（与 opencode aet.js experimental.chat.system.transform 对齐） ===
     if (enabled) {
-      const projectAnalysis = formatProjectAnalysis(projectRoot);
-      if (projectAnalysis && projectAnalysis.trim()) {
-        contextInjection += '\n\n' + projectAnalysis;
+      // 先检查项目分析目录是否存在（与 opencode detectProjectAnalysisFolder 对齐）
+      const hasProjectAnalysis = detectProjectAnalysisFolder(projectRoot);
+      if (hasProjectAnalysis) {
+        const projectAnalysis = formatProjectAnalysis(projectRoot);
+        if (projectAnalysis && projectAnalysis.trim()) {
+          contextInjection += '\n\n' + projectAnalysis;
+        }
       }
     }
 

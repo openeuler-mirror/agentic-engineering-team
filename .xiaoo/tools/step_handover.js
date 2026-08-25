@@ -5,6 +5,7 @@
  * - context 必传，描述当前步骤的工作成果
  * - step 可选，默认推进到下一步
  * - step 不存在时返回可用列表
+ * - end 可选，为 true 时提前终止整个 workflow（跳过剩余步骤并归档）
  * - checkpoint_id 可选，未传时回退到 current-checkpoint.json
  */
 
@@ -21,7 +22,7 @@ const { CheckpointManager } = lib('checkpoint-manager');
 async function main() {
   try {
     const input = await readStdinJson();
-    const { context, step, checkpoint_id } = input.args || input;
+    const { context, step, end, checkpoint_id } = input.args || input;
     const projectRoot = resolveProjectRoot();
 
     // context 必传（与 opencode aet.js L1285 对齐）
@@ -89,6 +90,21 @@ async function main() {
 
     // 与 opencode 对齐：result/context 为 { summary } 对象
     const stepResult = typeof context === 'object' ? context : { summary: context };
+
+    // 提前结束工作流（与 opencode aet.js step_handover end=true 对齐）
+    if (end) {
+      checkpointManager.completeExecution(resolvedCheckpointId, currentStage, stepResult);
+      checkpointManager.skipRemainingSteps(resolvedCheckpointId, currentStage);
+      checkpointManager.completeCheckpoint(resolvedCheckpointId);
+      outputResult({
+        success: true,
+        done: true,
+        endedEarly: true,
+        checkpointID: resolvedCheckpointId,
+        message: 'Workflow ended early. Remaining steps skipped and checkpoint archived.',
+      });
+      return;
+    }
 
     // 与 opencode advanceToNextStep (aet.js L290-340) 对齐：
     // 确定目标 step

@@ -14,6 +14,10 @@ description = "Required. Summary of current step work to pass to the next step."
 type = "string"
 description = "Optional. Target step_id to jump to (forward to skip steps, or backward to redo). Defaults to the next step."
 
+[input_schema.properties.end]
+type = "boolean"
+description = "⚠️ DANGER — DO NOT use unless the user explicitly requests to terminate the ENTIRE workflow. This ends ALL remaining steps/stages permanently (skipped & archived, no resume). For completing a single step, just omit this parameter."
+
 [input_schema.properties.checkpoint_id]
 type = "string"
 description = "Optional checkpoint ID; if omitted, uses the current active checkpoint"

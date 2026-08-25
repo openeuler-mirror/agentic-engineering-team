@@ -1,9 +1,13 @@
 name = "checkpoint_list_active"
-description = "List all active and interrupted AET workflow checkpoints"
+description = "List all active and interrupted AET workflow checkpoints. Optional scope filter: 'scenario' (multi-stage workflows only), 'agent' (single-agent tasks only), 'all' (default)."
 timeout_ms = 5000
 
 [input_schema]
 type = "object"
+
+[input_schema.properties.scope]
+type = "string"
+description = "Filter scope: 'scenario' (multi-stage workflows only), 'agent' (single-agent tasks only), 'all' (default)."
 
 [exec]
 command = "node"
