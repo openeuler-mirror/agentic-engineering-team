@@ -290,13 +290,13 @@ node skills/aet-operating-pr/scripts/platform/bin/pr-api.js add-comment <id> --b
 echo "add-comment exit code: $?"
 ```
 
-**判定成功/失败**：
-- **成功**：退出码为 0（`$? -eq 0`）。stdout 输出 comment 数据（`--format json` 时为合法 JSON，默认 concise 时为格式化数据）。
-- **失败**：退出码非零（`$? -ne 0`），stderr 输出 `✗ add-comment failed: <error>`。
+**Success/Failure Judgment**:
+- **Success**: exit code 0 (`$? -eq 0`). stdout outputs comment data (valid JSON with `--format json`, or formatted data in default concise mode).
+- **Failure**: non-zero exit code (`$? -ne 0`), stderr outputs `✗ add-comment failed: <error>`.
 
-**⚠️ 重试策略（强制）**：
-- **仅在退出码非零时重试**（`$? -ne 0`），重试上限 2 次；超过则向用户报告失败，不得继续重试。
-- **禁止以"stdout 为空"判断失败**。add-comment 成功时 stdout 可能在 quiet 模式下极简，但退出码为 0 即表示成功。以空 stdout 作为失败判据会导致同一份评审总结被重复推送。
+**⚠️ Retry Strategy (mandatory)**:
+- **Retry only on non-zero exit code** (`$? -ne 0`), max 2 retries; if exceeded, report failure to the user and do not continue retrying.
+- **Never use "empty stdout" as a failure indicator**. add-comment stdout may be minimal in quiet mode on success, but exit code 0 means success. Using empty stdout as a failure criterion will cause the same review summary to be pushed repeatedly.
 
 - User chose "auto-post by default" (spike decision round 2)
 - For MVP, recommend running `--dry-run` on first few PRs to validate finding quality
@@ -355,7 +355,7 @@ For severity rubric, 7-axis checklist, false-positive filter, language guideline
 4. **Step 4**: invoke `aet-reviewing-code` Skill on `.aet/reviews/pr-226/checkout/{...}` → 7-axis findings with confidence
 5. **Step 5**: revise structural; emit risk-face per file; judge large removals; write prSummary; mark topPriority on 1-3 findings
 6. **Step 6**: read `references/comment-template.md`, then **Write** summary.md + internal.md (in Chinese) — apply confidence filtering, follow the §6b section checklist, then run the §6d 6-point self-check
-7. **Step 7**: `pr-api add-comment 226 --body-file .aet/reviews/pr-226/summary.md`; 检查 `$? -eq 0` 则成功，`$? -ne 0` 才重试（上限 2 次）
+7. **Step 7**: `pr-api add-comment 226 --body-file .aet/reviews/pr-226/summary.md`; check `$? -eq 0` for success, retry only on `$? -ne 0` (max 2 times)
 8. **Step 8**: `git worktree remove --force .aet/reviews/pr-226/checkout`
 9. **Step 9**: report back to user
 
