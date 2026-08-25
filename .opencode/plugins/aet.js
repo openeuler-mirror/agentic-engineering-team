@@ -743,6 +743,12 @@ const pendingCheckpointCmd = new Map(); // sessionID -> { command, agentId, argu
 // （如 Router 的 resume detection / Design 的 proactive checkpoint comparison）。
 const pendingAutomationDirective = new Map(); // sessionID -> boolean
 
+// Fallback: experimental.chat.system.transform 不一定在 input.sessionID 中传 sessionID
+// （OpenCode plugin SDK 没有文档化保证）。如果 input.sessionID 不可用，使用最近一次
+// command.execute.before 设置的 sessionID 作为 fallback。假设单 OpenCode 进程内会话
+// 串行执行（与现有 currentCheckpointID 模块变量的假设一致）。
+let lastAutomationSessionID = null;
+
 // 兼容 `aet:design` / `aet/design` / `aet-design` / `design` 等命名空间形式。
 // 安装脚本（install.sh）会把命令文件链接成 `aet-<name>.md`，因此实际命令名带 `aet-` 前缀，
 // 这里去掉命名空间分隔符和 `aet-` 前缀后再查表。
@@ -989,6 +995,11 @@ export const aetPlugin = async ({ client, directory }) => {
         // injects the directive BEFORE workflow_start (covers agent's early
         // user-interaction points like Router's resume detection / Design's
         // proactive checkpoint comparison that happen before any checkpoint exists).
+        //
+        // ALWAYS clear previous flag first — without this, switching from an
+        // automation-mode command (e.g. /aet-design) to a non-automation command
+        // (e.g. /aet-bugfix) in the same session would leave Signal 2 stuck at
+        // true, incorrectly injecting directive for the non-automation command.
         try {
           const scenarios = configManager?.getScenarios?.() || {};
           const mapsToAutomation = Object.values(scenarios).some(sc =>
@@ -997,8 +1008,10 @@ export const aetPlugin = async ({ client, directory }) => {
             sc.workflow.length > 0 &&
             (sc.workflow[0]?.agent_id === agentId || sc.workflow[0]?.stage_id === agentId)
           );
+          pendingAutomationDirective.delete(input.sessionID);
           if (mapsToAutomation) {
             pendingAutomationDirective.set(input.sessionID, true);
+            lastAutomationSessionID = input.sessionID;
           }
         } catch { /* configManager not ready — skip */ }
       }
@@ -1672,8 +1685,10 @@ export const aetPlugin = async ({ client, directory }) => {
         }
         // Signal 2: pending command maps to automation scenario
         // experimental.chat.system.transform fires per chat; input.sessionID
-        // is the current chat session
-        if (!injectDirective && input?.sessionID && pendingAutomationDirective.get(input.sessionID)) {
+        // is the current chat session. Fallback to lastAutomationSessionID
+        // (set by command.execute.before) if input.sessionID is unavailable.
+        const directiveSessionID = input?.sessionID || lastAutomationSessionID;
+        if (!injectDirective && directiveSessionID && pendingAutomationDirective.get(directiveSessionID)) {
           injectDirective = true;
         }
         if (injectDirective) {
