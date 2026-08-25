@@ -243,7 +243,9 @@ AET 预置了以下场景：
 | `config-setup` | 配置初始化流程 | 项目配置初始化 | ❌ 一次性配置，无自动化价值 |
 | `project-analysis` | 项目分析流程 | 分析项目架构和模块依赖 | ✅ |
 | `release` | 发布管理流程 | 版本发布和 Release Notes 生成 | ✅ |
-| `aet-prd` | PRD 生成流程 | 6 阶段 PRD 生成 | ⚠ PRD 评审建议人工参与 |
+| `design` | 设计阶段流程 | 需求澄清、架构设计的完整设计流程 | ✅ |
+| `doc` | 文档生成流程 | README / 手册 / 幻灯片等信息图生成 | ✅ |
+| `implement` | 实现阶段流程 | 基于已有设计直接进入编码与验证 | ✅ |
 
 > **Note**：内置场景默认不声明 `automation` 字段（即 `automation: false`，交互式）。用户可在 `~/.aet/templates/workflow.json` 或项目级 `.aet/templates/workflow.json` / `.aet/config.json` 中为对应 scenario 添加 `"automation": true` 启用自动化模式。详见 [自动化模式](#自动化模式-automation-mode)。
 
