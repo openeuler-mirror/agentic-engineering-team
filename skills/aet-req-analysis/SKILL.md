@@ -2,6 +2,7 @@
 name: aet-req-analysis
 description: |
   Requirements analysis skill - transforms raw requirements into structured specifications through Socratic dialogue, behavior analysis, and requirement specification design. Use when: (1) requirements are unclear or need decomposition, (2) you need to produce a requirements analysis specification from user input, (3) you need structured functional and non-functional requirements with priority labels, (4) you need acceptance criteria and test case definitions, or any requirements clarification and specification generation tasks.
+allowed-tools: Read
 metadata:
   pattern: pipeline
   stages: 3
@@ -206,7 +207,7 @@ Load `workflows/sop-generation.md` and execute the document generation workflow.
 - NEVER ask the user implementation-related questions (technology selection, architecture, module partitioning).
 - Load relevant SOPs on demand; only those pertinent to the current stage.
 - Explore the codebase directly without delegating to subagents; reach conclusions at minimal cost.
-- NEVER read output-template or library-browser source files directly — access them only through the loading scripts/workflows provided by this skill.
+- NEVER read template or library source files directly — access them only through the `aet-design-env` subcommands (`template`/`checklist`/`library`) wired into this skill's workflows.
 
 </constraint>
 

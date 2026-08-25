@@ -32,7 +32,7 @@ Answer the following three questions before making any document changes:
 
 ### [A2.3] Document Change
 
-1. Run `skills/aet-req-design/scripts/assemble-template.mjs req-design` via bash (do NOT read template files directly) to assemble and output the requirements design template, which describes the generation structure and conventions (the original document follows this template).
+1. Run `node skills/aet-design-env/scripts/aet-design-env.mjs template skills/aet-req-design/references/_templates/req-design` via bash (do NOT read template files directly) to assemble and output the requirements design template, which describes the generation structure and conventions (the original document follows this template).
 2. Copy the original requirements design specification to a `.refine` suffixed file (e.g., `FR001-xxx.md.refine`).
 3. Modify the `.refine` copy — DO NOT modify the original file.
 4. DO NOT modify metadata (frontmatter) unless required by the design change.

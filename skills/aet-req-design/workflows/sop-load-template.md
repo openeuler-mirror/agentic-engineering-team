@@ -2,13 +2,17 @@
 
 <instruct>
 
-**Assemble the template**: Run via `bash` (NOT via `read`) the `aet-design-env` template command, pointing it at the req-design template-set directory of this skill:
+**Assemble the template**: Run the `aet-design-env` template command via the `bash` tool (NOT the `read` tool), pointing it at this skill's req-design template-set directory:
 
-```
-node skills/aet-design-env/scripts/aet-design-env.mjs template skills/aet-req-design/scripts/_templates/req-design
-```
-
-The script outputs the fully assembled template (artifact + metadata + inlined components with adjusted heading levels and section numbers) on stdout. Use that stdout as the template to interpret for the generation stage.
+1. Load the `aet-design-env` skill to obtain its assembly script path.
+2. Resolve both placeholders to absolute paths before executing:
+   - `<aet-design-env path>` → root directory of the `aet-design-env` skill.
+   - `<aet-req-design path>` → root directory of this `aet-req-design` skill.
+3. Execute the assembly command:
+   ```
+   node <aet-design-env path>/aet-design-env/scripts/aet-design-env.mjs template <aet-req-design path>/references/_templates/req-design
+   ```
+4. Interpret the assembled template directly from the command's stdout.
 
 </instruct>
 
@@ -21,9 +25,8 @@ The script outputs the fully assembled template (artifact + metadata + inlined c
 
 <patch>
 
-- The `aet-design-env` binary owns template assembly centrally; this skill no longer ships its own `assemble-template.mjs` for that purpose. The legacy `scripts/assemble-checklist.mjs` (review checklist) is **still** this skill's own script — see `sop-review.md`. Do not confuse the two.
-- `template-set-path` MUST point at the `_templates/<folder>` directory (the folder containing `artifact.md`), not at a single file. For this skill that is `skills/aet-req-design/scripts/_templates/req-design`.
-- The `template-set-path` may be workspace-relative (run from workspace root) or absolute. The script requires the path to **exist**; a non-existent path is a hard error (exit 1), not a silent fallback.
+- `template-set-path` MUST point at the `_templates/<folder>` directory, not at a single file.
+- The `template-set-path` MUST be absolute.
 
 </patch>
 

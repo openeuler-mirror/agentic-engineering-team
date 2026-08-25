@@ -55,7 +55,7 @@
 
 ## 0. 环境布局
 
-`template <template-set-path>` 与 `checklist <checklist-set-path>` 的入参路径通常来自调用方 skill 自带的 `_templates/` 目录（例如 `skills/aet-req-analysis/scripts/_templates/req-analysis`）。**入参路径本身就是兜底模板集**——当链上无任何插件提供某文件时，回到该路径读取。
+`template <template-set-path>` 与 `checklist <checklist-set-path>` 的入参路径通常来自调用方 skill 自带的 `_templates/` 目录（例如 `skills/aet-req-analysis/references/_templates/req-analysis`）。**入参路径本身就是兜底模板集**——当链上无任何插件提供某文件时，回到该路径读取。
 
 链上插件的文件查找按 2 级就近优先：
 
@@ -78,7 +78,7 @@
 
 目标：用最简单的插件覆盖一个 skill 的 `_templates/req-analysis`，生成完整文档。
 
-假设入参路径 `skills/aet-req-analysis/scripts/_templates/req-analysis/artifact.md` 含占位符 `{{intro,2}}`。
+假设入参路径 `skills/aet-req-analysis/references/_templates/req-analysis/artifact.md` 含占位符 `{{intro,2}}`。
 
 写插件 a 的组件 `~/.aet/design/a/req-analysis/components/intro.md`：
 
@@ -111,7 +111,7 @@ heading_level: 2
 生成：
 
 ```bash
-node skills/aet-design-env/scripts/aet-design-env.mjs template skills/aet-req-analysis/scripts/_templates/req-analysis
+node skills/aet-design-env/scripts/aet-design-env.mjs template skills/aet-req-analysis/references/_templates/req-analysis
 ```
 
 输出：
@@ -259,7 +259,7 @@ heading_level: 2
 
 `checklist` 与 `template` 共享同一套插件/链/屏蔽语义，主要差异见 [第二部分 J 节](#j-checklist-与-template-的差异)。这里给一个最小示例。
 
-入参路径 `skills/aet-req-analysis/scripts/_templates/req-analysis/checklist.md`（注意是 `checklist.md`，不是 `artifact.md`）：
+入参路径 `skills/aet-req-analysis/references/_templates/req-analysis/checklist.md`（注意是 `checklist.md`，不是 `artifact.md`）：
 
 ```markdown
 # 需求分析审查清单
@@ -287,7 +287,7 @@ checklist: 需求背景已明确，且与项目目标对齐
 生成：
 
 ```bash
-node skills/aet-design-env/scripts/aet-design-env.mjs checklist skills/aet-req-analysis/scripts/_templates/req-analysis
+node skills/aet-design-env/scripts/aet-design-env.mjs checklist skills/aet-req-analysis/references/_templates/req-analysis
 ```
 
 输出：
@@ -660,7 +660,7 @@ template 与 checklist 共用同一套 `resolveComponent` 逻辑；区别仅在"
 - 缺组件时均 `[Missing component: name]` + stderr 告警；被屏蔽时均静默跳过。
 - plugin.json schema 与校验规则、错误与退出码、`check` 审计行为完全一致。
 
-`checklist` 子命令的入参路径示例：`skills/aet-req-analysis/scripts/_templates/req-analysis`（与 template 共用同一目录，靠骨架文件名 `checklist.md` 区分）。一个插件可同时为 template 提供 `artifact.md`、为 checklist 提供 `checklist.md`，两者在同一模板集子目录下共存。
+`checklist` 子命令的入参路径示例：`skills/aet-req-analysis/references/_templates/req-analysis`（与 template 共用同一目录，靠骨架文件名 `checklist.md` 区分）。一个插件可同时为 template 提供 `artifact.md`、为 checklist 提供 `checklist.md`，两者在同一模板集子目录下共存。
 
 ---
 
@@ -787,8 +787,8 @@ node skills/aet-design-env/scripts/aet-design-env.mjs check [project-root]
 ```bash
 # 在 CI 中：
 node skills/aet-design-env/scripts/aet-design-env.mjs check
-node skills/aet-design-env/scripts/aet-design-env.mjs template skills/aet-req-analysis/scripts/_templates/req-analysis > doc.md
-node skills/aet-design-env/scripts/aet-design-env.mjs checklist skills/aet-req-analysis/scripts/_templates/req-analysis > checklist.md
+node skills/aet-design-env/scripts/aet-design-env.mjs template skills/aet-req-analysis/references/_templates/req-analysis > doc.md
+node skills/aet-design-env/scripts/aet-design-env.mjs checklist skills/aet-req-analysis/references/_templates/req-analysis > checklist.md
 ```
 
 - `check` 失败（exit 1）会阻断 CI。
@@ -802,7 +802,7 @@ if echo "$output" | grep -qE '\[(ERROR|WARNING)\]'; then
   echo "$output"
   exit 1
 fi
-node ... template skills/aet-req-analysis/scripts/_templates/req-analysis > doc.md
+node ... template skills/aet-req-analysis/references/_templates/req-analysis > doc.md
 ```
 
 ### 项目级覆盖优先
@@ -846,7 +846,7 @@ node ... template skills/aet-req-analysis/scripts/_templates/req-analysis > doc.
 入参路径（基础模板集，由调用方 skill 自带）：
 
 ```
-skills/aet-req-analysis/scripts/_templates/req-analysis/
+skills/aet-req-analysis/references/_templates/req-analysis/
 ├── artifact.md              # 含 9 个占位符：{{basic-information.aet,2}} {{scenario-analysis.aet,2}} {{data-constraints.aet,2}} 等
 └── components/
     ├── basic-information.aet.md      # 被插件 a 覆盖
@@ -882,7 +882,7 @@ $ echo $?
 ### `template` 输出（关键摘录）
 
 ```
-$ node scripts/aet-design-env.mjs template skills/aet-req-analysis/scripts/_templates/req-analysis
+$ node scripts/aet-design-env.mjs template skills/aet-req-analysis/references/_templates/req-analysis
 ---
 ...metadata...
 update_time: 2026-07-25 09:40:28 (UTC+8)        ← metadata 自动 prepend + update_time 自动填
@@ -932,7 +932,7 @@ $ echo $?
 临时移除 `~/.aet/design/design.json` 后再跑同一命令：
 
 ```
-$ node scripts/aet-design-env.mjs template skills/aet-req-analysis/scripts/_templates/req-analysis
+$ node scripts/aet-design-env.mjs template skills/aet-req-analysis/references/_templates/req-analysis
 ---
 ...metadata...
 ---
