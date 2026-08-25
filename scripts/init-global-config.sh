@@ -16,7 +16,6 @@ GITCODE_TOKEN=""
 GITHUB_TOKEN=""
 GITLAB_TOKEN=""
 TOKEN_PROVIDED=false  # 标记是否通过参数提供了 token
-KG_TYPE="none"  # 知识图谱工具类型
 TRACE_ENABLED=""  # 空字符串表示未选择，将使用默认值 true
 
 # 检查 gum 是否安装
@@ -89,33 +88,6 @@ log_error() {
     else
         echo -e "${RED}[ERROR]${NC} $1"
     fi
-}
-
-# 检测知识图谱工具
-detect_knowledge_graph() {
-    KG_TYPE="none"
-    
-    # 检测 graphify（优先检测 venv，再检测全局）
-    local venv_python="$HOME/.aet/venv/bin/python3"
-    
-    # 优先：venv 中的 graphify
-    if [ -f "$venv_python" ] && "$venv_python" -c "import graphify" >/dev/null 2>&1; then
-        KG_TYPE="graphify"
-        log_info "检测到 graphify (~/.aet/venv)，知识图谱设置为 graphify"
-        return 0
-    fi
-    
-    # 降级：全局 python 中的 graphify
-    if command -v python3 >/dev/null 2>&1; then
-        if python3 -c "import graphify" >/dev/null 2>&1; then
-            KG_TYPE="graphify"
-            log_info "检测到 graphify (全局)，知识图谱设置为 graphify"
-            return 0
-        fi
-    fi
-    
-    log_info "未检测到知识图谱工具，设置为 none"
-    return 0
 }
 
 # 获取脚本所在目录（AET 项目根目录）
@@ -529,7 +501,7 @@ load_template() {
 
     # 移除所有 _comment 字段（使用 jq 或手动处理）
     if command -v jq >/dev/null 2>&1; then
-        TEMPLATE_CONTENT=$(echo "$TEMPLATE_CONTENT" | jq 'del(._comment, .codePlatform._comment, .codePlatform.platforms._comment, .knowledgeGraph._comment)')
+        TEMPLATE_CONTENT=$(echo "$TEMPLATE_CONTENT" | jq 'del(._comment, .codePlatform._comment, .codePlatform.platforms._comment)')
     fi
 
     log_info "加载全局配置模板"
@@ -619,21 +591,18 @@ generate_config() {
             jq --arg gitcode_token "$GITCODE_TOKEN" \
                --arg github_token "$GITHUB_TOKEN" \
                --arg gitlab_token "$GITLAB_TOKEN" \
-               --arg kg_type "$KG_TYPE" \
                --argjson trace_enabled "${TRACE_ENABLED:-true}" \
                '.codePlatform.platforms.gitcode.token = $gitcode_token |
                 .codePlatform.platforms.github.token = $github_token |
                 .codePlatform.platforms.gitlab.token = $gitlab_token |
-                .knowledgeGraph.type = $kg_type |
                 .trace.enabled = $trace_enabled')
     elif command -v node >/dev/null 2>&1; then
         # jq 不可用时用 node 写入（node 是安装的硬依赖）。
-        # Token 和 KG_TYPE 通过环境变量传入，避免引号/特殊字符破坏 JSON。
+        # Token 通过环境变量传入，避免引号/特殊字符破坏 JSON。
         CONFIG_CONTENT=$(printf '%s' "$TEMPLATE_CONTENT" | \
             GEN_GITCODE_TOKEN="$GITCODE_TOKEN" \
             GEN_GITHUB_TOKEN="$GITHUB_TOKEN" \
             GEN_GITLAB_TOKEN="$GITLAB_TOKEN" \
-            GEN_KG_TYPE="$KG_TYPE" \
             GEN_TRACE_ENABLED="${TRACE_ENABLED:-true}" \
             node -e '
                 let s = "";
@@ -649,8 +618,6 @@ generate_config() {
                     p.gitcode.token = process.env.GEN_GITCODE_TOKEN || "";
                     p.github.token = process.env.GEN_GITHUB_TOKEN || "";
                     p.gitlab.token = process.env.GEN_GITLAB_TOKEN || "";
-                    c.knowledgeGraph = c.knowledgeGraph || {};
-                    c.knowledgeGraph.type = process.env.GEN_KG_TYPE || "none";
                     c.trace = c.trace || {};
                     c.trace.enabled = process.env.GEN_TRACE_ENABLED === "true" || process.env.GEN_TRACE_ENABLED === undefined;
                     process.stdout.write(JSON.stringify(c, null, 2) + "\n");
@@ -759,9 +726,6 @@ main() {
     check_pipe_mode
 
     parse_args "$@"
-
-    # 检测知识图谱工具
-    detect_knowledge_graph
 
     # 管道模式下提示用户（但 --force 时继续执行）
     if [ "$IS_PIPE_MODE" = true ] && [ "$FORCE" = false ]; then

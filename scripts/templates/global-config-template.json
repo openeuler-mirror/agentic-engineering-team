@@ -6,9 +6,6 @@
     "enabled": true,
     "_comment": "LLM 请求/响应追踪日志。enabled=true 时拦截 fetch 并记录到 ~/.aet/log/trace/"
   },
-  "knowledgeGraph": {
-    "type": "none"
-  },
   "codePlatform": {
     "_comment": "代码托管平台配置：包含多平台 Token",
     "platforms": {
