@@ -57,6 +57,8 @@ Skill（技能）是 AET 的核心功能单元。每个 Skill 定义为 `SKILL.m
 | `aet-generating-technical-infographic` | 原子 | 生成技术信息图 |
 | `aet-generating-practice-case` | 编排 | 生成实践案例/教程 |
 | `aet-generating-python-api` | 编排 | 生成 Python API 文档/docstring |
+| `aet-generating-qa` | 编排 | 生成问答对/Q&A/FAQ |
+| `wiki-builder` | 编排 | 从任意内容构建可查询的轻量级个人 Wiki |
 | `aet-doc-translator` | 原子 | 文档翻译（中英互译，全量/增量/同步） |
 | `aet-checking-docs` | 原子 | 文档质量检查 |
 | `aet-building-doc-mdbook` | 原子 | mdbook 文档构建 |
@@ -175,4 +177,4 @@ skills/{skill-name}/
 | 代码审查 | `aet-reviewing-code` skill |
 | TDD 开发 | `test-driven-development` skill |
 | 管理 Issue/PR | `aet-operating-issues` / `aet-operating-pr` skill |
-| 生成文档 | `aet-generating-readme` / `aet-generating-manual` / `aet-generating-python-api` / `aet-doc-translator` / `aet-checking-docs` / `aet-building-doc-mdbook` skill |
+| 生成文档 | `aet-generating-readme` / `aet-generating-manual` / `aet-generating-python-api` / `aet-generating-qa` / `wiki-builder` / `aet-doc-translator` / `aet-checking-docs` / `aet-building-doc-mdbook` skill |

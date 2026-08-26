@@ -135,6 +135,8 @@ AET 自动完成以下流程：
 /aet-doc 翻译 docs/            # 文档翻译（中译英等）
 /aet-doc 检查文档质量 docs/     # 文档质量检查
 /aet-doc 构建 mdbook 文档      # 从 Markdown 构建 HTML 文档
+/aet-doc 生成问答 docs/        # 生成问答对/Q&A/FAQ
+/aet-doc 建个 wiki docs/        # 构建可查询的 Wiki 知识库
 ```
 
 ---
@@ -183,7 +185,7 @@ AET 采用四层分层架构，依赖方向严格自上而下：
 | `/aet-pr` | PR 管理（创建、更新、查询） | 是 |
 | `/aet-issue` | Issue 管理（创建、认领、查询） | 是 |
 | `/aet-release` | Release 管理（创建、删除、列出、查询） | 是 |
-| `/aet-doc` | 文档生成（README、用户手册、技术分析、幻灯片、信息图、实践案例、Python API 文档、翻译、质量检查、mdbook 构建） | 否 |
+| `/aet-doc` | 文档生成（README、用户手册、技术分析、幻灯片、信息图、实践案例、Python API 文档、翻译、质量检查、mdbook 构建、问答对生成、wiki 知识库构建） | 否 |
 | `/aet-design` | 直接进入设计智能体 | 否 |
 | `/aet-implement` | 直接进入实现智能体 | 否 |
 
@@ -252,7 +254,7 @@ AET 采用四层分层架构，依赖方向严格自上而下：
 │   ├── implement/          # Aet-Implement：DPS（dev-plan）+ TDD + 编码 + 验证
 │   ├── test/               # Aet-Test：集成测试（扩展中）
 │   ├── bugfix/             # Aet-Bugfix：诊断与修复规划
-│   ├── doc/                # Aet-Doc：README、手册、技术分析、API 文档、翻译、检查、mdbook 构建
+│   ├── doc/                # Aet-Doc：README、手册、技术分析、API 文档、翻译、检查、mdbook 构建、问答对生成、wiki 知识库构建
 │   ├── general/            # Aet-General：通用任务处理
 │   └── release/            # Aet-Release：版本管理
 ├── skills/                  # SKILL.md 定义
@@ -264,10 +266,12 @@ AET 采用四层分层架构，依赖方向严格自上而下：
 │   ├── aet-operating-release/
 │   ├── aet-generating-readme/
 │   ├── aet-generating-manual/
+│   ├── aet-generating-qa/
+│   ├── wiki-builder/
 │   ├── aet-reviewing-code/
 │   ├── aet-diagnosing-bug/
 │   ├── test-driven-development/
-│   └── ... (35 个)
+│   └── ... (36 个)
 ├── commands/               # 命令定义
 ├── scripts/                # 安装和配置脚本
 │   ├── install.sh          # 一键安装（远程/本地模式）
@@ -284,6 +288,7 @@ AET 采用四层分层架构，依赖方向严格自上而下：
 │       ├── architecture.md # 架构设计
 │       ├── module-dependency-protection.md # 模块依赖保护
 │       ├── manual-overview.md # 手册概览
+│       ├── qa.md           # 常见问答 Q&A
 │       ├── glossary.md     # 术语表
 │       └── troubleshooting.md # 故障排除
 ├── .opencode/              # OpenCode 插件配置

@@ -27,6 +27,8 @@ Analyze the user's input to determine their intent:
 | **Doc Translation** | 翻译、文档翻译、中译英、英译中、本地化 | translate、translation、localization、i18n | `aet-doc-translator` |
 | **Doc Quality Check** | 检查文档、审查文档、文档检查、文档审查、lint文档、文档质量 | check docs、lint docs、review docs、doc quality | `aet-checking-docs` |
 | **mdbook Build** | 构建文档、生成HTML文档、编译文档、mdbook、book.toml、SUMMARY.md | build docs、mdbook、book.toml、SUMMARY.md | `aet-building-doc-mdbook` |
+| **Q&A Generation** | 生成问答、问答对、Q&A、FAQ、出题、知识库问答、RAG问答 | generate Q&A、build FAQ、extract Q&A、question answer pairs | `aet-generating-qa` |
+| **Wiki Knowledge Base** | 建wiki、建个wiki、做个wiki、做个知识库、整理成wiki、生成wiki、变成wiki、知识库 | build wiki、create wiki、knowledge base、organize into wiki | `wiki-builder` |
 
 ### Special Input Patterns
 
@@ -40,6 +42,8 @@ Analyze the user's input to determine their intent:
 | **Python API Doc** | Contains "API文档"、"API参考"、"docstring"、"Python API" keyword | `aet-generating-python-api` |
 | **PR/URL + Check** | Contains URL/PR link + "检查"/"审查"/"lint" keyword | `aet-checking-docs` |
 | **mdbook Reference** | Contains "book.toml"、"SUMMARY.md"、"mdbook" | `aet-building-doc-mdbook` |
+| **Path/URL + Q&A** | Contains file/folder path or repo URL + "问答"/"Q&A"/"FAQ"/"出题" keyword | `aet-generating-qa` |
+| **Path/URL + Wiki** | Contains file/folder path or repo URL + "wiki"/"知识库" keyword | `wiki-builder` |
 | **Path + Translate** | Contains file/folder path + "翻译" keyword | `aet-doc-translator` |
 
 ### Multi-Intent Detection
@@ -94,6 +98,8 @@ If intent cannot be identified (no matching keywords or patterns):
    - "文档翻译 / Document Translation"
    - "文档质量检查 / Doc Quality Check"
    - "mdbook 文档构建 / mdbook Doc Build"
+   - "问答对生成 / Q&A Generation"
+   - "wiki 知识库构建 / Wiki Knowledge Base"
    ```
 
 2. After user selection:
@@ -213,3 +219,21 @@ User input: `/aet-doc 构建 mdbook 文档`
 2. Target skill: `aet-building-doc-mdbook`
 3. Invoke skill: `Skill({ skill: "aet-building-doc-mdbook", args: "构建 mdbook 文档" })`
 4. **STOP** - Skill builds HTML documentation site from Markdown
+
+### Example 9: Q&A Generation (Special Pattern - Path/URL)
+
+User input: `/aet-doc 根据 owner/repo 生成问答`
+
+1. Detect intent: Q&A Generation (repo URL + "问答" keyword)
+2. Target skill: `aet-generating-qa`
+3. Invoke skill: `Skill({ skill: "aet-generating-qa", args: "根据 owner/repo 生成问答" })`
+4. **STOP** - Skill clones repo and generates Chinese Q&A pairs with source citations
+
+### Example 10: Wiki Knowledge Base (Special Pattern - Path/URL)
+
+User input: `/aet-doc 建个 wiki docs/`
+
+1. Detect intent: Wiki Knowledge Base (local path + "wiki" keyword)
+2. Target skill: `wiki-builder`
+3. Invoke skill: `Skill({ skill: "wiki-builder", args: "建个 wiki docs/" })`
+4. **STOP** - Skill ingests content and builds a queryable Wiki with cross-referenced pages
