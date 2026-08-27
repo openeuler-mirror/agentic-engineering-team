@@ -1,7 +1,7 @@
-# Auto-generated files
-node_modules/
-package-lock.json
+# Build dependencies & locks (dev-only for building revision.mjs)
+src/node_modules/
+src/package-lock.json
 
-# Temporary files
+# Temporary
 *.tmp
 *.bak
