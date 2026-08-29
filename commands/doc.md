@@ -1,5 +1,5 @@
 ---
-description: 文档生成统一入口 - 智能识别用户需求并路由到对应的文档生成 skill（README、用户手册、技术分析、幻灯片、信息图、实践案例、Python API 文档、文档翻译、文档质量检查、mdbook 文档构建）
+description: 文档生成统一入口 - 智能识别用户需求并路由到对应的文档生成 skill（README、用户手册、技术分析、幻灯片、信息图、实践案例、Python API 文档、文档翻译、文档质量检查、mdbook 文档构建、问答对生成、wiki 知识库构建）
 agent: aet-doc
 ---
 
@@ -18,6 +18,8 @@ The doc agent will analyze your intent and route to the appropriate document gen
 - **Document Translation**: Translate documents Chinese↔English (full / incremental / sync modes)
 - **Doc Quality Check**: Lint and review docs from HTML URL, PR link, or local folder path
 - **mdbook Doc Build**: Build browsable HTML documentation site from Markdown files using mdbook
+- **Q&A Generation**: Generate structured Chinese Q&A pairs from local files, repos, or remote Git URLs
+- **Wiki Knowledge Base**: Build a lightweight, queryable personal Wiki from any content
 
 **Usage Examples:**
 - `/aet-doc 生成 README` - Generate README documentation
@@ -32,5 +34,8 @@ The doc agent will analyze your intent and route to the appropriate document gen
 - `/aet-doc 翻译 docs/ 中译英` - Translate documents to English
 - `/aet-doc 检查文档质量 docs/` - Check doc quality from local folder
 - `/aet-doc 构建 mdbook 文档` - Build HTML docs from Markdown
+- `/aet-doc 生成问答 docs/` - Generate Q&A pairs from local folder
+- `/aet-doc 根据 owner/repo 生成问答` - Generate Q&A pairs from remote Git repo
+- `/aet-doc 建个 wiki docs/` - Build a Wiki from local folder
 
 Simply describe what document you want to generate, and the agent will route to the appropriate skill.
