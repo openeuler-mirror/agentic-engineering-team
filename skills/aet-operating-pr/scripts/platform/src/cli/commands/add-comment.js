@@ -31,11 +31,6 @@ class AddCommentCommand extends BaseCommand {
       const comment = await this.api.pullRequests.addComment(Number(prNumber), body);
       this.success(`Comment added; numericId=${comment.numericId}`, comment);
 
-      if (!this.options.quiet && !this.options.format) {
-        console.log(`✅ Comment numericId: ${comment.numericId}`);
-        console.log(`   (use 'pr-api delete-comment ${comment.numericId}' to remove)`);
-      }
-
       return comment;
     } catch (error) {
       this.error(`Failed to add comment to PR #${prNumber}`, error);
