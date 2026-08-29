@@ -227,6 +227,12 @@ let rootSessionID = null;
 // Hook Handling
 // ============================================
 
+function isAutomationMode(checkpointID) {
+  if (!checkpointID || !checkpointManager) return false;
+  const cp = checkpointManager.getCheckpoint(checkpointID);
+  return cp?.workflow?.automation === true;
+}
+
 async function triggerAfterHook(sessionID, stage, checkpointID) {
   if (!stage || !stage.after) {
     return;
@@ -236,10 +242,28 @@ async function triggerAfterHook(sessionID, stage, checkpointID) {
     // 自动推进到下一阶段
     const workflowName = checkpointManager.getCheckpoint(checkpointID)?.workflow.name;
     const stages = workflowEngine.getScenarioWorkflow(workflowName);
-    const currentIdx = stages.findIndex(s => (s.stage_id || s.agent_id) === stage.stage_id || stage.agent_id);
+    const currentIdx = stages.findIndex(s => (s.stage_id || s.agent_id) === (stage.stage_id || stage.agent_id));
     const nextStage = stages[currentIdx + 1];
     if (nextStage) {
       await executeStageHandover(nextStage, null, checkpointID);
+    }
+    return;
+  }
+
+  // Automation short-circuit: confirm === auto when automation mode.
+  // Skip the user-facing session.prompt call and advance directly.
+  if (stage.after === 'confirm' && isAutomationMode(checkpointID)) {
+    const workflowName = checkpointManager.getCheckpoint(checkpointID)?.workflow.name;
+    const stages = workflowEngine.getScenarioWorkflow(workflowName);
+    const currentIdx = stages.findIndex(s => (s.stage_id || s.agent_id) === (stage.stage_id || stage.agent_id));
+    const nextStage = stages[currentIdx + 1];
+    if (nextStage) {
+      await executeStageHandover(nextStage, null, checkpointID);
+    } else {
+      // Last stage: complete the checkpoint (the existing `auto` branch
+      // omits this case — automation must terminate cleanly when there
+      // is no next stage).
+      checkpointManager.completeCheckpoint(checkpointID);
     }
     return;
   }
@@ -282,6 +306,13 @@ async function triggerStepAfterHook(sessionID, agentId, agentConfig, checkpointI
   }
 
   if (stepConfig.after === 'auto') {
+    await advanceToNextStep(sessionID, agentId, agentConfig, checkpointID, stage, null);
+    return;
+  }
+
+  // Automation short-circuit: confirm === auto when automation mode.
+  // Skip the user-facing session.prompt call and advance directly.
+  if (stepConfig.after === 'confirm' && isAutomationMode(checkpointID)) {
     await advanceToNextStep(sessionID, agentId, agentConfig, checkpointID, stage, null);
     return;
   }
@@ -346,7 +377,8 @@ async function advanceToNextStep(sessionID, agentId, agentConfig, checkpointID, 
   const shouldClear = nextStepConfig.clear === true;
 
   // 检查 before hook
-  if (!nextStepConfig.before || nextStepConfig.before === 'auto') {
+  if (!nextStepConfig.before || nextStepConfig.before === 'auto' ||
+      (nextStepConfig.before === 'confirm' && isAutomationMode(checkpointID))) {
     if (shouldClear) {
       sendStepPromptWithNewSession(sessionID, agentId, checkpointID, stage, nextStepConfig);
     } else {
@@ -641,7 +673,14 @@ async function executeStageHandover(stage, context, checkpointID, promptForAgent
       checkpointManager.updateIndexEntry(checkpointID, checkpoint);
 
       // 检查 stage.before hook
-      if (stage.before) {
+      // Automation short-circuit: when automation mode is active, stage-level
+      // `before: 'confirm'` is downgraded to non-blocking — skip the
+      // confirm prompt and fall through to the "directly execute" path
+      // (line 705+). This mirrors triggerAfterHook / triggerStepAfterHook
+      // / advanceToNextStep confirm short-circuits; without it, automation
+      // mode would still call session.prompt with the confirm question,
+      // blocking the agent.
+      if (stage.before && !(stage.before === 'confirm' && isAutomationMode(checkpointID))) {
         const hookConfig = workflowEngine.getHookConfig(stage.before);
         if (hookConfig && hookConfig.options && hookConfig.options.length > 0) {
           const description = hookConfig.description || 'Please confirm';
@@ -697,6 +736,18 @@ const CHECKPOINT_COMMAND_AGENTS = {
 
 // command.execute.before 把命令会话记到这里，chat.message 首条消息时消费
 const pendingCheckpointCmd = new Map(); // sessionID -> { command, agentId, arguments }
+
+// command.execute.before 把「该命令映射到 automation scenario」标记记到这里，
+// experimental.chat.system.transform 消费。用于在 workflow_start 之前（即
+// currentCheckpointID 还没设置时）就注入 directive，覆盖 agent 的早期用户交互点
+// （如 Router 的 resume detection / Design 的 proactive checkpoint comparison）。
+const pendingAutomationDirective = new Map(); // sessionID -> boolean
+
+// Fallback: experimental.chat.system.transform 不一定在 input.sessionID 中传 sessionID
+// （OpenCode plugin SDK 没有文档化保证）。如果 input.sessionID 不可用，使用最近一次
+// command.execute.before 设置的 sessionID 作为 fallback。假设单 OpenCode 进程内会话
+// 串行执行（与现有 currentCheckpointID 模块变量的假设一致）。
+let lastAutomationSessionID = null;
 
 // 兼容 `aet:design` / `aet/design` / `aet-design` / `design` 等命名空间形式。
 // 安装脚本（install.sh）会把命令文件链接成 `aet-<name>.md`，因此实际命令名带 `aet-` 前缀，
@@ -939,6 +990,30 @@ export const aetPlugin = async ({ client, directory }) => {
           agentId,
           arguments: input.arguments || '',
         });
+        // Pre-check: does this command's agentId map to an automation-mode
+        // scenario? If yes, flag the session so experimental.chat.system.transform
+        // injects the directive BEFORE workflow_start (covers agent's early
+        // user-interaction points like Router's resume detection / Design's
+        // proactive checkpoint comparison that happen before any checkpoint exists).
+        //
+        // ALWAYS clear previous flag first — without this, switching from an
+        // automation-mode command (e.g. /aet-design) to a non-automation command
+        // (e.g. /aet-bugfix) in the same session would leave Signal 2 stuck at
+        // true, incorrectly injecting directive for the non-automation command.
+        try {
+          const scenarios = configManager?.getScenarios?.() || {};
+          const mapsToAutomation = Object.values(scenarios).some(sc =>
+            sc && sc.automation === true &&
+            Array.isArray(sc.workflow) &&
+            sc.workflow.length > 0 &&
+            (sc.workflow[0]?.agent_id === agentId || sc.workflow[0]?.stage_id === agentId)
+          );
+          pendingAutomationDirective.delete(input.sessionID);
+          if (mapsToAutomation) {
+            pendingAutomationDirective.set(input.sessionID, true);
+            lastAutomationSessionID = input.sessionID;
+          }
+        } catch { /* configManager not ready — skip */ }
       }
     },
 
@@ -1252,6 +1327,18 @@ export const aetPlugin = async ({ client, directory }) => {
 
           // 新建 session：scenario 起首阶段，或单 agent（调用方 agent 与目标不一致）
           const checkpointID = checkpointManager.createCheckpoint(name, desc);
+          // Persist `automation` flag on checkpoint at creation time. Per
+          // revised design (spec §2.4): config changes require restart to
+          // take effect, so reading automation once at workflow_start is
+          // sufficient — no need to query workflow.json on every hook
+          // trigger. The flag travels with the checkpoint through resume.
+          if (scenario?.automation === true) {
+            const initCp = checkpointManager.getCheckpoint(checkpointID);
+            if (initCp) {
+              initCp.workflow.automation = true;
+              checkpointManager.saveCheckpoint(initCp);
+            }
+          }
           currentCheckpointID = checkpointID;
           const stageToStart = isScenario ? firstStage : { agent_id: targetAgent, stage_id: targetAgent };
           await executeStageHandover(stageToStart, desc, checkpointID);
@@ -1574,26 +1661,65 @@ export const aetPlugin = async ({ client, directory }) => {
     },
 
     "experimental.chat.system.transform": async (input, output) => {
+      // Automation mode directive injection — INDEPENDENT of project-analysis
+      // channel. Must always run when an automation-mode checkpoint is active,
+      // regardless of whether project-analysis is enabled / present. Otherwise
+      // projects that disable project-analysis would never get the directive
+      // and the agent in automation mode would still call the question tool,
+      // blocking the workflow.
+      //
+      // Two signals:
+      //   1. Active checkpoint with workflow.automation === true (set at
+      //      workflow_start time by Option A persistence).
+      //   2. pendingAutomationDirective map — set by command.execute.before
+      //      when user invokes a command whose agentId is the first agent
+      //      of an automation-mode scenario. Covers the pre-workflow_start
+      //      window where agent does proactive checkpoint comparison / resume
+      //      detection and would otherwise ask user for confirmation.
+      {
+        let injectDirective = false;
+        // Signal 1: active automation checkpoint
+        const cp = currentCheckpointID ? checkpointManager.getCheckpoint(currentCheckpointID) : null;
+        if (cp?.workflow?.automation === true) {
+          injectDirective = true;
+        }
+        // Signal 2: pending command maps to automation scenario
+        // experimental.chat.system.transform fires per chat; input.sessionID
+        // is the current chat session. Fallback to lastAutomationSessionID
+        // (set by command.execute.before) if input.sessionID is unavailable.
+        const directiveSessionID = input?.sessionID || lastAutomationSessionID;
+        if (!injectDirective && directiveSessionID && pendingAutomationDirective.get(directiveSessionID)) {
+          injectDirective = true;
+        }
+        if (injectDirective) {
+          output.system.push(
+            `<aet-run-mode>automation</aet-run-mode>
+<aet-run-mode-directive>
+本会话处于自动化模式。禁止调用 question 工具向用户提问。
+- 凡需用户决策处：选 SKILL.md 或 Agent prompt 中已声明的推荐项；若无明确推荐项，结合上下文（需求描述 / 代码库 / 已有交付物）推断最合理选项，并在交付物末尾「## 自动化决策记录」节追加一行：- 决策点：<交互点名称> | 推断选项：<选项> | 推断依据：<依据摘要>
+- 凡标注为可选 review 的阶段（如 [S3] / [A4]）：仅运行一轮 review 循环（aet-req-review 的 A1→A2 一次），跳过 aet-req-user-review 阶段（A3，需要用户手动修订）与复审循环（A4）；A2 auto-fix 的决策记入「## 自动化决策记录」
+- Agent 层用户交互点（如 Router 的 resume detection / workflow confirmation / unclear intent；Doc / Release 的用户选择点）：同样禁止调 question 工具，agent 基于自身判断直接推进，无需用户确认
+- 不影响必经的验证类门禁（lint / test / build）：仍需全部通过
+</aet-run-mode-directive>`
+          );
+        }
+      }
+
+      // Project-analysis injection (orthogonal to automation mode —
+      // gated by its own enable flag and folder presence).
       const config = configManager.config;
-      
       const enabled = config.projectAnalysis?.enabled !== false;
-      
       if (!enabled) {
         return;
       }
-      
       const hasProjectAnalysis = detectProjectAnalysisFolder(pluginDirectory);
-      
       if (!hasProjectAnalysis) {
         return;
       }
-      
       const projectAnalysisContent = formatProjectAnalysis(pluginDirectory);
-      
       if (!projectAnalysisContent) {
         return;
       }
-      
       output.system.push(projectAnalysisContent);
     },
   };

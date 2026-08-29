@@ -143,3 +143,16 @@ Traverse the diffs item by item and confirm the change location:
 | Cleanup failed           | Logged to `.logs/`, reported in output     |
 | Lock conflict            | Fail with message, release on exit         |
 | Missing snapshot (A2/A3) | Fail immediately, instruct to run A1 first |
+
+<patch>
+
+- **Automation Mode Abort**: IF the system prompt contains `<aet-run-mode>automation</aet-run-mode>`:
+  - This skill is fundamentally user-interactive (uses question tool to present revision
+    interface / wait for user edits) and CANNOT run in automation mode.
+  - Refuse to execute and respond with:
+    "automation mode active — this skill requires user interaction and cannot proceed.
+    Caller should skip this skill in automation scenarios."
+  - Do NOT perform any side-effect operations (no snapshot creation, no session hash
+    allocation, no file locks).
+
+</patch>

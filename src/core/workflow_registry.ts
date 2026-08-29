@@ -82,6 +82,19 @@ export interface WorkflowDefinition {
    * accepts a single string, not a YAML list.
    */
   'argument-hint'?: string[];
+  /**
+   * Automation mode switch. When true:
+   *   - The engine treats step-bound `hook.prompt` events as NON-BLOCKING
+   *     (still surfaces the text as a context note via `prompt.inject`,
+   *     but does not defer the step transition).
+   *   - The engine auto-emits a `prompt.inject_system` event carrying the
+   *     `<aet-run-mode>automation</aet-run-mode>` directive on every
+   *     handover / continue boundary of this workflow.
+   *   - `CommandData.automation` is populated so plugins can react
+   *     (e.g. suppress host-level confirm prompts).
+   * Default false = existing interactive behavior.
+   */
+  automation?: boolean;
 }
 
 /**

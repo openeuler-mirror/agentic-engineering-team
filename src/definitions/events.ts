@@ -562,6 +562,16 @@ export interface CommandData {
    * other status — only `list` populates it.
    */
   commands?: Array<{ id: string; name: string; description: string }>;
+  /**
+   * Automation mode flag for the active workflow (mirrors
+   * WorkflowDefinition.automation). Populated on every `step_advanced` /
+   * `step_resumed` / `hook_pending` / `workflow_complete` result so
+   * plugins can react consistently (e.g. suppress stop-guard question
+   * guidance, render an "automation" badge). Undefined / false on
+   * `workflow_started` (the workflow's automation flag is read on the
+   * first handover, not at init). False is the default interactive mode.
+   */
+  automation?: boolean;
 }
 
 /**

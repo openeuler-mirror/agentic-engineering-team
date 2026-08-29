@@ -197,6 +197,8 @@ Agent 通过 `agents/index.js` 注册表统一管理：
 }
 ```
 
+scenario 顶层可声明 `"automation": true` 启用自动化模式，所有 `confirm` hook 自动短路为 `auto` 行为，agent 不调 `question` 工具。详见 [工作流配置 § 自动化模式](./workflow.md#自动化模式-automation-mode)。
+
 更多详情请参阅 [工作流配置](./workflow.md)。
 
 ## Agent 协作示例

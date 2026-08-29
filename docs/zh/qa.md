@@ -55,9 +55,9 @@ AET 主运行平台为 **OpenCode**，通过插件 `.opencode/plugins/aet.js` �
 
 ### Q6. AET 工作流中的 Scenario、Workflow、Hook、Step、Task 分别指什么？
 
-- **Scenario（场景）** — 不同类型的开发流程，如 `feature`（功能开发）、`bugfix`（Bug 修复）、`release`（版本发布）。
+- **Scenario（场景）** — 不同类型的开发流程，如 `feature`（功能开发）、`bugfix`（Bug 修复）、`release`（版本发布）。scenario 可声明 `automation: true` 启用无人值守模式。
 - **Workflow（工作流）** — Agent 之间的协作流程定义，由多个 Agent 顺序执行，每个 Agent 前后可配置 Hook。
-- **Hook（钩子）** — 控制 Agent 执行流程的机制。`auto` 自动进入下一阶段，`confirm` 需要用户确认。
+- **Hook（钩子）** — 控制 Agent 执行流程的机制。`auto` 自动进入下一阶段，`confirm` 需要用户确认。`automation: true` 模式下 `confirm` 自动短路为 `auto` 行为。
 - **Step（步骤）** — Agent 内部的细粒度工作单元。每个 Agent 可包含多个 Step。
 - **Task（任务）** — 实现计划中的细粒度开发工作任务。
 
@@ -513,6 +513,8 @@ Aet-Implement 对每个任务执行 TDD 循环：编写失败测试 → 验证�
 | 实现完成 | 提示用户使用 `/aet-pr` 提交 PR |
 
 典型用户介入场景：
+
+> **Automation 模式抑制**：当 scenario 配置 `"automation": true` 时，以上 5 个确认点全部被引擎自动短路为 `auto` 行为，agent 不调 `question` 工具，基于自身判断推进。Directive `<aet-run-mode>automation</aet-run-mode>` 注入到 system prompt 后，SKILL.md 和 Agent prompt 据此切换行为。详见 [workflow.md § 自动化模式](workflow.md#自动化模式-automation-mode)。验证类门禁（lint / test / build）不受 automation 影响，仍必经。
 
 - 新任务开始 — 用户等待
 - 设计阶段 — 评审时确认

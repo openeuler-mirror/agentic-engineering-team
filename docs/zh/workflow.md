@@ -88,6 +88,14 @@ AET 支持灵活的工作流配置，允许用户自定义 Agent 执行顺序、
 | `before` | 该阶段执行前的钩子（可为 `null`） |
 | `after` | 该阶段执行后的钩子（可为 `null` 或 hook 名称） |
 
+#### 场景级字段
+
+除 `workflow` 外，scenario 还支持以下可选顶层字段：
+
+| 字段 | 类型 | 默认值 | 说明 |
+| :--- | :--- | :--- | :--- |
+| `automation` | boolean | `false` | 是否启用自动化模式。`true` 时整个场景进入无人值守模式——所有 `confirm` hook 自动短路为 `auto` 行为，引擎在每次 chat 启动注入 `<aet-run-mode>automation</aet-run-mode>` directive，SKILL.md / Agent prompt 据此禁用 `question` 工具调用，agent 自动选推荐项推进。详见 [自动化模式](#自动化模式-automation-mode) |
+
 ### 钩子配置
 
 钩子控制 Agent 执行流程中的用户交互行为，支持两种类型：
@@ -227,15 +235,19 @@ AET 支持灵活的工作流配置，允许用户自定义 Agent 执行顺序、
 
 AET 预置了以下场景：
 
-| 场景 ID | 名称 | 说明 |
-| :--- | :--- | :--- |
-| `feature` | 功能开发流程 | 从设计到实现、验证、PR 提交提示的完整流程 |
-| `bugfix` | Bug 修复流程 | 从问题诊断到修复、验证、PR 提交提示的流程 |
-| `design-refine` | 需求变更流程 | 基于已有设计文档进行需求变更和迭代 |
-| `config-setup` | 配置初始化流程 | 项目配置初始化 |
-| `project-analysis` | 项目分析流程 | 分析项目架构和模块依赖 |
-| `release` | 发布管理流程 | 版本发布和 Release Notes 生成 |
-| `aet-prd` | PRD 生成流程 | 6 阶段 PRD 生成 |
+| 场景 ID | 名称 | 说明 | 可启用 automation |
+| :--- | :--- | :--- | :--- |
+| `feature` | 功能开发流程 | 从设计到实现、验证、PR 提交提示的完整流程 | ✅ 适合 CI/CD |
+| `bugfix` | Bug 修复流程 | 从问题诊断到修复、验证、PR 提交提示的流程 | ✅ |
+| `design-refine` | 需求变更流程 | 基于已有设计文档进行需求变更和迭代 | ⚠ 需求变更建议保留人工确认 |
+| `config-setup` | 配置初始化流程 | 项目配置初始化 | ❌ 一次性配置，无自动化价值 |
+| `project-analysis` | 项目分析流程 | 分析项目架构和模块依赖 | ✅ |
+| `release` | 发布管理流程 | 版本发布和 Release Notes 生成 | ✅ |
+| `design` | 设计阶段流程 | 需求澄清、架构设计的完整设计流程 | ✅ |
+| `doc` | 文档生成流程 | README / 手册 / 幻灯片等信息图生成 | ✅ |
+| `implement` | 实现阶段流程 | 基于已有设计直接进入编码与验证 | ✅ |
+
+> **Note**：内置场景默认不声明 `automation` 字段（即 `automation: false`，交互式）。用户可在 `~/.aet/templates/workflow.json` 或项目级 `.aet/templates/workflow.json` / `.aet/config.json` 中为对应 scenario 添加 `"automation": true` 启用自动化模式。详见 [自动化模式](#自动化模式-automation-mode)。
 
 ## 使用示例
 
@@ -257,6 +269,78 @@ AET 预置了以下场景：
   }
 }
 ```
+
+> **Note**：`after: "auto"` 只控制 stage / step 之间的转换，**不抑制 skill 内部的用户交互**（如苏格拉底对话、可选 review 询问）。如需让 agent 在 skill 执行过程中也不调 `question` 工具，请使用 [自动化模式](#自动化模式-automation-mode)。
+
+### 自动化模式 (Automation Mode)
+
+针对 CI/CD、批量任务等**无人值守**场景，AET 提供 scenario 级 `automation: true` 开关。启用后：
+
+- **引擎层**：所有 `confirm` hook 自动短路为 `auto` 行为（`triggerAfterHook` / `triggerStepAfterHook` / `advanceToNextStep` / `executeStageHandover` 四处）
+- **Directive 注入**：引擎在每次 chat 启动时向 system prompt 注入 `<aet-run-mode>automation</aet-run-mode>` directive，覆盖：
+  - **Skill 层**：`aet-req-analysis` / `aet-req-design` / `aet-req-dev-plan` / `aet-req-refine` 的 `<patch>` 规则识别此 directive，禁止调 `question` 工具，自动选推荐项 + 在交付物末尾追加 `## 自动化决策记录` 节
+  - **Agent 层**：Router / Design / Implement / Bugfix / Doc / Release / Test / General 8 个 agent 的 prompt 顶部 "Automation Mode Handling" 段识别此 directive，跳过 resume detection / workflow confirmation / unclear intent 等用户交互点
+- **不影响**：必经的验证类门禁（lint / test / build）仍全部执行，失败则 agent 自动 fix → rerun
+
+**配置示例**：
+
+```json
+{
+  "scenarios": {
+    "feature-auto": {
+      "name": "功能开发自动化流程",
+      "description": "CI/CD 场景：从设计到实现全自动，跳过所有用户交互",
+      "automation": true,
+      "workflow": [
+        { "agent_id": "aet-design", "before": null, "after": "confirm" },
+        { "agent_id": "aet-implement", "before": null, "after": null }
+      ]
+    },
+    "feature": {
+      "name": "功能开发流程（交互式）",
+      "description": "保留所有 confirm hook 与 skill 内 Socratic 对话",
+      "workflow": [
+        { "agent_id": "aet-design", "before": null, "after": "confirm" },
+        { "agent_id": "aet-implement", "before": null, "after": null }
+      ]
+    }
+  }
+}
+```
+
+同一项目可定义两个 scenario（`feature` + `feature-auto`）分别支持交互式与自动化执行。
+
+**与 `after: "auto"` 的区别**：
+
+| 维度 | `after: "auto"` | `automation: true` |
+| :--- | :--- | :--- |
+| 控制范围 | stage / step 之间的转换 | 整个 scenario 的所有用户交互点 |
+| Skill 内 Socratic 对话 | 不抑制（仍调 `question` 工具） | 抑制（agent 选推荐项推进） |
+| Agent 层 resume detection | 不抑制 | 抑制 |
+| Agent 层 workflow confirmation | 不抑制 | 抑制 |
+| 验证类门禁 | 不影响 | 不影响 |
+| 配置粒度 | 每 stage / step | 每 scenario |
+
+**automation 字段的设计原则**：
+
+1. `automation` 仅在 scenario 级别，不下沉到 stage / step
+2. `automation` 在 `workflow_start` 时持久化到 checkpoint（`workflow.automation = true`）；resume 后从 checkpoint 读，不重读 workflow.json（配置变更需重启 OpenCode 才生效）
+3. `automation` 全靠用户手工写入，不修改 `aet-setup-config`
+4. 不引入新 schema 校验器（缺省/类型错乱按 `false` 处理）
+5. 验证类门禁（lint / test / build）不受 automation 影响，仍必经
+
+**适用场景**：
+
+- CI/CD 流水线中的自动开发任务
+- 批量处理多个 Issue 的自动化开发
+- 离线环境的无人值守开发任务
+- 用户希望"提交需求后立即产出 PR"的快速迭代场景
+
+**不适用场景**：
+
+- 需要人工评审设计文档的关键决策点
+- 需求模糊、需要 Socratic 对话澄清的场景
+- 涉及安全/合规需要人工确认的场景
 
 ### 增加确认点
 
