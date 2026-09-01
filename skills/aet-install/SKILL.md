@@ -36,9 +36,21 @@ allowed-tools: Execute(scripts/*) Bash(node:scripts/install.cjs)
    - 每次运行都会把 `<本 skill 目录>/runtime/` 同步到 `~/.aet/`
      （runtime-meta.json 中的 whitelist 决定覆盖策略：白名单内已存在 → 保留，
      缺失 → 补充；名单外 → 覆盖）
+   - （可选）安装知识图谱工具 graphify 到 `~/.aet/venv`：先按
+     venv → `graphify` 命令 → 系统 python 模块 顺序检测是否已装；
+     都没装则用 `python3 -m venv` 创建 venv 并 `pip install graphifyy`
+     （pip 包名是 `graphifyy`，模块名是 `graphify`）。
+     此步是**非阻塞**的——python3 缺失 / 网络失败 / 依赖失败时脚本**仍正常退出 0**，
+     并打印 `graphify NOT installed: <reason>` 行，**不**阻断主安装。
 
 3. **报告脚本输出**：脚本成功打印 `AET runtime synced ...`。若脚本报错
-   （Node/npm 缺失、安装失败），把错误原样反馈给用户并停止。
+   （Node/npm 缺失、CLI 安装失败），把错误原样反馈给用户并停止。
+
+   脚本末尾会打印一行 graphify 状态作为收尾：
+   - 成功 → `graphify already installed ...; skipping.` / `graphify installed into ~/.aet/venv.`
+   - 失败 → `graphify NOT installed: <reason>.`
+   **graphify 失败不算脚本报错**——不要停止，继续执行后续步骤；在最终完成时
+   （步骤 6）如实告知用户即可。
 
 4. **初始化插件**：脚本成功后，运行：
    ```bash
@@ -67,6 +79,12 @@ allowed-tools: Execute(scripts/*) Bash(node:scripts/install.cjs)
    `~/.aet/config.json`。
 
 6. **完成**：打印 `AET enabled.` 并结束，不要做额外动作。
+
+   若步骤 2 的脚本报告 graphify 未装上（输出含 `graphify NOT installed`），
+   在完成消息中**如实告知**用户：知识图谱工具 graphify 未安装（<reason>），
+   相关功能暂不可用；可后续手动安装：
+   `python3 -m venv ~/.aet/venv && ~/.aet/venv/bin/pip install graphifyy`。
+   但**不要**因此阻塞或停止安装流程——AET 核心功能已就绪。
 
 > 注意：脚本路径中的 `<本 skill 目录>` 即本 skill 所在目录，运行时以脚本实际
 > 所在位置为准（`scripts/install.cjs` 通过相对路径自动定位 `../runtime` 与

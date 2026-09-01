@@ -200,6 +200,18 @@ function main(): void {
   //    No marker file and no CLI-version gating (the CLI is always latest after
   //    step 3, so gating on it would be circular).
   syncRuntime(runtimeDir);
+
+  // 5. Optional graphify install — NON-FATAL. Mirrors the legacy
+  //    install_knowledge_graph() from scripts/install.sh: creates a venv at
+  //    ~/.aet/venv and pip-installs graphifyy (pip package name has an extra
+  //    'y'; the importable module is `graphify`). Failures — no python3,
+  //    network error, dependency error — are captured and surfaced as a clear
+  //    status line but NEVER abort /init. graphify is an optional knowledge-
+  //    graph tool, not a blocker for the AET runtime; the new src/ plugin
+  //    installer reaches feature parity with the old scripts/install.sh here.
+  //    The agent relays the final status line verbatim so the user knows the
+  //    knowledge-graph feature's availability.
+  installGraphify();
 }
 
 /**
@@ -325,6 +337,142 @@ function syncRuntime(runtimeDir: string): void {
   console.log(`[aet:ensure] syncing AET runtime → ${aetDir} ...`);
   const { copied, kept } = syncRuntimeTree(runtimeDir, aetDir, whitelist);
   console.log(`[aet:ensure] AET runtime synced to ${aetDir}; ${copied} copied, ${kept} preserved.`);
+}
+
+// ---------------------------------------------------------------------------
+// Optional graphify install — NON-FATAL
+// ---------------------------------------------------------------------------
+
+/**
+ * Result of the optional graphify install step. `failed` is NEVER fatal to
+ * /init — the reason is surfaced so the user knows the knowledge-graph feature
+ * is unavailable, but the rest of the install (CLI + runtime) still completes
+ * normally and the script exits 0.
+ */
+interface GraphifyResult {
+  /** 'ready' = already installed; 'installed' = newly installed; 'failed' = could not install. */
+  status: 'ready' | 'installed' | 'failed';
+  /** Present when status === 'failed'; a short human-readable reason. */
+  reason?: string;
+}
+
+/**
+ * Install the knowledge-graph tool `graphify` into a dedicated venv at
+ * `~/.aet/venv`. The pip PACKAGE name is `graphifyy` (extra 'y') but the
+ * importable MODULE name is `graphify` — this mismatch is intentional on the
+ * upstream package, so we install `graphifyy` and verify `import graphify`.
+ *
+ * This step MIRRORS the legacy `install_knowledge_graph()` from
+ * scripts/install.sh (the old shell-based installer), ported to the new TS
+ * bootstrap so the new plugin installer (src/) reaches feature parity with
+ * the old scripts/install.sh. The old installer called it as a non-blocking
+ * step inside its main flow; this function preserves that contract: it
+ * returns a result and NEVER calls `fail()` / `process.exit`.
+ *
+ * Detection order (each short-circuits to `ready` if it succeeds):
+ *   1. `~/.aet/venv/bin/python3 -c "import graphify"` (prior venv install)
+ *   2. `graphify` command resolvable on PATH (a global install elsewhere)
+ *   3. `python3 -c "import graphify"` (system python has the module)
+ *
+ * If none match, install: create the venv (idempotent — skip if its python3
+ * already exists from a prior run), `pip install graphifyy`, verify
+ * `import graphify`. Every failure path captures a short reason and returns
+ * `{status:'failed'}`; `main()` lets the verdict line stand as the final
+ * output so the agent relays it verbatim. The script's exit code stays 0 —
+ * graphify is OPTIONAL, not a blocker.
+ *
+ * Cross-platform: uses the same cross-spawn-backed `run()` helper as the CLI
+ * install, so `python3` / `pip` resolve correctly on Windows (.cmd shims).
+ */
+function installGraphify(): GraphifyResult {
+  const aetDir = globalAetDir();
+  const venvDir = join(aetDir, 'venv');
+  const venvPython = join(venvDir, 'bin', 'python3');
+  const venvPip = join(venvDir, 'bin', 'pip');
+
+  // 1. Detection — short-circuit if graphify is already available anywhere.
+  //    The venv is the canonical AET install location, so check it first.
+  if (existsSync(venvPython)) {
+    const venvCheck = run(venvPython, ['-c', 'import graphify']);
+    if (venvCheck.status === 0) {
+      console.log('[aet:ensure] graphify already installed (~/.aet/venv); skipping.');
+      return { status: 'ready' };
+    }
+  }
+  // A `graphify` command on PATH counts as installed (matches `command -v
+  // graphify` in the legacy script). `run` sets `error` only when the binary
+  // cannot be resolved (ENOENT); a non-zero exit still means "present".
+  const cmdCheck = run('graphify', ['--version']);
+  if (!cmdCheck.error) {
+    console.log('[aet:ensure] graphify already on PATH; skipping.');
+    return { status: 'ready' };
+  }
+  // System python3 with the module importable counts too.
+  const pyProbe = run('python3', ['--version']);
+  if (!pyProbe.error && pyProbe.status === 0) {
+    const sysCheck = run('python3', ['-c', 'import graphify']);
+    if (sysCheck.status === 0) {
+      console.log('[aet:ensure] graphify already installed (system python3); skipping.');
+      return { status: 'ready' };
+    }
+  }
+
+  // 2. Need to install. python3 is a hard prerequisite for venv creation.
+  //    "not available" covers both absent-on-PATH and present-but-broken.
+  if (pyProbe.error || pyProbe.status !== 0) {
+    const reason = 'python3 not available on PATH (graphify requires Python 3)';
+    console.log(`[aet:ensure] graphify NOT installed: ${reason}.`);
+    return { status: 'failed', reason };
+  }
+
+  // 3. Create the venv (idempotent: skip if venv python3 already exists from a
+  //    prior run, even if that run's pip install failed midway — we just retry
+  //    pip). This avoids re-running `python3 -m venv` on every /init.
+  if (!existsSync(venvPython)) {
+    console.log('[aet:ensure] creating venv for graphify (~/.aet/venv)...');
+    const venvCreate = run('python3', ['-m', 'venv', venvDir]);
+    if (venvCreate.status !== 0) {
+      const reason = `venv creation failed (${venvCreate.stderr || venvCreate.error || 'unknown error'})`;
+      console.log(`[aet:ensure] graphify NOT installed: ${reason}.`);
+      return { status: 'failed', reason };
+    }
+  }
+  if (!existsSync(venvPip)) {
+    const reason = `venv pip missing at ${venvPip} (venv may be incomplete; remove ~/.aet/venv and re-run /init)`;
+    console.log(`[aet:ensure] graphify NOT installed: ${reason}.`);
+    return { status: 'failed', reason };
+  }
+
+  // 4. pip install graphifyy. PIP_NO_INPUT / --no-input prevent any interactive
+  //    prompt (the bootstrap runs headless — a prompt would hang forever). A
+  //    timeout guards against network hangs; a timed-out install is reported as
+  //    a failure rather than blocking /init indefinitely.
+  console.log('[aet:ensure] installing graphifyy into ~/.aet/venv (network required)...');
+  const install = run(venvPip, ['install', '--no-input', 'graphifyy'], {
+    env: { ...process.env, PIP_NO_INPUT: '1', PIP_DISABLE_PIP_VERSION_CHECK: '1' },
+    timeout: 5 * 60 * 1000, // 5 min ceiling for the network install
+  });
+  if (install.status !== 0) {
+    const detail = install.error
+      ? install.error
+      : (install.stderr || 'network/dependency error or timeout');
+    const reason = `pip install graphifyy failed (${detail})`;
+    console.log(`[aet:ensure] graphify NOT installed: ${reason}.`);
+    return { status: 'failed', reason };
+  }
+
+  // 5. Verify the module imports — graphifyy is the package, graphify is the
+  //    module; a successful pip install doesn't guarantee the import works
+  //    (e.g. a broken wheel), so verify before declaring success.
+  const verify = run(venvPython, ['-c', 'import graphify']);
+  if (verify.status !== 0) {
+    const reason = `graphifyy installed but \`import graphify\` failed (${verify.stderr || verify.error || 'unknown'})`;
+    console.log(`[aet:ensure] graphify NOT installed: ${reason}.`);
+    return { status: 'failed', reason };
+  }
+
+  console.log('[aet:ensure] graphify installed into ~/.aet/venv.');
+  return { status: 'installed' };
 }
 
 main();
