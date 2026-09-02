@@ -11,7 +11,7 @@ AET (Agentic Engineering Team) 全流程 AI 辅助研发底座/引擎，人与 A
 | [quick-start.md](./quick-start.md) | 5分钟快速上手 — 从安装到执行第一个任务 | 新生成 |
 | [installation.md](./installation.md) | 安装指南 — 系统要求、安装方法、配置初始化 | 新生成 |
 | [architecture.md](./architecture.md) | 架构设计 — Agent 协作流程、核心概念、技术特性 | 已更新 |
-| [commands.md](./commands.md) | 命令参考 — 全部 9 个命令使用说明，doc 支持 12 种文档类型 | 已更新 |
+| [commands.md](./commands.md) | 命令参考 — 全部 9 个命令使用说明，doc 支持 13 种文档类型 | 已更新 |
 | [agent.md](./agent.md) | Agent 说明 — 预置 Agent、职责说明、配置方式 | 已更新 |
 | [skill.md](./skill.md) | Skill 说明 — Skill 层级、预置 Skill、开发自定义 Skill | 已更新 |
 | [module-dependency-protection.md](./module-dependency-protection.md) | 模块依赖保护 — 围栏机制、配置与突破流程 | 已有 |

@@ -82,7 +82,7 @@ Agent 是 AET 中专门负责特定开发阶段的 AI 智能体，通过多 Agen
 | **Aet-Implement** | 实现智能体，开发计划 (DPS)、TDD 驱动开发、代码实现、功能验证 |
 | **Aet-Test** | 测试智能体（待扩展），集成测试、性能测试 |
 | **Aet-Bugfix** | 修复智能体，Bug 诊断、修复规划 |
-| **Aet-Doc** | 文档生成，README、用户手册、技术分析、幻灯片、信息图、实践案例、Python API 文档、文档翻译、文档质量检查、mdbook 文档构建、问答对生成、wiki 知识库构建 |
+| **Aet-Doc** | 文档生成，README、用户手册、技术分析、幻灯片、信息图、实践案例、Python API 文档、文档翻译、文档质量检查、mdbook 文档构建、问答对生成、wiki 知识库构建、GIF 动图生成 |
 | **Aet-Release** | Release 管理，版本发布、Release Notes 生成 |
 
 ### Skill 层

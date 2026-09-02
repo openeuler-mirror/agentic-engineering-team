@@ -41,6 +41,7 @@ Analyze the user's input to determine their intent:
 | **mdbook Build** | 构建文档、生成HTML文档、编译文档、mdbook、book.toml、SUMMARY.md | build docs、mdbook、book.toml、SUMMARY.md | `aet-building-doc-mdbook` |
 | **Q&A Generation** | 生成问答、问答对、Q&A、FAQ、出题、知识库问答、RAG问答 | generate Q&A、build FAQ、extract Q&A、question answer pairs | `aet-generating-qa` |
 | **Wiki Knowledge Base** | 建wiki、建个wiki、做个wiki、做个知识库、整理成wiki、生成wiki、变成wiki、知识库 | build wiki、create wiki、knowledge base、organize into wiki | `wiki-builder` |
+| **GIF Animation** | GIF、动图、生成GIF、动图生成、抽帧、抽取帧、GIF抽帧、图片转GIF、图片拼接GIF、视频转GIF、GIF裁剪 | GIF、generate GIF、extract frames、images to gif、video to gif、gif crop、animation | `aet-generating-gif` |
 
 ### Special Input Patterns
 
@@ -57,6 +58,7 @@ Analyze the user's input to determine their intent:
 | **Path/URL + Q&A** | Contains file/folder path or repo URL + "问答"/"Q&A"/"FAQ"/"出题" keyword | `aet-generating-qa` |
 | **Path/URL + Wiki** | Contains file/folder path or repo URL + "wiki"/"知识库" keyword | `wiki-builder` |
 | **Path + Translate** | Contains file/folder path + "翻译" keyword | `aet-doc-translator` |
+| **GIF Generation** | Contains image/video/.gif file path + "GIF"/"动图"/"生成GIF"/"转GIF"/"抽帧"/"裁剪" keyword | `aet-generating-gif` |
 
 ### Multi-Intent Detection
 
@@ -107,11 +109,14 @@ If intent cannot be identified (no matching keywords or patterns):
    - "技术分析 / Technical Analysis"
    - "实践案例 / Practice Case"
    - "Python API 文档 / Python API Documentation"
+   - "HTML 幻灯片 / HTML Slides"
+   - "技术信息图 / Tech Infographic"
+   - "GIF 动图生成 / GIF Animation"
+   - "问答对生成 / Q&A Generation"
+   - "wiki 知识库构建 / Wiki Knowledge Base"
    - "文档翻译 / Document Translation"
    - "文档质量检查 / Doc Quality Check"
    - "mdbook 文档构建 / mdbook Doc Build"
-   - "问答对生成 / Q&A Generation"
-   - "wiki 知识库构建 / Wiki Knowledge Base"
    ```
 
 2. After user selection:
@@ -249,3 +254,12 @@ User input: `/aet-doc 建个 wiki docs/`
 2. Target skill: `wiki-builder`
 3. Invoke skill: `Skill({ skill: "wiki-builder", args: "建个 wiki docs/" })`
 4. **STOP** - Skill ingests content and builds a queryable Wiki with cross-referenced pages
+
+### Example 11: GIF Animation Generation (Images to GIF)
+
+User input: `/aet-doc 用 frame1.png frame2.png frame3.png 生成 GIF`
+
+1. Detect intent: GIF Animation (image file paths + "GIF"/"生成GIF" keyword)
+2. Target skill: `aet-generating-gif`
+3. Invoke skill: `Skill({ skill: "aet-generating-gif", args: "用 frame1.png frame2.png frame3.png 生成 GIF" })`
+4. **STOP** - Skill stitches images into a GIF (supports subtitles, fps, resize); also handles video→GIF, frame extraction, and cropping

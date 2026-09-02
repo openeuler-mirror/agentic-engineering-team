@@ -127,18 +127,23 @@ AET 自动完成以下流程：
 ### 生成文档
 
 ```bash
+# 文档撰写
 /aet-doc 生成 README         # 生成 README 文档
 /aet-doc 生成用户手册         # 生成用户手册
 /aet-doc 生成技术分析         # 生成技术分析文档
-/aet-doc 生成幻灯片          # 生成 HTML 幻灯片
-/aet-doc 生成信息图          # 生成技术信息图
 /aet-doc 生成实践案例        # 生成实践案例/教程
 /aet-doc 生成 Python API 文档  # 生成 API 文档/docstring
+# 可视化与媒体
+/aet-doc 生成幻灯片          # 生成 HTML 幻灯片
+/aet-doc 生成信息图          # 生成技术信息图
+/aet-doc 生成 GIF <图片/视频路径>  # 生成 GIF（图片拼接/视频转换/抽帧/裁剪）
+# 知识库与问答
+/aet-doc 生成问答 docs/        # 生成问答对/Q&A/FAQ
+/aet-doc 建个 wiki docs/        # 构建可查询的 Wiki 知识库
+# 文档工程
 /aet-doc 翻译 docs/            # 文档翻译（中译英等）
 /aet-doc 检查文档质量 docs/     # 文档质量检查
 /aet-doc 构建 mdbook 文档      # 从 Markdown 构建 HTML 文档
-/aet-doc 生成问答 docs/        # 生成问答对/Q&A/FAQ
-/aet-doc 建个 wiki docs/        # 构建可查询的 Wiki 知识库
 ```
 
 ---
@@ -187,7 +192,7 @@ AET 采用四层分层架构，依赖方向严格自上而下：
 | `/aet-pr` | PR 管理（创建、更新、查询） | 是 |
 | `/aet-issue` | Issue 管理（创建、认领、查询） | 是 |
 | `/aet-release` | Release 管理（创建、删除、列出、查询） | 是 |
-| `/aet-doc` | 文档生成（README、用户手册、技术分析、幻灯片、信息图、实践案例、Python API 文档、翻译、质量检查、mdbook 构建、问答对生成、wiki 知识库构建） | 否 |
+| `/aet-doc` | 文档生成（README/手册/技术分析/实践案例/API 文档、幻灯片/信息图/GIF、问答/wiki、mdbook/翻译/质量检查） | 否 |
 | `/aet-design` | 直接进入设计智能体 | 否 |
 | `/aet-implement` | 直接进入实现智能体 | 否 |
 
@@ -256,7 +261,7 @@ AET 采用四层分层架构，依赖方向严格自上而下：
 │   ├── implement/          # Aet-Implement：DPS（dev-plan）+ TDD + 编码 + 验证
 │   ├── test/               # Aet-Test：集成测试（扩展中）
 │   ├── bugfix/             # Aet-Bugfix：诊断与修复规划
-│   ├── doc/                # Aet-Doc：README、手册、技术分析、API 文档、翻译、检查、mdbook 构建、问答对生成、wiki 知识库构建
+│   ├── doc/                # Aet-Doc：README/手册/技术分析/实践案例/API 文档、幻灯片/信息图/GIF 动图、问答/wiki、mdbook 构建/翻译/检查
 │   ├── general/            # Aet-General：通用任务处理
 │   └── release/            # Aet-Release：版本管理
 ├── skills/                  # SKILL.md 定义
