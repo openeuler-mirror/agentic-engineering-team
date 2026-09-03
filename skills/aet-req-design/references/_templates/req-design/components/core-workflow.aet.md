@@ -1,16 +1,16 @@
 ---
 heading_level: 2
 checklist: |
-**核心流程**
+  **核心流程**
 
-1. 流程图选择是否合理 (WARNING)
-   - 根据设计需要选择合适的图表类型：sequenceDiagram、stateDiagram-v2、flowchart
+  1. 流程图选择是否合理 (WARNING)
+     - 根据设计需要选择合适的图表类型：sequenceDiagram、stateDiagram-v2、flowchart
 
-2. 流程图是否有实际设计价值 (WARNING)
-   - 无价值图标不应检出
+  2. 流程图是否有实际设计价值 (WARNING)
+     - 无价值图标不应检出
 
-3. 图表语法是否正确 (WARNING)
-   - Mermaid 图表语法正确，可渲染
+  3. 图表语法是否正确 (WARNING)
+     - Mermaid 图表语法正确，可渲染
 ---
 
 

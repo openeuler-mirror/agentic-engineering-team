@@ -1,9 +1,9 @@
 ---
 heading_level: 2
 checklist: |
-**接口设计**
+  **接口设计**
 
-1. 接口描述是否清晰 (WARNING)
+  1. 接口描述是否清晰 (WARNING)
 ---
 ## 接口设计
 

@@ -3621,6 +3621,18 @@ function parseFrontmatter(content) {
         blockLines.push(lines[i]);
         i++;
       }
+      const strictlyEmpty = blockLines.length === 0 || blockLines.join("") === "";
+      if (strictlyEmpty) {
+        while (i < lines.length) {
+          const next = lines[i];
+          const looksLikeKey = /^[^\s#-][^:]*:/.test(next);
+          if (looksLikeKey && !next.startsWith(" ") && !next.startsWith("	")) {
+            break;
+          }
+          blockLines.push(next);
+          i++;
+        }
+      }
       const blockText = blockLines.join("\n").replace(/^  /gm, "");
       metadata[key] = blockText;
       continue;
@@ -4910,6 +4922,17 @@ var plugins = [
 ];
 
 // commands/context/context.ts
+var LIBRARY_STATUS_TAGS = ["scenario-library", "function-library", "sdr", "fmea-library"];
+var CONTINUE_INSTRUCTION = "<instruction>Continue with the original steps; do NOT switch to browsing the libraries above.</instruction>";
+function renderOutput(outputs) {
+  const text = outputs.join("\n\n");
+  const reportsLibrary = outputs.some(
+    (o) => LIBRARY_STATUS_TAGS.some((tag) => o.includes(`<${tag}>`))
+  );
+  return reportsLibrary ? `${text}
+
+${CONTINUE_INSTRUCTION}` : text;
+}
 function listPlugins() {
   console.error("Available context plugins:");
   for (const p of plugins) {
@@ -4972,7 +4995,7 @@ function runContext(argv) {
       listPlugins();
       process.exit(1);
     }
-    console.log(outputs2.join("\n\n"));
+    console.log(renderOutput(outputs2));
     if (missing.length > 0) {
       console.error(`
 [skipped (no data): ${missing.join(", ")}]`);
@@ -4997,7 +5020,7 @@ function runContext(argv) {
     listPlugins();
   }
   if (outputs.length > 0) {
-    console.log(outputs.join("\n\n"));
+    console.log(renderOutput(outputs));
   }
 }
 

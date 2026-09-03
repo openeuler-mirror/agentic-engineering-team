@@ -325,12 +325,32 @@ export function parseFrontmatter(content: string): ParsedFrontmatter {
     let value = line.slice(colonIdx + 1).trim();
 
     if (value === '|' || value === '>') {
-      // Block scalar: gather subsequent indented lines
+      // Block scalar: gather subsequent indented lines.
       const blockLines: string[] = [];
       i++;
       while (i < lines.length && (lines[i].startsWith('  ') || lines[i].startsWith('\t') || lines[i] === '')) {
         blockLines.push(lines[i]);
         i++;
+      }
+      // Lenient fallback for NON-YAML-compliant files where the block content
+      // is NOT indented (e.g. `checklist: |` followed by flush-left lines).
+      // Strict parsing stops immediately with an empty block; instead of
+      // silently dropping the content, keep collecting until the next
+      // flush-left `key:` line or end of frontmatter. See template.ts's
+      // parser for the same leniency (byte-locked there, so it can't be
+      // shared).
+      const strictlyEmpty = blockLines.length === 0 || blockLines.join('') === '';
+      if (strictlyEmpty) {
+        while (i < lines.length) {
+          const next = lines[i];
+          const looksLikeKey = /^[^\s#-][^:]*:/.test(next);
+          if (looksLikeKey && !next.startsWith(' ') && !next.startsWith('\t')) {
+            // Let the outer loop handle this key line — back up one step.
+            break;
+          }
+          blockLines.push(next);
+          i++;
+        }
       }
       const blockText = blockLines.join('\n').replace(/^  /gm, '');
       metadata[key] = blockText;
