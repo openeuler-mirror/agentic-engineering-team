@@ -365,6 +365,52 @@ revision. (Future revision may feed the CVE artefacts into Step 2 as
 enriched diagnosis context for repos where the CVE manifests as an
 in-product bug rather than a kernel-level one.)
 
+### Step 1.6: Size Triage (In-memory mode only, non-CVE)
+
+After Step 1 Input Triage has completed mode detection (and the CVE Branch was NOT
+taken), perform an automatic **Size Triage** to decide whether the bug qualifies for
+the **light path** (streamlined diagnosis + merged TDD + scoped verification) or falls
+back to the existing **full path**.
+
+**Trigger constraints:**
+
+- Size Triage runs **only** when mode == In-memory AND the CVE Branch was not taken.
+- Feature mode **always** uses the full path (the 3 bugfix artifacts are the data source
+  for Step 5 PR Template Field Mapping — see `## PR Template Field Mapping` below).
+- No user prompt: the decision is fully automatic. "When in doubt, default to full path."
+
+**Three conditions (all three must hold for light path):**
+
+| # | Condition | How to evaluate |
+|---|-----------|-----------------|
+| a | Root cause already stated | The input text explicitly identifies the root cause (not just symptoms) |
+| b | Fix direction already stated | The input text explicitly describes the intended fix approach |
+| c | Estimated change footprint ≤ 50 lines core code | Based on the stated root cause + fix direction, estimate the lines of source/test change required |
+
+**Decision:**
+
+- 3 conditions all satisfied AND In-memory mode → **light path**
+- Any condition not satisfied OR uncertain → **full path** (default)
+
+**Light path execution shape** (Steps 2-5 below carry a `> **Light path**:` annotation
+describing the streamlined behavior; full path behavior is unchanged):
+
+- Step 2 Diagnosis → Small Bug Fast Path: ≤10-line inline summary, skip Phase 4/6
+- Step 3 Implementation → merged TDD: red-green allowed in one commit
+- Step 4 Quality Check → scoped verification: bug regression + affected-file tests only
+- Step 5 PR Submission → skipped (In-memory mode)
+
+**Fallback (light path → full path):**
+
+If, during Step 3 (Implementation), it becomes clear that the bug is more complex than
+estimated — i.e. the change footprint will exceed 50 lines OR the stated root cause turns
+out to be wrong — **automatically fall back** to the full path:
+
+1. Abort the light path.
+2. Return to Step 2 and re-run full diagnosis (Phase 0-6 complete flow), discarding the
+   ≤10-line inline summary.
+3. Output the fallback reason to the user (visible, but **does not** require confirmation).
+
 ### Step 2: Diagnosis
 
 - Invoke `aet-diagnosing-bug` skill
@@ -372,6 +418,12 @@ in-product bug rather than a kernel-level one.)
 - Outputs (branch by mode):
   - **Feature mode** → `{diagnosis_path, fix_plan_path}` under feature `bugfix/` folder
   - **In-memory mode** → `{diagnosis_content, fix_plan_content}` as inline markdown strings
+
+> **Light path (In-memory, Size Triage passed)**: trigger `aet-diagnosing-bug` Small Bug
+> Fast Path. The skill produces a ≤10-line inline summary (Root Cause / Affected Files /
+> Acceptance Criteria), skipping Phase 4 (Diagnosis Report Generation) and Phase 6 (Generate
+> Fix Plan). The summary is passed forward as an inline markdown string — no disk file is
+> written. See `skills/aet-diagnosing-bug/SKILL.md` → "Small Bug Fast Path" section.
 
 ### Step 3: Implementation
 
@@ -383,6 +435,13 @@ in-product bug rather than a kernel-level one.)
   - **Feature mode** → `./ai_assistance/features/{name}/bugfix/{ts}-implementation.md` + project source / test edits
   - **In-memory mode** → project source / test edits ONLY (zero files under `.aet/`)
 
+> **Light path**: trigger `aet-implementing-requirement` light path mode. The red-green
+> discipline is preserved but **merged into a single commit** is allowed (write failing
+> test + apply fix + verify pass in one commit, rather than enforcing separate red and
+> green commits). Regression tests must still cover the bug's Reproduction Steps or Trigger
+> Conditions. See `skills/aet-implementing-requirement/WORKFLOW.md` → "Per-task Template &
+> Light Path TDD Notes".
+
 ### Step 4: Quality Check
 
 - Invoke `aet-checking-implementation` skill
@@ -391,12 +450,24 @@ in-product bug rather than a kernel-level one.)
   - **In-memory mode** → pass `diagnosis_content` inline so the skill reads AC from the inline markdown (no `.aet/` file exists)
 - Verifies fresh: lint / tests / build / regression test for the original bug per Acceptance Criteria
 
+> **Light path**: trigger `aet-checking-implementation` scoped verification — run **only**
+> the bug regression test + tests for files directly affected by the fix. Do **not** run
+> the full test suite (that belongs to the full path only). "Fresh evidence" means evidence
+> from a verification run executed **after** the most recent code change; do not re-run an
+> identical command if the code has not changed since the last run. See
+> `skills/aet-checking-implementation/SKILL.md` → "Fresh Evidence Clarification" and "Light
+> Path Scoped Verification".
+
 ### Step 5: PR Submission (Feature mode only)
 
 - In-memory mode → skip Step 5 entirely (workflow ends after Step 4)
 - Feature mode → spawn subagent invoking `aet-operating-pr` skill
   - Explicitly request the bugfix PR template (do not let the skill fall back to the generic template)
   - Pre-fill bugfix PR fields from prior artifacts using the mapping table below
+
+> **Light path**: In-memory mode already skips Step 5 entirely (light path is a sub-mode of
+> In-memory mode), so no PR artifact is produced in light path. This annotation is recorded
+> for completeness; the existing "In-memory mode → skip Step 5" rule covers it.
 
 ## PR Template Field Mapping (Step 5, Feature mode only)
 

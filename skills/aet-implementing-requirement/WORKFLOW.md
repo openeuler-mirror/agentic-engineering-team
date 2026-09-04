@@ -103,6 +103,49 @@ Updating Task 1 checkbox in plan file...
 Moving to Task 2...
 ```
 
+### Per-task Template & Light Path TDD Notes
+
+**Per-task template authority (5 steps).**
+
+The per-task checkbox template defined above in "Implementation Plan Format" is the
+**authoritative** template for this skill — it has **5 steps** (Step 5 = Commit). This
+WORKFLOW.md is the single source of truth for how `aet-implementing-requirement` executes
+each task.
+
+**Phase 6 fix-plan template inconsistency (ignore its Step 5).**
+
+`aet-diagnosing-bug/SKILL.md` Phase 6 emits a fix-plan template with **6 steps** where
+Step 5 is `Run full test suite` and Step 6 is `Commit`. This is a legacy inconsistency.
+When consuming a fix-plan produced by `aet-diagnosing-bug`, **ignore the Phase 6 Step 5
+`Run full test suite`** — it does not belong in the per-task loop. The full-suite
+verification belongs to Step 4 of the bugfix workflow (`aet-checking-implementation`),
+not to each per-task commit.
+
+**Regression check scope.**
+
+- Per-task verification runs **only** that task's specific test (the regression test
+  written in Step 1 of the task).
+- Regression checks should be **scoped** to the affected files — do not run unrelated
+  tests at the per-task level.
+- Full-suite verification (lint + entire test suite + build) is the responsibility of
+  `aet-checking-implementation` (bugfix Step 4 / dev-plan Phase FINAL), not the per-task
+  loop.
+
+**Light path TDD (merged red-green commit).**
+
+When the caller passes `path=light` (In-memory mode, `aet-bugfix` Size Triage passed),
+the red-green discipline is preserved but **merged into a single commit is allowed**:
+
+- Write the failing regression test (red).
+- Apply the minimum code change to make it pass (green).
+- Verify the test passes.
+- Commit all three (test + fix + verification evidence) in **one** commit, rather than
+  enforcing separate red and green commits.
+
+The regression test must still cover the bug's Reproduction Steps or Trigger Conditions
+(as captured in the inline summary's Acceptance Criteria). Skipping the regression test
+entirely is **not** permitted in light path — only the commit granularity is relaxed.
+
 ## Step 3: Return Implementation Result
 
 - Return path to implementation documentation

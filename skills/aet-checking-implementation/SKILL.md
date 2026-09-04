@@ -35,6 +35,27 @@ NO COMPLETION CLAIMS WITHOUT FRESH VERIFICATION EVIDENCE
 
 If you haven't run the verification command in this message, you cannot claim it passes.
 
+## Fresh Evidence Clarification
+
+**"Fresh evidence"** means verification evidence produced by a command run **after** the
+most recent code change — i.e. after the last commit (or last staged edit) that touched
+the code under verification.
+
+- **Code unchanged since last verification → do NOT re-run.** If the code under
+  verification has not changed since the last verification run, re-running the identical
+  command adds no new evidence. Stating the previous result is honest **only if** you
+  confirm no code change occurred in between.
+- **Code changed since last verification → MUST re-run.** If any source/test file under
+  verification has changed (even a one-line tweak), the previous evidence is stale and the
+  command must be run again before any completion claim.
+- **How to judge "changed":** use VCS diff — `git diff` against the commit at which the
+  last verification ran. If the diff is empty for the files in scope, the evidence is
+  still fresh; otherwise it is stale.
+
+This clarification sharpens the Iron Law: "FRESH" is measured relative to the most recent
+code change, not relative to the wall clock. It does not weaken the law — it makes the
+"fresh" predicate precise and auditable.
+
 ## The Gate Function
 
 ```
@@ -159,3 +180,29 @@ From 24 failure memories:
 Run the command. Read the output. THEN claim the result.
 
 This is non-negotiable.
+
+## Light Path Scoped Verification
+
+When the caller (`aet-bugfix` agent, `main.md` Step 1.6 Size Triage) passes `path=light`
+(In-memory mode, Size Triage passed), this skill performs **scoped verification** instead
+of the full test suite.
+
+**Scoped verification scope:**
+
+1. **Bug regression test** — the regression test written against the bug's Reproduction
+   Steps or Trigger Conditions (from the inline summary's Acceptance Criteria). This test
+   MUST pass.
+2. **Tests for directly affected files** — run the tests that cover the files modified by
+   the fix (the "Affected Files" listed in the inline summary). These MUST pass.
+
+**What scoped verification does NOT run:**
+
+- The full test suite (lint across the whole project, every test file, full build) is
+  **not** part of light path. The full-suite run belongs to the full path only (bugfix
+  Step 4 in full path, or dev-plan Phase FINAL for feature work).
+
+**Iron Law still applies.** Light path is **not** a license to skip verification. The
+"NO COMPLETION CLAIMS WITHOUT FRESH VERIFICATION EVIDENCE" rule and the Gate Function
+(IDENTIFY → RUN → READ → VERIFY → CLAIM) are unchanged — only the **scope** of the
+RUN step is narrowed (scoped tests instead of full suite). You must still run the scoped
+commands fresh and read their output before claiming the bug is fixed.
