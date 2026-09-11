@@ -85,7 +85,7 @@ AET 采用四层分层架构，依赖方向**严格自上而下**：
 - **Aet-Implement** — 实现智能体，开发计划 (DPS)、TDD 驱动开发、代码实现、功能验证
 - **Aet-Test** — 测试智能体（待扩展），集成测试、性能测试
 - **Aet-Bugfix** — 修复智能体，Bug 诊断、修复规划
-- **Aet-Doc** — 文档生成（README、用户手册、技术分析等 12 种类型）
+- **Aet-Doc** — 文档生成（README、用户手册、技术分析等 13 种类型）
 - **Aet-Release** — Release 管理，版本发布、Release Notes 生成
 - **Aet-General** — 通用智能体，通用任务执行
 
@@ -331,7 +331,7 @@ Review 模式支持参数：`--dry-run` / `--no-post`（生成产物但不发布
 
 ### Q28. `/aet-doc` 支持生成哪些类型的文档？
 
-12 种文档类型：
+13 种文档类型：
 
 | 类型 | 说明 |
 | --- | --- |
@@ -347,6 +347,7 @@ Review 模式支持参数：`--dry-run` / `--no-post`（生成产物但不发布
 | mdbook 文档构建 | 从 Markdown 构建可浏览的 HTML 文档站 |
 | 问答对生成 | 从本地文件、仓库或远程 Git URL 生成带来源溯源的中文 Q&A 对 |
 | wiki 知识库构建 | 从任意内容构建可查询的轻量级个人 Wiki |
+| GIF 动图生成 | 图片拼接成 GIF、GIF 抽帧/裁剪、视频转 GIF |
 
 可一次生成多种，如 `/aet-doc 生成 README 和用户手册`；也可根据 Issue URL 生成手册（`/aet-doc 根据 <Issue URL> 生成手册`）。
 
@@ -614,7 +615,7 @@ DPS 对应文件 `dev-plan.md`。三份文档顺序传递：RAS → RDS → DPS�
 | `implement` | 实现阶段流程 | 基于设计文档执行开发计划生成、代码开发、单元测试、开发验证 |
 | `design-refine` | 需求变更流程 | 基于已有设计文档进行需求变更和迭代 |
 | `release` | 发布管理流程 | 版本发布和 Release Notes 生成 |
-| `doc` | 文档生成流程 | 生成或更新项目文档（README、用户手册、技术分析、Python API 文档、文档翻译、文档质量检查、mdbook 构建等） |
+| `doc` | 文档生成流程 | 生成或更新项目文档（README、用户手册、技术分析、Python API 文档、文档翻译、文档质量检查、mdbook 构建、GIF 动图等） |
 
 ### Q46. 如何创建一个全自动工作流？如何创建严格审查工作流？
 

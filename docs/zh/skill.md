@@ -177,4 +177,4 @@ skills/{skill-name}/
 | 代码审查 | `aet-reviewing-code` skill |
 | TDD 开发 | `test-driven-development` skill |
 | 管理 Issue/PR | `aet-operating-issues` / `aet-operating-pr` skill |
-| 生成文档 | `aet-generating-readme` / `aet-generating-manual` / `aet-generating-python-api` / `aet-generating-qa` / `wiki-builder` / `aet-doc-translator` / `aet-checking-docs` / `aet-building-doc-mdbook` skill |
+| 生成文档 | `aet-generating-readme` / `aet-generating-manual` / `aet-generating-python-api` / `aet-generating-qa` / `aet-generating-gif` / `wiki-builder` / `aet-doc-translator` / `aet-checking-docs` / `aet-building-doc-mdbook` skill |
