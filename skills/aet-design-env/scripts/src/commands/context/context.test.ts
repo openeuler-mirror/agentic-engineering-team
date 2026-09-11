@@ -130,6 +130,27 @@ describe('runContext --root override', () => {
     expect(errSpy).not.toHaveBeenCalledWith(expect.stringContaining('No context metadata'));
   });
 
+  it('appends ONE top-level continuation instruction when library status is reported', () => {
+    // `project-analysis` alone yields no library-status block (no
+    // scenario/function/sdr/fmea tags) — so no trailing instruction.
+    setupFixture(project.root);
+    runContext(['project-analysis', '--root', project.root]);
+    const outWithoutLib = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(outWithoutLib).toContain('<project-analysis>');
+    expect(outWithoutLib).not.toContain('Continue with the original steps');
+
+    logSpy.mockClear();
+    // A library-status plugin (scenario-lib always reports status) appends
+    // the instruction ONCE, at the same level as the library blocks — NOT
+    // inside each plugin's <instruction> field.
+    runContext(['scenario-lib', '--root', project.root]);
+    const out = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(out).toContain('<scenario-library>');
+    expect(out).toContain('<instruction>Continue with the original steps; do NOT switch to browsing the libraries above.</instruction>');
+    // Exactly one occurrence.
+    expect((out.match(/Continue with the original steps; do NOT switch to browsing/g) || []).length).toBe(1);
+  });
+
   it('lists available plugins in --help-style error when unknown plugin name given', () => {
     runContext(['nonexistent-plugin', '--root', project.root]);
     expect(errSpy).toHaveBeenCalledWith(expect.stringContaining('Unknown plugins: nonexistent-plugin'));

@@ -58,6 +58,30 @@ describe('parseFrontmatter', () => {
     expect(r.metadata.description).toBe('Line 1\nLine 2');
   });
 
+  it('lenient fallback: block scalar with flush-left (non-YAML) content is still read', () => {
+    // Real-world regression: component files shipped `checklist: |` followed
+    // by unindented content. Strict parsing yields an empty block; the parser
+    // must fall back to collecting until the next flush-left `key:` line.
+    const fm = '---\nheading_level: 2\nchecklist: |\n**Title**\n\n1. Item one\n   - Detail\n---\n## Body';
+    const r = parseFrontmatter(fm);
+    expect(r.metadata.heading_level).toBe('2');
+    expect(r.metadata.checklist).toBe('**Title**\n\n1. Item one\n - Detail');
+    expect(r.body).toBe('## Body');
+  });
+
+  it('lenient fallback stops at the next flush-left key line', () => {
+    const fm = '---\nchecklist: |\nFree text\nother_key: value\n---\nBody';
+    const r = parseFrontmatter(fm);
+    expect(r.metadata.checklist).toBe('Free text');
+    expect(r.metadata.other_key).toBe('value');
+  });
+
+  it('lenient fallback keeps lines starting with # or - (not treated as keys)', () => {
+    const fm = '---\nchecklist: |\n# Heading\n- item\n---\nBody';
+    const r = parseFrontmatter(fm);
+    expect(r.metadata.checklist).toBe('# Heading\n- item');
+  });
+
   it('skips lines without colon', () => {
     const r = parseFrontmatter('---\nnoColon\nkey: val\n---\nBody');
     expect(r.metadata).toEqual({ key: 'val' });

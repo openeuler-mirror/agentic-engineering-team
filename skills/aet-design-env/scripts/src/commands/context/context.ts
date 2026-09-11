@@ -62,6 +62,29 @@ import { resolve } from 'node:path';
 import { projectRoot } from '../../util';
 import { plugins } from './index';
 
+/**
+ * Trailing top-level instruction appended once AFTER the joined plugin
+ * blocks when the output reports at least one AET library status
+ * (scenario / function / sdr / fmea). It sits at the same level as the
+ * `<sdr>` / `<fmea-library>` … blocks (NOT inside each one's
+ * `<instruction>` field). It reminds the consuming agent that `context`
+ * only CONFIRMS library existence — it must continue the original steps
+ * and NOT switch to browsing the library until an explicit browse
+ * instruction appears.
+ */
+const LIBRARY_STATUS_TAGS = ['scenario-library', 'function-library', 'sdr', 'fmea-library'] as const;
+const CONTINUE_INSTRUCTION =
+  '<instruction>Continue with the original steps; do NOT switch to browsing the libraries above.</instruction>';
+
+/** Join plugin outputs, appending the continuation hint when libraries were reported. */
+function renderOutput(outputs: string[]): string {
+  const text = outputs.join('\n\n');
+  const reportsLibrary = outputs.some((o) =>
+    LIBRARY_STATUS_TAGS.some((tag) => o.includes(`<${tag}>`)),
+  );
+  return reportsLibrary ? `${text}\n\n${CONTINUE_INSTRUCTION}` : text;
+}
+
 function listPlugins(): void {
   console.error('Available context plugins:');
   for (const p of plugins) {
@@ -128,7 +151,7 @@ export function runContext(argv: string[]): void {
       listPlugins();
       process.exit(1);
     }
-    console.log(outputs.join('\n\n'));
+    console.log(renderOutput(outputs));
     if (missing.length > 0) {
       console.error(`\n[skipped (no data): ${missing.join(', ')}]`);
     }
@@ -150,6 +173,6 @@ export function runContext(argv: string[]): void {
     listPlugins();
   }
   if (outputs.length > 0) {
-    console.log(outputs.join('\n\n'));
+    console.log(renderOutput(outputs));
   }
 }
