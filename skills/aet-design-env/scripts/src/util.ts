@@ -506,6 +506,7 @@ export function writeFileText(filePath: string, content: string): void {
 export const DEFAULT_TYPE_LABELS: Record<string, string> = {
   scenario: '场景库',
   function: '功能库',
+  architecture_element: '架构元素库',
   directory: '目录',
   scene: '场景',
 };

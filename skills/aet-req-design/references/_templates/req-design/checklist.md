@@ -24,6 +24,8 @@
 
 {{feature-changes.aet}}
 
+{{arch-element-relation.aet}}
+
 {{core-workflow.aet}}
 
 {{algorithm-design.aet}}

@@ -53,6 +53,11 @@
  *   - fmea-lib           : probes .aet/fmea_library.yml, emits <fmea-library>
  *                          with exists/path/instruction (use library subcommand
  *                          to browse the fault-mode library).
+ *   - arch-element-lib   : probes .aet/architecture_element_library.yml,
+ *                          emits <architecture-element-library> with
+ *                          exists/path/instruction (use library subcommand
+ *                          to browse the architecture-element library; feeds
+ *                          the 功能与系统元素关系管理 section in req-design).
  *
  * Stream convention (see index.ts): stdout = XML metadata (data, STs compare
  * this); stderr = warnings ("no data found", "Unknown plugins", listPlugins).
@@ -72,7 +77,7 @@ import { plugins } from './index';
  * and NOT switch to browsing the library until an explicit browse
  * instruction appears.
  */
-const LIBRARY_STATUS_TAGS = ['scenario-library', 'function-library', 'sdr', 'fmea-library'] as const;
+const LIBRARY_STATUS_TAGS = ['scenario-library', 'function-library', 'sdr', 'fmea-library', 'architecture-element-library'] as const;
 const CONTINUE_INSTRUCTION =
   '<instruction>Continue with the original steps; do NOT switch to browsing the libraries above.</instruction>';
 
