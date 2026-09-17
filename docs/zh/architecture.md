@@ -1,6 +1,6 @@
 # AET 架构设计
 
-> 文档版本：v1.1 | 更新日期：2026-09-17 | 软件版本：v1.1.0
+> 文档版本：v1.0 | 更新日期：2026-05-27 | 软件版本：v1.1.0
 
 ## 概述
 
@@ -252,7 +252,7 @@ AET 在项目中创建以下目录结构：
 │   ├── doc/                     # Aet-Doc
 │   ├── release/                 # Aet-Release
 │   └── general/                 # Aet-General
-├── skills/                      # 40 个 Skill 定义
+├── skills/                      # 42 个 Skill 定义
 ├── commands/                    # 9 个命令定义
 ├── docs/                        # 项目文档
 ├── scripts/                     # 安装和配置脚本

@@ -240,7 +240,7 @@ ls -la ~/.config/opencode/commands/aet-*.md
 3. 链接 9 个命令文件到 `~/.xiaoo/commands/`
 4. 链接 12 个工具文件到 `~/.xiaoo/tools/`
 5. 链接 3 个 xiaoO 专用 JS 文件
-6. 链接 40 个 Skills 到 `~/.xiaoo/skills/`
+6. 链接 42 个 Skills 到 `~/.xiaoo/skills/`
 7. 配置项目目录（输入项目根目录绝对路径）
 8. 初始化全局配置（`~/.aet/config.json`）
 9. 启动 xiaoO daemon

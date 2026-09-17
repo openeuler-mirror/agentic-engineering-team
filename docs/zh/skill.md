@@ -1,6 +1,6 @@
 # Skill 说明
 
-> 文档版本：v1.1 | 更新日期：2026-09-17 | 软件版本：v1.1.0
+> 文档版本：v1.0 | 更新日期：2026-05-27 | 软件版本：v1.1.0
 
 ## 概述
 
@@ -22,8 +22,6 @@ Skill（技能）是 AET 的核心功能单元。每个 Skill 定义为 `SKILL.m
 | :--- | :--- | :--- |
 | `aet-req-analysis` | 编排 | 需求分析 |
 | `aet-req-design` | 编排 | 需求设计 |
-| `aet-req-review` | 编排 | 需求交付物质量审查（含 S3 用户交互式修订），内部 Skill |
-| `aet-req-user-review` | 编排 | 用户交互式修订：快照 → 引导批注 → 提取差异 → 链式一致性处理（脚本要求 Node.js >= 20），内部 Skill |
 | `aet-analyzing-project` | 原子 | 项目架构分析 |
 
 ### 实现
@@ -89,6 +87,7 @@ Skill（技能）是 AET 的核心功能单元。每个 Skill 定义为 `SKILL.m
 | Skill | 层级 | 用途 |
 | :--- | :--- | :--- |
 | `aet-setup-config` | 编排 | 项目配置初始化 |
+| `aet-interacting-with-users` | 原子 | 用户交互 |
 
 ## Skill 调用方式
 
@@ -109,8 +108,6 @@ Skill（技能）是 AET 的核心功能单元。每个 Skill 定义为 `SKILL.m
 使用 Skill 工具调用 aet-req-analysis skill
 输入：.aet/features/feature-xxx/ 目录下的 Issue 内容
 ```
-
-> **注意**：部分 Skill 声明了 `user-invocable: false`（如 `aet-req-review`、`aet-req-user-review`），仅供上层编排 Skill 在流水线内部调用，不支持用户从命令行直接触发。
 
 ## 开发自定义 Skill
 

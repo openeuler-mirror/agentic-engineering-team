@@ -277,9 +277,8 @@ AET 采用四层分层架构，依赖方向严格自上而下：
 │   ├── wiki-builder/
 │   ├── aet-reviewing-code/
 │   ├── aet-diagnosing-bug/
-│   ├── aet-req-review/         # 需求交付物质量审查（含用户交互式修订 aet-req-user-review）
 │   ├── test-driven-development/
-│   └── ... (40 个)
+│   └── ... (36 个)
 ├── commands/               # 命令定义
 ├── scripts/                # 安装和配置脚本
 │   ├── install.sh          # 一键安装（远程/本地模式）
