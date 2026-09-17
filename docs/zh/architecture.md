@@ -1,6 +1,6 @@
 # AET 架构设计
 
-> 文档版本：v1.0 | 更新日期：2026-05-27 | 软件版本：v1.1.0
+> 文档版本：v1.1 | 更新日期：2026-09-17 | 软件版本：v1.1.0
 
 ## 概述
 
@@ -82,7 +82,7 @@ Agent 是 AET 中专门负责特定开发阶段的 AI 智能体，通过多 Agen
 | **Aet-Implement** | 实现智能体，开发计划 (DPS)、TDD 驱动开发、代码实现、功能验证 |
 | **Aet-Test** | 测试智能体（待扩展），集成测试、性能测试 |
 | **Aet-Bugfix** | 修复智能体，Bug 诊断、修复规划 |
-| **Aet-Doc** | 文档生成，README、用户手册、技术分析、幻灯片、信息图、实践案例、Python API 文档、文档翻译、文档质量检查、mdbook 文档构建 |
+| **Aet-Doc** | 文档生成，README、用户手册、技术分析、幻灯片、信息图、实践案例、Python API 文档、文档翻译、文档质量检查、mdbook 文档构建、问答对生成、wiki 知识库构建、GIF 动图生成 |
 | **Aet-Release** | Release 管理，版本发布、Release Notes 生成 |
 
 ### Skill 层
@@ -123,8 +123,8 @@ Checkpoint 是 AET 的断点恢复机制，用于解决长程任务中断问题�
 
 工作流定义了 Agent 之间的协作顺序和流程控制。关键要素包括：
 
-- **Scenario（场景）**：feature、bugfix、release、project-analysis、config-setup 等
-- **Hook（钩子）**：auto（自动进入下一阶段）或 confirm（需要用户确认）
+- **Scenario（场景）**：feature、bugfix、release、project-analysis、config-setup 等。scenario 可声明 `automation: true` 启用无人值守模式（CI/CD 适用）
+- **Hook（钩子）**：auto（自动进入下一阶段）或 confirm（需要用户确认）。`automation: true` 模式下 `confirm` 自动短路为 `auto` 行为，agent 不调 `question` 工具
 - **Step（步骤）**：Agent 内部的细粒度工作单元
 
 ### SR-AR 需求分解
@@ -252,7 +252,7 @@ AET 在项目中创建以下目录结构：
 │   ├── doc/                     # Aet-Doc
 │   ├── release/                 # Aet-Release
 │   └── general/                 # Aet-General
-├── skills/                      # 42 个 Skill 定义
+├── skills/                      # 40 个 Skill 定义
 ├── commands/                    # 9 个命令定义
 ├── docs/                        # 项目文档
 ├── scripts/                     # 安装和配置脚本

@@ -181,6 +181,14 @@ The `--source` arguments must contain the same set of file paths used in A1 (ord
 
 - The scripts require Node.js >= 20. The bundled CLI enforces this at startup: if Node is unavailable or below 20, it prints a clear error to stderr and exits with code 1 — there is no fallback mechanism.
 - Snapshot session hashes are ephemeral — after A3 destroys them, the next round MUST start from A1 with a new session.
+- **Automation Mode Abort**: IF the system prompt contains `<aet-run-mode>automation</aet-run-mode>`:
+  - This skill is fundamentally user-interactive (uses question tool to present revision
+    interface / wait for user edits) and CANNOT run in automation mode.
+  - Refuse to execute and respond with:
+    "automation mode active — this skill requires user interaction and cannot proceed.
+    Caller should skip this skill in automation scenarios."
+  - Do NOT perform any side-effect operations (no snapshot creation, no session hash
+    allocation, no file locks).
 
 </patch>
 

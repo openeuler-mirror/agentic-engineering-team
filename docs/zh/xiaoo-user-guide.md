@@ -82,7 +82,7 @@ curl -fsSL https://raw.atomgit.com/openeuler/agentic-engineering-team/raw/master
 3. 链接命令文件（9 个）到 `~/.xiaoo/commands/`
 4. 链接工具文件（12 个）到 `~/.xiaoo/tools/`
 5. 链接 xiaoO 专用 JS 文件（3 个）
-6. 链接 Skills（42 个）到 `~/.xiaoo/skills/`
+6. 链接 Skills（40 个）到 `~/.xiaoo/skills/`
 7. **配置项目目录**（输入你的项目工作目录路径）
 8. 初始化全局配置（`~/.aet/config.json`，含平台 Token 等）
 9. 启动 xiaoO daemon

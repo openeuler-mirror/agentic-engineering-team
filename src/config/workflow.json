@@ -158,7 +158,7 @@
     },
     "doc": {
       "name": "doc",
-      "description": "文档生成统一路由入口。根据用户需求路由到对应的文档生成 skill（aet-generating-readme / aet-generating-manual / aet-generating-technical-analysis / aet-generating-python-api / aet-generating-practice-case / aet-doc-translator / aet-checking-docs / aet-building-doc-mdbook 等）。识别用户意图后，引导用户完成对应文档生成。"
+      "description": "文档生成统一路由入口。根据用户需求路由到对应的文档生成 skill（aet-generating-readme / aet-generating-manual / aet-generating-technical-analysis / aet-generating-python-api / aet-generating-practice-case / aet-generating-qa / aet-generating-gif / wiki-builder / aet-doc-translator / aet-checking-docs / aet-building-doc-mdbook 等）。识别用户意图后，引导用户完成对应文档生成。"
     },
     "release": {
       "name": "release",

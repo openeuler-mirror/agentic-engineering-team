@@ -17,7 +17,7 @@ AET 预置了以下 Agent：
 | **Aet-Implement** | 实现智能体 — 开发计划 (DPS)、TDD 驱动开发、代码实现、功能验证 | `agents/implement/` |
 | **Aet-Test** | 测试智能体 — 集成测试、性能测试（待扩展） | `agents/test/` |
 | **Aet-Bugfix** | 修复智能体 — Bug 诊断、修复规划 | `agents/bugfix/` |
-| **Aet-Doc** | 文档生成 — README、用户手册、技术分析、幻灯片、信息图、实践案例、Python API 文档、文档翻译、文档质量检查、mdbook 文档构建 | `agents/doc/` |
+| **Aet-Doc** | 文档生成 — README、用户手册、技术分析、幻灯片、信息图、实践案例、Python API 文档、文档翻译、文档质量检查、mdbook 文档构建、问答对生成、wiki 知识库构建、GIF 动图生成 | `agents/doc/` |
 | **Aet-Release** | Release 管理 — 版本发布、Release Notes 生成 | `agents/release/` |
 | **Aet-General** | 通用智能体 — 通用任务执行 | `agents/general/` |
 
@@ -144,6 +144,9 @@ NO PRODUCTION CODE WITHOUT A FAILING TEST FIRST
 - 文档翻译
 - 文档质量检查
 - mdbook 文档构建
+- 问答对生成
+- wiki 知识库构建
+- GIF 动图生成
 
 ### Aet-Release（Release 管理智能体）
 
@@ -194,6 +197,8 @@ Agent 通过 `agents/index.js` 注册表统一管理：
   ]
 }
 ```
+
+scenario 顶层可声明 `"automation": true` 启用自动化模式，所有 `confirm` hook 自动短路为 `auto` 行为，agent 不调 `question` 工具。详见 [工作流配置 § 自动化模式](./workflow.md#自动化模式-automation-mode)。
 
 更多详情请参阅 [工作流配置](./workflow.md)。
 

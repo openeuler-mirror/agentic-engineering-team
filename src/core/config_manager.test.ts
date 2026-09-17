@@ -156,3 +156,38 @@ describe('BASELINE_CONFIG', () => {
     ]);
   });
 });
+
+describe('automation field', () => {
+  it('loads automation: true from project config', () => {
+    const root = tmpRoot();
+    writeConfig(root, {
+      workflows: {
+        'design-auto': {
+          name: 'design-auto',
+          description: 'automation',
+          automation: true,
+          stages: [{ id: 'step1', description: 's1' }],
+        },
+      },
+    });
+    const cm = new ConfigManager(root, join(root, '..', 'no-global'));
+    const def = cm.getConfig().workflows['design-auto'];
+    expect(def?.automation).toBe(true);
+  });
+
+  it('defaults automation to undefined when not declared', () => {
+    const root = tmpRoot();
+    writeConfig(root, {
+      workflows: {
+        plain: {
+          name: 'plain',
+          description: 'no automation',
+          stages: [{ id: 'step1', description: 's1' }],
+        },
+      },
+    });
+    const cm = new ConfigManager(root, join(root, '..', 'no-global'));
+    const def = cm.getConfig().workflows['plain'];
+    expect(def?.automation).toBeUndefined();
+  });
+});

@@ -1,36 +1,36 @@
 ---
 heading_level: 2
 checklist: |
-**SR 列表**
+  **SR 列表**
 
-1. SR 编号是否规范 (WARNING)
-   - 格式 `SR.[IR number].[sequence]`，关联 IR 编号
+  1. SR 编号是否规范 (WARNING)
+     - 格式 `SR.[IR number].[sequence]`，关联 IR 编号
 
-2. SR 数量是否合理 (ERROR)
-   - 一般 1-2 个
+  2. SR 数量是否合理 (ERROR)
+     - 一般 1-2 个
 
-3. SR理解是否正确 (WARNING)
-   - SR为系统为实现特定系统特性而必须满足的所有可验证需求
+  3. SR理解是否正确 (WARNING)
+     - SR为系统为实现特定系统特性而必须满足的所有可验证需求
 
-**AR 分配**
+  **AR 分配**
 
-1. AR 编号是否规范 (WARNING)
-   - 格式 `AR.[SR number].[sequence]`，关联 SR 编号
+  1. AR 编号是否规范 (WARNING)
+     - 格式 `AR.[SR number].[sequence]`，关联 SR 编号
 
-2. 每个 SR 的 AR 数量是否合理 (ERROR)
-   - 默认 1-2 个，无必要不超3个
+  2. 每个 SR 的 AR 数量是否合理 (ERROR)
+     - 默认 1-2 个，无必要不超3个
 
-3. 一 AR 一元素原则 (ERROR)
-   - 每个 AR 属于且仅属于一个系统元素（模块/组件/服务）
+  3. 一 AR 一元素原则 (ERROR)
+     - 每个 AR 属于且仅属于一个系统元素（模块/组件/服务）
 
-4. IR-SR─AR追踪是否完整 (WARNING)
-   - 每个IR实现无遗漏
-   - 避免务必要的过渡设计（无IR支撑）
+  4. IR-SR─AR追踪是否完整 (WARNING)
+     - 每个IR实现无遗漏
+     - 避免务必要的过渡设计（无IR支撑）
 
-4. 系统元素是否明确 (ERROR)
-   - 聚焦于单个开发团队可实现的范围
+  4. 系统元素是否明确 (ERROR)
+     - 聚焦于单个开发团队可实现的范围
 
-5. 严格聚焦于实现层面的责任 (ERROR)
+  5. 严格聚焦于实现层面的责任 (ERROR)
 ---
 ## SR-AR 分解
 

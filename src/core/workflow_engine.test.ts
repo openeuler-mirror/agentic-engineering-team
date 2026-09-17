@@ -448,3 +448,223 @@ describe('ca.stop — coding-agent stop guard', () => {
     expect(engine.handleCaStop(caStop('sess-A')).prompt).toBe('');
   });
 });
+
+describe('automation mode — processTransition', () => {
+  const AUTO_WORKFLOW = {
+    workflows: {
+      'design-auto': {
+        name: 'design-auto',
+        description: 'automation test',
+        automation: true,
+        stages: [
+          {
+            id: 'step1',
+            description: 'step 1',
+            hooks: [
+              { at: 'after', event: 'hook.prompt', payload: { text: '请确认完成' } },
+            ],
+          },
+          { id: 'step2', description: 'step 2' },
+        ],
+      },
+    },
+  };
+
+  it('auto-emits prompt.inject_system directive on handover', () => {
+    const engine = makeEngine(AUTO_WORKFLOW);
+    engine.handleInit(init('design-auto'));
+    const r = engine.handleHandover(handover());
+    const data = expectOk(r);
+    expect(data.status).toBe('step_advanced');
+    expect(data.automation).toBe(true);
+    const directive = r.events.find((e) => e.id === 'prompt.inject_system');
+    expect(directive).toBeDefined();
+    expect((directive!.payload as { text: string }).text).toContain('<aet-run-mode>automation</aet-run-mode>');
+  });
+
+  it('degrades hook.prompt to non-blocking prompt.inject when automation=true', () => {
+    const engine = makeEngine(AUTO_WORKFLOW);
+    engine.handleInit(init('design-auto'));
+    // First handover enters step1 (no after-hooks to fire yet — entering step1).
+    engine.handleHandover(handover());
+    // Second handover leaves step1 (fires step1's `after` hook.prompt).
+    const r = engine.handleHandover(handover());
+    const data = expectOk(r);
+    // Automation mode → step_advanced (NOT hook_pending).
+    expect(data.status).toBe('step_advanced');
+    expect(data.currentStep).toBe('step2');
+    // The hook.prompt text surfaces as a non-blocking prompt.inject.
+    const degraded = r.events.find(
+      (e) => e.id === 'prompt.inject' && (e.payload as { text: string }).text === '请确认完成',
+    );
+    expect(degraded).toBeDefined();
+    // No hook_pending deferred.
+    expect(data.status).not.toBe('hook_pending');
+  });
+
+  it('keeps directive emission even when step has no hook.prompt', () => {
+    const NO_HOOK_WORKFLOW = {
+      workflows: {
+        'auto-plain': {
+          name: 'auto-plain',
+          description: 'no hooks',
+          automation: true,
+          stages: [
+            { id: 'a', description: 'a' },
+            { id: 'b', description: 'b' },
+          ],
+        },
+      },
+    };
+    const engine = makeEngine(NO_HOOK_WORKFLOW);
+    engine.handleInit(init('auto-plain'));
+    const r = engine.handleHandover(handover());
+    expectOk(r);
+    const directive = r.events.find((e) => e.id === 'prompt.inject_system');
+    expect(directive).toBeDefined();
+  });
+
+  it('preserves interactive hook.prompt blocking when automation=false', () => {
+    const INTERACTIVE_WORKFLOW = {
+      workflows: {
+        'design-interactive': {
+          name: 'design-interactive',
+          description: 'interactive',
+          stages: [
+            {
+              id: 'step1',
+              description: 'step 1',
+              hooks: [
+                { at: 'after', event: 'hook.prompt', payload: { text: '请确认' } },
+              ],
+            },
+            { id: 'step2', description: 'step 2' },
+          ],
+        },
+      },
+    };
+    const engine = makeEngine(INTERACTIVE_WORKFLOW);
+    engine.handleInit(init('design-interactive'));
+    engine.handleHandover(handover());
+    const r = engine.handleHandover(handover());
+    const data = expectOk(r);
+    expect(data.status).toBe('hook_pending');
+    expect(data.automation).toBeFalsy();
+    // No directive emitted in non-automation mode.
+    expect(r.events.find((e) => e.id === 'prompt.inject_system')).toBeUndefined();
+  });
+});
+
+describe('automation mode — continueWorkflow', () => {
+  const AUTO_WITH_BEFORE_HOOK = {
+    workflows: {
+      'auto-before': {
+        name: 'auto-before',
+        description: 'automation with before-hook',
+        automation: true,
+        stages: [
+          {
+            id: 'step1',
+            description: 'step 1',
+            hooks: [
+              { at: 'before', event: 'hook.prompt', payload: { text: '前置确认' } },
+            ],
+          },
+          { id: 'step2', description: 'step 2' },
+        ],
+      },
+    },
+  };
+
+  it('continue emits directive and degrades before-hook hook.prompt when automation=true', () => {
+    const engine = makeEngine(AUTO_WITH_BEFORE_HOOK);
+    engine.handleInit(init('auto-before'));
+    engine.handleHandover(handover()); // enter step1
+    // continue re-emits step1's before hooks.
+    const r = engine.handleContinue({ event: 'workflow.continue', payload: {} });
+    const data = expectOk(r);
+    expect(data.status).toBe('step_resumed');
+    expect(data.automation).toBe(true);
+    expect(data.currentStep).toBe('step1');
+    // Directive emitted.
+    const directive = r.events.find((e) => e.id === 'prompt.inject_system');
+    expect(directive).toBeDefined();
+    // Before-hook hook.prompt degraded to non-blocking prompt.inject.
+    const degraded = r.events.find(
+      (e) => e.id === 'prompt.inject' && (e.payload as { text: string }).text === '前置确认',
+    );
+    expect(degraded).toBeDefined();
+  });
+});
+
+describe('automation mode — initWorkflow', () => {
+  it('populates data.automation=true on workflow_started for automation workflow', () => {
+    const engine = makeEngine({
+      workflows: {
+        'auto-init': {
+          name: 'auto-init',
+          description: 'init test',
+          automation: true,
+          stages: [{ id: 's1', description: 's1' }],
+        },
+      },
+    });
+    const r = engine.handleInit(init('auto-init'));
+    const data = expectOk(r);
+    expect(data.status).toBe('workflow_started');
+    expect(data.automation).toBe(true);
+  });
+
+  it('populates data.automation=false (or undefined) for non-automation workflow', () => {
+    const engine = makeEngine(); // baseline design workflow — no automation field
+    const r = engine.handleInit(init(DESIGN));
+    const data = expectOk(r);
+    expect(data.status).toBe('workflow_started');
+    expect(data.automation).toBeFalsy();
+  });
+});
+
+describe('automation mode — handleCaStop', () => {
+  const AUTO_STOP_WORKFLOW = {
+    workflows: {
+      'auto-stop': {
+        name: 'auto-stop',
+        description: 'ca.stop test',
+        automation: true,
+        stages: [{ id: 's1', description: 's1' }],
+      },
+    },
+  };
+
+  it('uses automation guidance prompt when automation=true and session matches', () => {
+    const engine = makeEngine(AUTO_STOP_WORKFLOW);
+    engine.handleInit({ event: 'workflow.init', payload: { name: 'auto-stop', sessionId: 'sess-A' } });
+    engine.handleHandover({ event: 'workflow.handover', payload: { sessionId: 'sess-A' } });
+    const r = engine.handleCaStop({ event: 'ca.stop', payload: { sessionId: 'sess-A' } });
+    const data = expectOk(r);
+    expect(data.status).toBe('active');
+    expect(data.automation).toBe(true);
+    expect(r.prompt).toContain('自动化');
+    expect(r.prompt).toContain('aet workflow handover');
+    // Critical: automation mode must NOT suggest USING the question tool
+    // (the existing interactive prompt says "请使用提问（question）工具").
+    // The automation prompt explicitly FORBIDS it ("禁止调用 question 工具")
+    // — that's correct and does contain the word "question", so we assert
+    // the positive suggestion phrasing is absent.
+    expect(r.prompt).not.toContain('请使用提问');
+    expect(r.prompt).not.toContain('请使用 question');
+    expect(r.prompt).toContain('禁止调用 question');
+  });
+
+  it('uses existing guidance prompt when automation=false', () => {
+    const engine = makeEngine(); // baseline design — automation=false
+    engine.handleInit({ event: 'workflow.init', payload: { name: DESIGN, sessionId: 'sess-B' } });
+    engine.handleHandover({ event: 'workflow.handover', payload: { sessionId: 'sess-B' } });
+    const r = engine.handleCaStop({ event: 'ca.stop', payload: { sessionId: 'sess-B' } });
+    const data = expectOk(r);
+    expect(data.status).toBe('active');
+    expect(data.automation).toBeFalsy();
+    // Existing prompt DOES mention question tool.
+    expect(r.prompt).toContain('question');
+  });
+});

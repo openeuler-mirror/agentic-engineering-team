@@ -87,7 +87,7 @@
     },
     "doc": {
       "name": "文档生成流程",
-      "description": "生成或更新项目文档（README、用户手册、技术分析、Python API 文档、文档翻译、文档质量检查、mdbook 构建等）",
+      "description": "生成或更新项目文档（README、用户手册、技术分析、Python API 文档、文档翻译、文档质量检查、mdbook 构建、GIF 动图等）",
       "workflow": [
         {
           "agent_id": "aet-doc",
@@ -117,7 +117,7 @@
     },
     "confirm": {
       "description": "请用户确认是该阶段任务是否完成",
-      "promptTemplate": "你已结束输出，请确认当前阶段pipeline是否全部执行完成。\n\n- **执行意外中断**：请继续执行pipeline直至当前step完成\n\n- **提问用户**：请直接必须使用 question 工具向用户提问，不得中断。\n\n- **执行完毕**：问题：\"{description}\"\n{options}\n",
+      "promptTemplate": "你已结束输出。请根据当前状态选择：\n\n- **若 pipeline 已完成**：请回答以下确认问题，并调用 agent_handover（stage 级）或 step_handover（step 级）推进：\n  问题：\"{description}\"\n  {options}\n\n- **若 pipeline 未完成**：请继续执行直至当前 step 完成，不要重复输出本确认提示。\n\n- **若需向用户澄清**：可使用 question 工具提问，但仅在确实需要用户输入时使用；提问后请等待用户回答，不要重复输出本确认提示。",
       "options": [
         {
           "label": "完成",

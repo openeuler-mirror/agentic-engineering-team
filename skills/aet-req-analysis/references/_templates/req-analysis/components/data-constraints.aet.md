@@ -1,10 +1,10 @@
 ---
 heading_level: 2
 checklist: |
-**数据约束**
+  **数据约束**
 
-1. 禁止包含物理实现 (WARNING)
-   - 禁止包含物理实现细节（数据库表结构、字段名）
+  1. 禁止包含物理实现 (WARNING)
+     - 禁止包含物理实现细节（数据库表结构、字段名）
 ---
 
 ## 数据约束 <!-- condition: Low=Skip, Medium=AsNeeded, High=Generate -->

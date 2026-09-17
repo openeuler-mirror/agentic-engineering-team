@@ -50,8 +50,8 @@ AET 支持以下代码仓库平台：
 
 | 术语 | 说明 |
 | :--- | :--- |
-| **PRD** | Product Requirements Document，产品需求文档。AET 支持 6 阶段 PRD 生成流程。 |
-| **FR** | Feature Requirement，功能需求。PRD 流程中定义的单个功能需求项。 |
+| **PRD** | Product Requirements Document，产品需求文档。 |
+| **FR** | Feature Requirement，功能需求。PRD 中定义的单个功能需求项。 |
 | **DFX** | Design for X，一组质量属性设计策略（可用性、安全性、可扩展性、可测试性）。 |
 | **SR** | System Requirement，系统需求。对应一个主要场景或功能域。 |
 | **AR** | Architecture Requirement，架构需求。属于某个具体系统元素的架构需求。 |

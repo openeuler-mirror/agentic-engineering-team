@@ -152,6 +152,17 @@ Development Plan (DPS-style document) — `dev-plan.md`
 <patch>
 
 - **Ask User**: Always ask the user via available interactive tools; skip only when none exist.
+- **Automation Mode**: IF the system prompt contains `<aet-run-mode>automation</aet-run-mode>`:
+  - DO NOT call the question tool. Skip all user-confirmation / Socratic-dialogue steps.
+  - For each decision point that would normally ask the user: pick the recommended option
+    declared in this skill (the explicit candidate with "推荐" / "(recommended)" / "默认"
+    marker); if no recommendation is declared, infer the most reasonable choice from context
+    (requirement description / codebase / existing deliverables) and document the assumption.
+  - Append each inferred decision to the deliverable's `## 自动化决策记录` section as:
+    `- 决策点：<交互点名称> | 推断选项：<选项> | 推断依据：<依据摘要>`
+  - For optional review stages (e.g., [S3] / [A4]): run only ONE round of review loop — invoke `aet-req-review` once, accept its A1 (gate evaluation) + A2 (auto-fix) results as final, SKIP `aet-req-user-review` stage (A3, requires user manual revision) and re-gate loop (A4). Do not emit the "是否需要进行文档审查与修订？" prompt. Document the review summary + auto-fix decisions in the deliverable's `## 自动化决策记录` section.
+  - Required validation gates (lint / test / build) are NOT affected — they still run and
+    must pass.
 
 </patch>
 

@@ -106,7 +106,7 @@ import type {
   WorkflowListPayload,
   CaStopPayload,
 } from '../definitions/events.js';
-import { err, ok } from '../definitions/events.js';
+import { err, ok, out } from '../definitions/events.js';
 
 import type { StepDefinition, WorkflowDefinition, WorkflowRegistry } from './workflow_registry.js';
 import { CheckpointManager, type ActiveEntry, type PendingTransition } from './checkpoint_manager.js';
@@ -119,6 +119,24 @@ import { CheckpointManager, type ActiveEntry, type PendingTransition } from './c
  * workflow.
  */
 const HOOK_REMINDER = '执行完毕后，请再次调用 `aet workflow handover` 以继续推进。';
+
+/**
+ * Directive text injected via `prompt.inject_system` event on every
+ * handover / continue boundary of an automation-mode workflow. The agent
+ * sees this as a system-reminder (OpenCode: output.system.push; CC: degraded
+ * to additionalContext; OMP: degraded to a tagged note). SKILL.md <patch>
+ * rules key off the `<aet-run-mode>automation</aet-run-mode>` tag to switch
+ * behavior (skip question tool, pick recommended option, document
+ * assumption). Identical across old/new arch so SKILL.md is shared.
+ */
+const AUTOMATION_DIRECTIVE_TEXT = `<aet-run-mode>automation</aet-run-mode>
+<aet-run-mode-directive>
+本会话处于自动化模式。禁止调用 question 工具向用户提问。
+- 凡需用户决策处：选 SKILL.md 或 Agent prompt 中已声明的推荐项；若无明确推荐项，结合上下文（需求描述 / 代码库 / 已有交付物）推断最合理选项，并在交付物末尾「## 自动化决策记录」节追加一行：- 决策点：<交互点名称> | 推断选项：<选项> | 推断依据：<依据摘要>
+- 凡标注为可选 review 的阶段（如 [S3] / [A4]）：仅运行一轮 review 循环（aet-req-review 的 A1→A2 一次），跳过 aet-req-user-review 阶段（A3，需要用户手动修订）与复审循环（A4）；A2 auto-fix 的决策记入「## 自动化决策记录」
+- Agent 层用户交互点（如 Router 的 resume detection / workflow confirmation / unclear intent；Doc / Release 的用户选择点）：同样禁止调 question 工具，agent 基于自身判断直接推进，无需用户确认
+- 不影响必经的验证类门禁（lint / test / build）：仍需全部通过
+</aet-run-mode-directive>`;
 
 /**
  * Stop-guard budget: the `ca.stop` event blocks the SAME stage + session from
@@ -490,14 +508,22 @@ export class WorkflowEngine {
 
     const workflowDef = this.registry.getWorkflow(active.workflow);
     const workflowName = workflowDef?.name ?? active.workflow;
+    const automation = workflowDef?.automation === true;
 
     return ok(
-      buildCaStopPrompt({
-        workflowName,
-        workflowId: active.workflow,
-        currentStepId: active.currentStepId,
-        checkpointId: active.checkpointId,
-      }),
+      automation
+        ? buildCaStopPromptAutomation({
+            workflowName,
+            workflowId: active.workflow,
+            currentStepId: active.currentStepId,
+            checkpointId: active.checkpointId,
+          })
+        : buildCaStopPrompt({
+            workflowName,
+            workflowId: active.workflow,
+            currentStepId: active.currentStepId,
+            checkpointId: active.checkpointId,
+          }),
       [],
       {
         status: 'active',
@@ -508,6 +534,7 @@ export class WorkflowEngine {
         checkpointId: active.checkpointId,
         sessionId: active.sessionId,
         stopGuardBlocks: blocks + 1,
+        automation,
       },
     );
   }
@@ -620,6 +647,7 @@ export class WorkflowEngine {
         nextStep: firstStepId,
         checkpointId,
         argument: payload.argument,
+        automation: workflowDef.automation === true,
       },
     );
   }
@@ -748,9 +776,32 @@ export class WorkflowEngine {
     hookEvents: OutputEvent[],
   ): CommandResult {
     const events: OutputEvent[] = [];
+    const automation = workflowDef.automation === true;
+
+    // Automation mode: auto-emit the directive on every transition. The
+    // plugin layer surfaces it as a system-reminder / additionalContext so
+    // SKILL.md <patch> rules can switch behavior (skip question tool, pick
+    // recommended option, document assumption). Emitted regardless of whether
+    // the boundary has any user-declared hooks — the directive is unconditional
+    // once the workflow is in automation mode.
+    if (automation) {
+      events.push(out('prompt.inject_system', { text: AUTOMATION_DIRECTIVE_TEXT }));
+    }
 
     for (let i = 0; i < hookEvents.length; i++) {
       const ev = hookEvents[i]!;
+      // Automation mode: degrade hook.prompt to non-blocking prompt.inject
+      // (preserve text as a context note; do NOT defer the transition). The
+      // agent still sees the original hook text — useful as a hint for what
+      // the recommended option would have been — but the step advances
+      // immediately instead of blocking on user confirmation.
+      if (ev.id === 'hook.prompt' && automation) {
+        events.push(out('prompt.inject', {
+          text: typeof ev.payload.text === 'string' ? ev.payload.text : '',
+          type: 'task',
+        }));
+        continue;
+      }
       if (ev.id === 'hook.prompt') {
         // Execute-first / BLOCKING: defer the advance, serve the hook's
         // text as the handover's top-level `prompt` (the agent sees it as
@@ -773,6 +824,7 @@ export class WorkflowEngine {
             currentStep: fromStepId,
             nextStep: toStepId,
             checkpointId: active.checkpointId,
+            automation,
           },
         );
       }
@@ -810,6 +862,7 @@ export class WorkflowEngine {
           currentStep: null,
           nextStep: null,
           checkpointId: active.checkpointId,
+          automation,
         },
       );
     }
@@ -842,6 +895,7 @@ export class WorkflowEngine {
         currentStep: toStepId,
         nextStep: nextNextStepId,
         checkpointId: active.checkpointId,
+        automation,
       },
     );
   }
@@ -921,8 +975,20 @@ export class WorkflowEngine {
     // Re-fire the current step's before hooks (re-activating
     // pre-injections like skill prompts). No after hooks — the current
     // step did not leave.
+    const automation = workflowDef.automation === true;
     const events: OutputEvent[] = [];
-    this.emitStepHooks(stepDef, 'before', events);
+
+    // Automation mode: continue also emits directive (resume after interrupt
+    // still in automation mode — the directive must be visible to the agent
+    // re-entering the workflow).
+    if (automation) {
+      events.push(out('prompt.inject_system', { text: AUTOMATION_DIRECTIVE_TEXT }));
+    }
+
+    // Pass `automation` to emitStepHooks so any `hook.prompt` in the
+    // before-boundary is degraded to non-blocking `prompt.inject` (mirrors
+    // processTransition's automation handling).
+    this.emitStepHooks(stepDef, 'before', events, automation);
 
     // Compute the next step (the step the NEXT handover would advance
     // to) so the plugin can display "next: <id>" or detect "this is the
@@ -952,6 +1018,7 @@ export class WorkflowEngine {
         nextStep: nextStepId,
         checkpointId: active.checkpointId,
         argument,
+        automation,
       },
     );
   }
@@ -1002,11 +1069,17 @@ export class WorkflowEngine {
    * Resolve all of a step's hooks for the given boundary (`before`/`after`)
    * and append the resulting OutputEvents to `events`. Steps with no `hooks`
    * or no matching-boundary hooks contribute nothing.
+   *
+   * When `automation` is true, `hook.prompt` events are degraded to
+   * non-blocking `prompt.inject` events (text preserved as a context note;
+   * the transition is NOT deferred). Mirrors `processTransition`'s automation
+   * handling for the `before` hooks re-fired by `continueWorkflow`.
    */
   private emitStepHooks(
     step: StepDefinition | null,
     at: 'before' | 'after',
     events: OutputEvent[],
+    automation: boolean = false,
   ): void {
     if (!step?.hooks) return;
     for (const h of step.hooks) {
@@ -1014,7 +1087,17 @@ export class WorkflowEngine {
       const ev = this.registry.resolveStepHook(h, {
         step: { id: step.id, description: step.description },
       });
-      if (ev) events.push(ev);
+      if (!ev) continue;
+      // Automation mode: degrade hook.prompt to non-blocking prompt.inject
+      // (preserve text as a context note; do NOT defer the transition).
+      if (ev.id === 'hook.prompt' && automation) {
+        events.push(out('prompt.inject', {
+          text: typeof ev.payload.text === 'string' ? ev.payload.text : '',
+          type: 'task',
+        }));
+        continue;
+      }
+      events.push(ev);
     }
   }
 }
@@ -1141,6 +1224,31 @@ function buildCaStopPrompt(c: CaStopPromptContext): string {
     '- **否则**：请继续工作，直到工作流结束。',
     '',
     '请勿在此工作流结束前停止。',
+  ].join('\n');
+}
+
+/**
+ * Build the guidance prompt for automation-mode workflows when the agent
+ * stops producing output. Differs from {@link buildCaStopPrompt} in that:
+ *   - It does NOT suggest "use the question tool" (automation mode forbids
+ *     question tool usage — see {@link AUTOMATION_DIRECTIVE_TEXT}).
+ *   - It directs the agent to either handover (if step task done) or continue
+ *     working, based on context inference rather than user prompting.
+ * Carried as the top-level `prompt` field; surfaced by the plugin.
+ */
+function buildCaStopPromptAutomation(c: CaStopPromptContext): string {
+  return [
+    '## AET 自动化工作流进行中 — 请勿停止',
+    '',
+    `你正在执行 AET 工作流 \`${c.workflowName}\`（自动化模式），`,
+    `当前阶段：\`${c.currentStepId ?? '(尚未进入任何 step)'}\`，checkpoint：\`${c.checkpointId}\`。`,
+    '',
+    '检测到你已停止输出，请勿停止：',
+    '',
+    '- **如果当前阶段任务已完成**：调用 `aet workflow handover` 推进到下一阶段。',
+    '- **否则**：继续工作直到完成当前阶段任务后再 handover。',
+    '',
+    '自动化模式下禁止调用 question 工具，请基于上下文自行决策。',
   ].join('\n');
 }
 
