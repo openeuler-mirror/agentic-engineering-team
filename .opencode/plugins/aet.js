@@ -240,11 +240,13 @@ function isAutomationMode(checkpointID) {
 }
 
 async function triggerAfterHook(sessionID, stage, checkpointID) {
-  if (!stage || !stage.after) {
+  if (!stage) {
     return;
   }
 
-  if (stage.after === 'auto') {
+  const afterHook = stage.after || 'auto';
+
+  if (afterHook === 'auto') {
     // 自动推进到下一阶段
     const workflowName = checkpointManager.getCheckpoint(checkpointID)?.workflow.name;
     const stages = workflowEngine.getScenarioWorkflow(workflowName);
@@ -252,13 +254,16 @@ async function triggerAfterHook(sessionID, stage, checkpointID) {
     const nextStage = stages[currentIdx + 1];
     if (nextStage) {
       await executeStageHandover(nextStage, null, checkpointID, null, sessionID);
+    } else {
+      // Last stage: complete the checkpoint
+      checkpointManager.completeCheckpoint(checkpointID);
     }
     return;
   }
 
   // Automation short-circuit: confirm === auto when automation mode.
   // Skip the user-facing session.prompt call and advance directly.
-  if (stage.after === 'confirm' && isAutomationMode(checkpointID)) {
+  if (afterHook === 'confirm' && isAutomationMode(checkpointID)) {
     const workflowName = checkpointManager.getCheckpoint(checkpointID)?.workflow.name;
     const stages = workflowEngine.getScenarioWorkflow(workflowName);
     const currentIdx = stages.findIndex(s => (s.stage_id || s.agent_id) === (stage.stage_id || stage.agent_id));
@@ -274,13 +279,13 @@ async function triggerAfterHook(sessionID, stage, checkpointID) {
     return;
   }
 
-  const hookConfig = workflowEngine.getHookConfig(stage.after);
+  const hookConfig = workflowEngine.getHookConfig(afterHook);
   if (hookConfig && hookConfig.options && hookConfig.options.length > 0) {
     const description = hookConfig.description || 'Please confirm';
     const optionsText = hookConfig.options.map(opt => `- ${opt.label}`).join('\n');
     const template = hookConfig.promptTemplate || 'Question: "{description}"\n{options}';
     let userPrompt = template.replace('{description}', description).replace('{options}', optionsText);
-    if (stage.after === 'confirm') {
+    if (afterHook === 'confirm') {
       userPrompt += '\n\n**If user approves, please call agent_handover to advance to the next stage.**';
     }
     startSessionCheckpoint(sessionID);
@@ -307,30 +312,32 @@ async function triggerStepAfterHook(sessionID, agentId, agentConfig, checkpointI
   }
 
   const stepConfig = agentConfig.workflow?.find(s => (s.step_id || s.name) === currentStepInfo.stepId);
-  if (!stepConfig || !stepConfig.after) {
+  if (!stepConfig) {
     return;
   }
 
-  if (stepConfig.after === 'auto') {
+  const afterHook = stepConfig.after || 'auto';
+
+  if (afterHook === 'auto') {
     await advanceToNextStep(sessionID, agentId, agentConfig, checkpointID, stage, null);
     return;
   }
 
   // Automation short-circuit: confirm === auto when automation mode.
   // Skip the user-facing session.prompt call and advance directly.
-  if (stepConfig.after === 'confirm' && isAutomationMode(checkpointID)) {
+  if (afterHook === 'confirm' && isAutomationMode(checkpointID)) {
     await advanceToNextStep(sessionID, agentId, agentConfig, checkpointID, stage, null);
     return;
   }
 
-  const hookConfig = workflowEngine.getHookConfig(stepConfig.after);
+  const hookConfig = workflowEngine.getHookConfig(afterHook);
   if (hookConfig && hookConfig.options && hookConfig.options.length > 0) {
     const description = hookConfig.description || 'Confirm before proceeding to next step';
     const optionsText = hookConfig.options.map(opt => `- ${opt.label}`).join('\n');
     const template = hookConfig.promptTemplate || 'Question: "{description}"\n{options}';
     let userPrompt = template.replace('{description}', description).replace('{options}', optionsText);
     userPrompt += `\n\nCurrent Step: **${stepConfig.name}**`;
-    if (stepConfig.after === 'confirm') {
+    if (afterHook === 'confirm') {
       userPrompt += '\n\n**If user approves, please call step_handover to advance to the next step.**';
     }
     startSessionCheckpoint(sessionID);
@@ -383,8 +390,9 @@ async function advanceToNextStep(sessionID, agentId, agentConfig, checkpointID, 
   const shouldClear = nextStepConfig.clear === true;
 
   // 检查 before hook
-  if (!nextStepConfig.before || nextStepConfig.before === 'auto' ||
-      (nextStepConfig.before === 'confirm' && isAutomationMode(checkpointID))) {
+  const beforeHook = nextStepConfig.before || 'auto';
+  if (beforeHook === 'auto' ||
+      (beforeHook === 'confirm' && isAutomationMode(checkpointID))) {
     if (shouldClear) {
       sendStepPromptWithNewSession(sessionID, agentId, checkpointID, stage, nextStepConfig);
     } else {
@@ -393,14 +401,14 @@ async function advanceToNextStep(sessionID, agentId, agentConfig, checkpointID, 
     return;
   }
 
-  const hookConfig = workflowEngine.getHookConfig(nextStepConfig.before);
+  const hookConfig = workflowEngine.getHookConfig(beforeHook);
   if (hookConfig && hookConfig.options && hookConfig.options.length > 0) {
     const description = hookConfig.description || 'Confirm before starting next step';
     const optionsText = hookConfig.options.map(opt => `- ${opt.label}`).join('\n');
     const template = hookConfig.promptTemplate || 'Question: "{description}"\n{options}';
     let userPrompt = template.replace('{description}', description).replace('{options}', optionsText);
     userPrompt += `\n\n即将执行的 Step: **${nextStepConfig.name}**`;
-    if (nextStepConfig.before === 'confirm') {
+    if (beforeHook === 'confirm') {
       userPrompt += '\n\n**If user approves, please call step_handover to continue.**';
     }
     if (shouldClear) {
@@ -728,8 +736,9 @@ async function executeStageHandover(stage, context, checkpointID, promptForAgent
       // / advanceToNextStep confirm short-circuits; without it, automation
       // mode would still call session.prompt with the confirm question,
       // blocking the agent.
-      if (stage.before && !(stage.before === 'confirm' && isAutomationMode(checkpointID))) {
-        const hookConfig = workflowEngine.getHookConfig(stage.before);
+      const beforeHook = stage.before || 'auto';
+      if (beforeHook !== 'auto' && !(beforeHook === 'confirm' && isAutomationMode(checkpointID))) {
+        const hookConfig = workflowEngine.getHookConfig(beforeHook);
         if (hookConfig && hookConfig.options && hookConfig.options.length > 0) {
           const description = hookConfig.description || 'Please confirm';
           const optionsText = hookConfig.options.map(opt => `- ${opt.label}`).join('\n');
@@ -738,7 +747,7 @@ async function executeStageHandover(stage, context, checkpointID, promptForAgent
           if (context) {
             userPrompt += `\n\nTask context:\n${context}`;
           }
-          if (stage.before === 'confirm') {
+          if (beforeHook === 'confirm') {
             userPrompt += '\n\nIf user approves, please call agent_handover to begin this stage.';
           }
 
