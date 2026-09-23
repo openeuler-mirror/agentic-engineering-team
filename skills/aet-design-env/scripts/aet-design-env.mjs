@@ -7,7 +7,7 @@
  */
 
 // index.ts
-import { readFileSync as readFileSync12, statSync as statSync11 } from "node:fs";
+import { readFileSync as readFileSync12, statSync as statSync12 } from "node:fs";
 import { createHash as createHash2 } from "node:crypto";
 import { fileURLToPath as fileURLToPath2 } from "node:url";
 
@@ -3577,14 +3577,14 @@ function loadActivePlugin() {
   if (!Object.prototype.hasOwnProperty.call(raw, "plugin")) {
     throw new Error(`design.json 'plugin' field is required (set to a plugin name, or null to disable the chain): ${filePath}`);
   }
-  const plugin6 = raw.plugin;
-  if (plugin6 === null) {
+  const plugin7 = raw.plugin;
+  if (plugin7 === null) {
     return null;
   }
-  if (typeof plugin6 !== "string" || plugin6.length === 0) {
+  if (typeof plugin7 !== "string" || plugin7.length === 0) {
     throw new Error(`design.json 'plugin' field must be a non-empty string or null (use null to disable the chain): ${filePath}`);
   }
-  return plugin6;
+  return plugin7;
 }
 function loadYaml(filePath) {
   const text = readFileSync2(filePath, "utf-8");
@@ -3683,6 +3683,7 @@ function writeFileText(filePath, content) {
 var DEFAULT_TYPE_LABELS = {
   scenario: "\u573A\u666F\u5E93",
   function: "\u529F\u80FD\u5E93",
+  architecture_element: "\u67B6\u6784\u5143\u7D20\u5E93",
   directory: "\u76EE\u5F55",
   scene: "\u573A\u666F"
 };
@@ -4585,7 +4586,7 @@ Skipped ${result.skipped.length} file(s):`);
 }
 
 // commands/context/context.ts
-import { existsSync as existsSync15, statSync as statSync8, realpathSync } from "node:fs";
+import { existsSync as existsSync16, statSync as statSync9, realpathSync } from "node:fs";
 import { resolve as resolve4 } from "node:path";
 
 // commands/context/project-analysis.ts
@@ -4912,17 +4913,48 @@ var plugin5 = {
   }
 };
 
+// commands/context/architecture-element-library.ts
+import { existsSync as existsSync15, statSync as statSync8 } from "node:fs";
+import { join as join12 } from "node:path";
+var FILENAME4 = "architecture_element_library.yml";
+var XML_TAG4 = "architecture-element-library";
+var plugin6 = {
+  name: "arch-element-lib",
+  description: `\u63A2\u6D4B .aet/${FILENAME4} \u662F\u5426\u5B58\u5728\uFF0C\u8F93\u51FA\u8DEF\u5F84\u4E0E\u6D4F\u89C8\u6307\u4EE4`,
+  run(root) {
+    const filePath = join12(root, ".aet", FILENAME4);
+    const exists = existsSync15(filePath) && statSync8(filePath).isFile();
+    if (exists) {
+      return [
+        `<${XML_TAG4}>`,
+        `<exists>true</exists>`,
+        `<path>${filePath}</path>`,
+        `<instruction>\u67B6\u6784\u5143\u7D20\u5E93\u7528\u4E8E\u63CF\u8FF0\u7CFB\u7EDF\u7684\u67B6\u6784\u5143\u7D20\uFF08Domain / SubDomain / Component\uFF09\uFF0C\u662F\u9700\u6C42\u8BBE\u8BA1\u9636\u6BB5\u529F\u80FD\u4E0E\u7CFB\u7EDF\u5143\u7D20\u5173\u7CFB\u6620\u5C04\u7684\u67B6\u6784\u4FA7\u8F93\u5165\u3002\u7981\u6B62\u76F4\u63A5\u8BFB\u53D6\u8BE5 YAML \u6587\u4EF6\u5185\u5BB9\u3002\u8BF7\u7528\u4E13\u7528\u811A\u672C\u9010\u7EA7\u9605\u8BFB\u67B6\u6784\u5143\u7D20\u5E93\u3002`,
+        `</instruction>`,
+        `</${XML_TAG4}>`
+      ].join("\n");
+    }
+    return [
+      `<${XML_TAG4}>`,
+      `<exists>false</exists>`,
+      `<instruction>\u67B6\u6784\u5143\u7D20\u5E93\u7528\u4E8E\u63CF\u8FF0\u7CFB\u7EDF\u7684\u67B6\u6784\u5143\u7D20\uFF08Domain / SubDomain / Component\uFF09\uFF0C\u662F\u9700\u6C42\u8BBE\u8BA1\u9636\u6BB5\u529F\u80FD\u4E0E\u7CFB\u7EDF\u5143\u7D20\u5173\u7CFB\u6620\u5C04\u7684\u67B6\u6784\u4FA7\u8F93\u5165\u3002\u5F53\u524D\u9879\u76EE\u672A\u63D0\u4F9B\u67B6\u6784\u5143\u7D20\u5E93\u3002</instruction>`,
+      `</${XML_TAG4}>`
+    ].join("\n");
+  }
+};
+
 // commands/context/index.ts
 var plugins = [
   plugin,
   plugin2,
   plugin3,
   plugin4,
-  plugin5
+  plugin5,
+  plugin6
 ];
 
 // commands/context/context.ts
-var LIBRARY_STATUS_TAGS = ["scenario-library", "function-library", "sdr", "fmea-library"];
+var LIBRARY_STATUS_TAGS = ["scenario-library", "function-library", "sdr", "fmea-library", "architecture-element-library"];
 var CONTINUE_INSTRUCTION = "<instruction>Continue with the original steps; do NOT switch to browsing the libraries above.</instruction>";
 function renderOutput(outputs) {
   const text = outputs.join("\n\n");
@@ -4965,7 +4997,7 @@ function runContext(argv) {
   if (rootOverride !== null) {
     let isDir = false;
     try {
-      isDir = existsSync15(rootOverride) && statSync8(rootOverride).isDirectory();
+      isDir = existsSync16(rootOverride) && statSync9(rootOverride).isDirectory();
     } catch {
       isDir = false;
     }
@@ -5025,8 +5057,8 @@ function runContext(argv) {
 }
 
 // commands/template/template.ts
-import { readFileSync as readFileSync9, existsSync as existsSync16 } from "node:fs";
-import { basename as basename2, join as join12 } from "node:path";
+import { readFileSync as readFileSync9, existsSync as existsSync17 } from "node:fs";
+import { basename as basename2, join as join13 } from "node:path";
 function getCurrentTime() {
   const now = /* @__PURE__ */ new Date();
   const year = now.getFullYear();
@@ -5196,8 +5228,8 @@ function resolveComponent(chain, templateSetName, fallbackPath, componentName) {
       return { kind: "shielded" };
     }
   }
-  const fallbackFile = join12(fallbackPath, "components", `${componentName}.md`);
-  if (existsSync16(fallbackFile)) {
+  const fallbackFile = join13(fallbackPath, "components", `${componentName}.md`);
+  if (existsSync17(fallbackFile)) {
     try {
       const rawContent = readFileSync9(fallbackFile, "utf-8");
       const component = parseFrontmatter2(rawContent);
@@ -5218,8 +5250,8 @@ function loadArtifactFromChain(chain, templateSetName, fallbackPath) {
       throw new Error(`Failed to read artifact.md from plugin ${pluginName}/${templateSetName} (${filePath}): ${error.message}`);
     }
   }
-  const fallbackFile = join12(fallbackPath, "artifact.md");
-  if (existsSync16(fallbackFile)) {
+  const fallbackFile = join13(fallbackPath, "artifact.md");
+  if (existsSync17(fallbackFile)) {
     try {
       return readFileSync9(fallbackFile, "utf-8");
     } catch (error) {
@@ -5247,8 +5279,8 @@ function loadMetadataFromChain(chain, templateSetName, fallbackPath) {
       console.error(`Error: Failed to read metadata from plugin ${pluginName}/${templateSetName} (${filePath}): ${error.message}`);
     }
   }
-  const fallbackFile = join12(fallbackPath, "components", "metadata.md");
-  if (existsSync16(fallbackFile)) {
+  const fallbackFile = join13(fallbackPath, "components", "metadata.md");
+  if (existsSync17(fallbackFile)) {
     try {
       const content = readFileSync9(fallbackFile, "utf-8");
       return fillUpdateTime(content).trim();
@@ -5346,8 +5378,8 @@ function runTemplate(argv) {
 }
 
 // commands/checklist/checklist.ts
-import { readFileSync as readFileSync10, existsSync as existsSync17 } from "node:fs";
-import { basename as basename3, join as join13 } from "node:path";
+import { readFileSync as readFileSync10, existsSync as existsSync18 } from "node:fs";
+import { basename as basename3, join as join14 } from "node:path";
 function parseArgs2(argv) {
   if (argv.length < 1) {
     console.error("Usage: checklist <checklist-set-path>");
@@ -5383,8 +5415,8 @@ function resolveChecklist(chain, checklistSetName, fallbackPath, componentName) 
       return { kind: "shielded" };
     }
   }
-  const fallbackFile = join13(fallbackPath, "components", `${componentName}.md`);
-  if (existsSync17(fallbackFile)) {
+  const fallbackFile = join14(fallbackPath, "components", `${componentName}.md`);
+  if (existsSync18(fallbackFile)) {
     try {
       const content = readFileSync10(fallbackFile, "utf-8");
       const parsed = parseFrontmatter(content);
@@ -5409,8 +5441,8 @@ function loadChecklistFromChain(chain, checklistSetName, fallbackPath) {
       }
     }
   }
-  const fallbackFile = join13(fallbackPath, "checklist.md");
-  if (existsSync17(fallbackFile)) {
+  const fallbackFile = join14(fallbackPath, "checklist.md");
+  if (existsSync18(fallbackFile)) {
     try {
       return readFileSync10(fallbackFile, "utf-8");
     } catch (error) {
@@ -5458,8 +5490,8 @@ function runChecklist(argv) {
 }
 
 // commands/library/library.ts
-import { existsSync as existsSync18, statSync as statSync9 } from "node:fs";
-import { join as join14 } from "node:path";
+import { existsSync as existsSync19, statSync as statSync10 } from "node:fs";
+import { join as join15 } from "node:path";
 import { homedir as homedir2 } from "node:os";
 var CMD = "library";
 var PREVIEW_SAMPLE_SIZE = 3;
@@ -5504,10 +5536,10 @@ function parseArgs3(argv) {
   return { libraryFile, expandIds, search };
 }
 function loadLibraryFile(libraryFile) {
-  if (!existsSync18(libraryFile)) {
+  if (!existsSync19(libraryFile)) {
     throw new Error(`Library file not found: ${libraryFile}`);
   }
-  const stat = statSync9(libraryFile);
+  const stat = statSync10(libraryFile);
   if (!stat.isFile()) {
     throw new Error(
       `Library path is not a file (expected a .yml/.yaml file, got a directory): ${libraryFile}`
@@ -5563,17 +5595,17 @@ function loadLibrary(libraryFile) {
 }
 function configLookupDirs() {
   return [
-    join14(process.cwd(), ".aet", "design", "custom"),
-    join14(process.cwd(), ".aet", "design", "aet"),
-    join14(homedir2(), ".aet", "design", "custom"),
-    join14(homedir2(), ".aet", "design", "aet"),
-    join14(skillRoot(), "config")
+    join15(process.cwd(), ".aet", "design", "custom"),
+    join15(process.cwd(), ".aet", "design", "aet"),
+    join15(homedir2(), ".aet", "design", "custom"),
+    join15(homedir2(), ".aet", "design", "aet"),
+    join15(skillRoot(), "config")
   ];
 }
 function loadLibraryConfig() {
   for (const d of configLookupDirs()) {
-    const p = join14(d, CONFIG_FILENAME);
-    if (existsSync18(p)) {
+    const p = join15(d, CONFIG_FILENAME);
+    if (existsSync19(p)) {
       try {
         const cfg = loadYaml(p);
         return cfg && typeof cfg === "object" ? cfg : {};
@@ -5899,9 +5931,9 @@ function runLibrary(argv) {
 }
 
 // commands/check/check.ts
-import { existsSync as existsSync19, readdirSync as readdirSync3, readFileSync as readFileSync11, statSync as statSync10 } from "node:fs";
+import { existsSync as existsSync20, readdirSync as readdirSync3, readFileSync as readFileSync11, statSync as statSync11 } from "node:fs";
 import { homedir as homedir3 } from "node:os";
-import { isAbsolute as isAbsolute3, join as join15, resolve as resolve5 } from "node:path";
+import { isAbsolute as isAbsolute3, join as join16, resolve as resolve5 } from "node:path";
 function parseArgs4(argv) {
   if (argv.length < 1) return { projectRoot: null };
   return { projectRoot: argv[0] };
@@ -5914,7 +5946,7 @@ function readJsonSafe(filePath) {
   }
 }
 function listPluginFolderNames(designDir) {
-  if (!existsSync19(designDir)) return [];
+  if (!existsSync20(designDir)) return [];
   let entries;
   try {
     entries = readdirSync3(designDir, { withFileTypes: true });
@@ -5932,10 +5964,10 @@ function pluginHasTemplateSetContent(pluginDir) {
   }
   for (const e of entries) {
     if (!e.isDirectory() || e.name.startsWith(".")) continue;
-    const templateSetDir = join15(pluginDir, e.name);
-    if (existsSync19(join15(templateSetDir, "artifact.md"))) return true;
-    const componentsDir = join15(templateSetDir, "components");
-    if (existsSync19(componentsDir)) {
+    const templateSetDir = join16(pluginDir, e.name);
+    if (existsSync20(join16(templateSetDir, "artifact.md"))) return true;
+    const componentsDir = join16(templateSetDir, "components");
+    if (existsSync20(componentsDir)) {
       try {
         const comps = readdirSync3(componentsDir, { withFileTypes: true });
         if (comps.some((c) => c.isFile() && c.name.endsWith(".md"))) return true;
@@ -6010,31 +6042,31 @@ function checkDesignJson(designJsonPath, issues) {
     issues.push({ severity: "ERROR", path: designJsonPath, message: `'plugin' field is required (set to a plugin name, or null to disable the chain)` });
     return null;
   }
-  const plugin6 = cfg.plugin;
-  if (plugin6 === null) {
+  const plugin7 = cfg.plugin;
+  if (plugin7 === null) {
     return null;
   }
-  if (typeof plugin6 !== "string" || plugin6.length === 0) {
+  if (typeof plugin7 !== "string" || plugin7.length === 0) {
     issues.push({ severity: "ERROR", path: designJsonPath, message: `'plugin' field must be a non-empty string or null (use null to disable the chain)` });
     return null;
   }
-  return plugin6;
+  return plugin7;
 }
 function runChecks() {
   const issues = [];
   const proj = process.cwd();
   const home = homedir3();
   const designDirs = [
-    { label: "project", dir: join15(proj, ".aet", "design") },
-    { label: "home", dir: join15(home, ".aet", "design") }
+    { label: "project", dir: join16(proj, ".aet", "design") },
+    { label: "home", dir: join16(home, ".aet", "design") }
   ];
   for (const { dir } of designDirs) {
-    if (!existsSync19(dir)) continue;
+    if (!existsSync20(dir)) continue;
     const pluginNames = listPluginFolderNames(dir);
     for (const pluginName of pluginNames) {
-      const pluginDir = join15(dir, pluginName);
-      const pluginJsonPath = join15(pluginDir, "plugin.json");
-      const hasPluginJson = existsSync19(pluginJsonPath);
+      const pluginDir = join16(dir, pluginName);
+      const pluginJsonPath = join16(pluginDir, "plugin.json");
+      const hasPluginJson = existsSync20(pluginJsonPath);
       const hasTemplateSetContent = pluginHasTemplateSetContent(pluginDir);
       if (hasPluginJson) {
         checkPluginJsonSchema(pluginJsonPath, issues);
@@ -6054,14 +6086,14 @@ function runChecks() {
       }
     }
   }
-  const projDesignPath = join15(proj, ".aet", "design", "design.json");
-  const homeDesignPath = join15(home, ".aet", "design", "design.json");
+  const projDesignPath = join16(proj, ".aet", "design", "design.json");
+  const homeDesignPath = join16(home, ".aet", "design", "design.json");
   let activePlugin = null;
   let activePluginSource = "(no design.json)";
-  if (existsSync19(projDesignPath)) {
+  if (existsSync20(projDesignPath)) {
     activePluginSource = projDesignPath;
     activePlugin = checkDesignJson(projDesignPath, issues);
-  } else if (existsSync19(homeDesignPath)) {
+  } else if (existsSync20(homeDesignPath)) {
     activePluginSource = homeDesignPath;
     activePlugin = checkDesignJson(homeDesignPath, issues);
   } else {
@@ -6092,7 +6124,7 @@ function runCheck(argv) {
       const abs = isAbsolute3(projectRoot2) ? projectRoot2 : resolve5(process.cwd(), projectRoot2);
       let st;
       try {
-        st = statSync10(abs);
+        st = statSync11(abs);
       } catch {
         console.error(`Error: path does not exist: ${abs}`);
         process.exit(1);
@@ -6152,7 +6184,7 @@ Options:
 Agents (setup): claude code, opencode, codex, geminicli, cursor, trae, omp, pi, all`;
 function printVersion() {
   const bundlePath = fileURLToPath2(import.meta.url);
-  const stat = statSync11(bundlePath);
+  const stat = statSync12(bundlePath);
   const content = readFileSync12(bundlePath);
   const hash = createHash2("sha256").update(content).digest("hex").slice(0, 12);
   console.log(`aet-design-env`);

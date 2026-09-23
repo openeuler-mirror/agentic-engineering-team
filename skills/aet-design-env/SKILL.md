@@ -1,6 +1,6 @@
 ---
 name: aet-design-env
-description: AET 设计环境感知与组装能力中心。探测当前项目下 AET 库的存在状态（场景库/功能库/SDR 库/FMEA 库）并输出 XML 元数据；提供库浏览、模板组装与审查清单组装能力。暴露 context / library / template / checklist 子命令。
+description: AET 设计环境感知与组装能力中心。探测当前项目下 AET 库的存在状态（场景库/功能库/SDR 库/FMEA 库/架构元素库）并输出 XML 元数据；提供库浏览、模板组装与审查清单组装能力。暴露 context / library / template / checklist 子命令。
 allowed-tools: Read
 metadata:
   pattern: tool-wrapper
@@ -39,11 +39,12 @@ node scripts/aet-design-env.mjs context [--root <path>] [name...]
 | `function-lib` | 用于描述系统可复用的能力组合的库 | 
 | `sdr-lib` | 用于描述系统安全/可靠性 SDR 的库（安全含可选安全功能规范） |
 | `fmea-lib` | 用于描述系统各功能故障模式与影响的库 |
+| `arch-element-lib` | 用于描述系统架构元素（Domain / SubDomain / Component）的库 |
 
 ### 示例
 
 ```
-node scripts/aet-design-env.mjs context scenario-lib function-lib sdr-lib fmea-lib
+node scripts/aet-design-env.mjs context scenario-lib function-lib sdr-lib fmea-lib arch-element-lib
 ```
 
 **注意此处仅告知存在性，不意味需要进行库浏览。请在后续执行阶段有明确浏览指令后执行，并非在感知上下文后直接进行**

@@ -16,6 +16,7 @@ import { plugin as scenarioLibrary } from './scenario-library';
 import { plugin as functionLibrary } from './function-library';
 import { plugin as sdrLibrary } from './sdr-library';
 import { plugin as fmeaLibrary } from './fmea-library';
+import { plugin as architectureElementLibrary } from './architecture-element-library';
 
 export const plugins: Plugin[] = [
   projectAnalysis,
@@ -23,6 +24,7 @@ export const plugins: Plugin[] = [
   functionLibrary,
   sdrLibrary,
   fmeaLibrary,
+  architectureElementLibrary,
 ];
 
 export type { Plugin } from './types';

@@ -38,6 +38,13 @@
 -->
 }}
 
+{{arch-element-relation.aet,3}}
+{{
+<!--
+## 功能与系统元素关系管理
+-->
+}}
+
 {{core-workflow.aet,2}}
 {{
 <!--

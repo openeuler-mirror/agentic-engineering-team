@@ -25,3 +25,6 @@ types:
   fmea:
     label: FMEA 库
     hideFields: []
+  architecture_element:
+    label: 架构元素库
+    hideFields: []
