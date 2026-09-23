@@ -74,9 +74,9 @@ When a change affects one part of a requirement document, related sections throu
 
 ## Snapshot Safety Protocol
 
-1. **Before edit**: A1 creates a snapshot — the original file is backed up in `/tmp/interactive-revision/<sessionHash>/`.
+1. **Before edit**: A1 creates a snapshot — the original file is backed up in the per-user session dir (`env-paths`: on Windows `%APPDATA%/interactive-revision-nodejs/<sessionHash>/`, on macOS `~/Library/Application Support/interactive-revision-nodejs/<sessionHash>/`, Linux `$XDG_DATA_HOME`). This is intentionally NOT the temp dir.
 2. **During edit**: User modifies the original file directly. The snapshot remains untouched.
-3. **After edit**: A3 finalize-revision compares original against snapshot, extracts diffs, then destroys both snapshot and session directory.
+3. **After edit**: A3 finalize compares original against snapshot, extracts diffs, then destroys both snapshot and session directory.
 4. **Round boundary**: Between revision rounds, A1 MUST be re-run because A3 destroyed the previous session. There is no persistent snapshot across rounds.
 
 **Risk**: If A2 is executed without A1, the user edits the original file with no backup — any accidental deletion or corruption is unrecoverable. This is why A1 is a mandatory prerequisite for A2.

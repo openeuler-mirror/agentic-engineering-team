@@ -8,6 +8,8 @@ description: |
   requirement document, (3) the user needs to add clarifications or instructions
   at specific locations in a requirement document, (4) the aet-req-review pipeline
   reaches S3 (Interactive Revision), or any user-driven requirement refinement tasks.
+user-invocable: false
+allowed-tools: Execute(scripts/*) Bash(node scripts/revision.mjs *)
 metadata:
   pattern: pipeline
   stages: 4
@@ -29,7 +31,7 @@ Clear and instructional — tell the user exactly what to do and where.
 <policy>
 
 - Snapshots MUST be created before any user edit — editing the original file without a snapshot risks data corruption.
-- After finalize-revision, snapshots are destroyed — next round MUST start from A1 again.
+- After finalize, snapshots are destroyed — next round MUST start from A1 again.
 - The A3 finalize step MUST be executed regardless of whether the user chose "无需修改" or "完成修改" — skipping it leaves snapshots dangling.
 - Node.js is required for script execution; if unavailable, report the error and halt.
 
@@ -54,8 +56,8 @@ Clear and instructional — tell the user exactly what to do and where.
 | Lock conflict                                                                | Fail with message, release on exit                                                                                                                                                              |
 | Missing snapshot (A2/A3 executed without A1)                                 | Fail immediately, instruct to run A1 first                                                                                                                                                      |
 | Node.js unavailable                                                          | Report error and halt the entire revision process                                                                                                                                               |
-| Snapshot TTL expires during A2                                               | Automatically run finalize-revision to capture no-change state and destroy snapshots. Notify user session expired and must restart from A1. If finalize fails, log failure and notify operator. |
-| User never responds in A2 within TTL or interactive timeout (e.g., 72 hours) | Automatically proceed to A3 as 'no response' and run finalize-revision, logging that user did not explicitly select an option.                                                                  |
+| Snapshot TTL expires during A2                                               | Automatically run finalize to capture no-change state and destroy snapshots. Notify user session expired and must restart from A1. If finalize fails, log failure and notify operator. |
+| User never responds in A2 within TTL or interactive timeout (e.g., 72 hours) | Automatically proceed to A3 as 'no response' and run finalize, logging that user did not explicitly select an option.                                                                  |
 
 </guideline>
 
@@ -63,14 +65,14 @@ Clear and instructional — tell the user exactly what to do and where.
 
 ### [A1] Prepare Revision — Create Snapshots
 
-[A1.1] Run the prepare-revision script for each deliverable file:
+[A1.1] Run `prepare` for each deliverable file via the single-entry script:
 
 ```bash
 # Single file
-node scripts/bootstrap.mjs prepare-revision --source <FILE_PATH>
+node scripts/revision.mjs prepare --source <FILE_PATH>
 
 # Multiple files
-node scripts/bootstrap.mjs prepare-revision \
+node scripts/revision.mjs prepare \
   --source <FILE_PATH_1> \
   --source <FILE_PATH_2>
 ```
@@ -113,10 +115,10 @@ Options: `["无需修改", "完成修改"]`
 
 ### [A3] Finalize Revision — Extract Diffs and Destroy Snapshots
 
-[A3.1] Run the finalize-revision script with the SAME set of --source files used in A1:
+[A3.1] Run `finalize` with the SAME set of --source files used in A1:
 
 ```bash
-node scripts/bootstrap.mjs finalize-revision \
+node scripts/revision.mjs finalize \
   --source <FILE_PATH_1> \
   --source <FILE_PATH_2>
 ```
@@ -166,7 +168,7 @@ The `--source` arguments must contain the same set of file paths used in A1 (ord
 <constraint>
 
 - DO NOT skip A1 — snapshots are the sole safety mechanism for the original file. Without them, user edits directly modify the deliverable with no rollback.
-- DO NOT skip A3 — regardless of user choice, finalize-revision MUST be run to destroy snapshots and extract diffs. Leaving snapshots dangling wastes storage and creates session conflicts.
+- DO NOT skip A3 — regardless of user choice, finalize MUST be run to destroy snapshots and extract diffs. Leaving snapshots dangling wastes storage and creates session conflicts.
 - NEVER execute A2 unless A1 has succeeded and returned `success: true` — editing without a snapshot corrupts the original.
 - NEVER limit edits to explicitly changed hunks in the same deliverable files — chain modifications within those files are mandatory.
 - NEVER introduce new inconsistencies as a side effect of processing user changes.
@@ -177,7 +179,7 @@ The `--source` arguments must contain the same set of file paths used in A1 (ord
 
 <patch>
 
-- The scripts require Node.js. IF Node is unavailable, report the error and halt — there is no fallback mechanism.
+- The scripts require Node.js >= 20. The bundled CLI enforces this at startup: if Node is unavailable or below 20, it prints a clear error to stderr and exits with code 1 — there is no fallback mechanism.
 - Snapshot session hashes are ephemeral — after A3 destroys them, the next round MUST start from A1 with a new session.
 - **Automation Mode Abort**: IF the system prompt contains `<aet-run-mode>automation</aet-run-mode>`:
   - This skill is fundamentally user-interactive (uses question tool to present revision
@@ -194,12 +196,12 @@ The `--source` arguments must contain the same set of file paths used in A1 (ord
 
 Decision table for deterministic execution (keep each rule to one conditional and one action):
 
-1. **A1 Preparation**: Run prepare-revision. Require `success: true` else STOP. Do not proceed to A2.
+1. **A1 Preparation**: Run `prepare`. Require `success: true` else STOP. Do not proceed to A2.
 2. **A2 User Editing**: Present revision interface. Wait for user response or timeout.
 3. **A2 Timeout or Response**: If no response received within `--ttl` hours or configured interactive timeout (e.g., 72 hours), proceed to A3 as 'no response'. Otherwise, proceed to A3 with user's explicit choice.
-4. **A3 Finalization**: Always run finalize-revision regardless of user choice. Parse output for `hasAnyChanges` and `canProceedToNextStep`.
-5. **A3 Success**: If `finalize-revision` returns `success: true` → parse output. If `hasAnyChanges === false` → return "no changes" signal to calling pipeline. If `hasAnyChanges === true` → proceed to A4.
-6. **A3 Failure**: If `finalize-revision` returns `success: false` → attempt automated cleanup: `node scripts/bootstrap.mjs cleanup --session <session_hash>`. If cleanup fails, log failure to `.logs/` and include exact cleanup steps and required privileges in output.
+4. **A3 Finalization**: Always run finalize regardless of user choice. Parse output for `hasAnyChanges` and `canProceedToNextStep`.
+5. **A3 Success**: If `finalize` returns `success: true` → parse output. If `hasAnyChanges === false` → return "no changes" signal to calling pipeline. If `hasAnyChanges === true` → proceed to A4.
+6. **A3 Failure**: If `finalize` returns `success: false` → the session directory under the env-paths data dir (see `references/revision-guide.md`) may retain snapshots. Clean it manually or wait for TTL cleanup; log the exact sessionDir from the error output and instruct the operator with the required cleanup path.
 7. **A4 Hunk Processing**: For each hunk, apply deterministic edits. Generate proposed change list for broader logical changes, require user approval.
 8. **A4 Completion**: Return modification statistics (totalAdditions, totalDeletions, totalModifications, hasAnyChanges, canProceedToNextStep) to calling pipeline.
 9. **Next Revision Round**: If user requests another round after A4 → restart from A1 (snapshots destroyed in A3).
