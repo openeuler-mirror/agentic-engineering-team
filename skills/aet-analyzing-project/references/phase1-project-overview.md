@@ -7,8 +7,10 @@ Before running graphify analysis, check whether the project already has a previo
 ### Check Method
 
 ```bash
-# Check if graphify-out folder exists and contains GRAPH_REPORT.md
-test -f "<project-path>/graphify-out/GRAPH_REPORT.md" && echo "EXISTS" || echo "NOT_FOUND"
+# Check if graphify-out folder exists and contains a NON-EMPTY GRAPH_REPORT.md.
+# -f alone would match a 0-byte stub left by a previously crashed run, causing
+# the cache to hit on an empty report. -s additionally requires size > 0.
+test -s "<project-path>/graphify-out/GRAPH_REPORT.md" && echo "EXISTS" || echo "NOT_FOUND"
 ```
 
 ### Decision Logic
@@ -22,14 +24,23 @@ test -f "<project-path>/graphify-out/GRAPH_REPORT.md" && echo "EXISTS" || echo "
 
 Execute before any exploration or questioning.
 
-> **Note**: This step is SKIPPED if S0 detected an existing `graphify-out/GRAPH_REPORT.md`.
+> **Note**: This step is SKIPPED if S0 detected an existing non-empty `graphify-out/GRAPH_REPORT.md`.
+
+### Call method (preferred → fallback)
+
+Use the venv interpreter directly when available — it is the most reliable path
+because it avoids the script's automatic re-exec step entirely. Fall back to
+the system `python3` only if the venv does not exist; the script will then
+auto re-exec into the venv if it finds one.
 
 ```bash
-# Run graphify analysis (auto-detects ~/.aet/venv or uses system python)
-python3 scripts/graphify_analysis.py <project-path>
-
-# Or explicitly use venv (if installed)
+# Preferred: venv interpreter (skills/aet-install creates this venv).
+# Wrap with `timeout` so a hung LLM extraction cannot wedge the whole analysis.
 ~/.aet/venv/bin/python3 scripts/graphify_analysis.py <project-path>
+
+# Fallback: system python3 — script will auto re-exec into ~/.aet/venv if present.
+# If ~/.aet/venv does not exist either, this requires graphifyy installed globally.
+python3 scripts/graphify_analysis.py <project-path>
 ```
 
 - Success: Record node count, edge count, community count; subsequent analysis can use the graphify output for assisted navigation
@@ -234,8 +245,8 @@ Validate documents `Overview.md`, `Architecture.md`, `Modules.md`. Validation Su
 
 ## Completion Checklist
 
-- [ ] S0 pre-check completed: existing graphify-out/GRAPH_REPORT.md detected or not found, decision recorded
-- [ ] Graphify analysis has been run (success or failure reason explained), or skipped due to cached report
+- [ ] S0 pre-check completed: non-empty graphify-out/GRAPH_REPORT.md detected (cache hit → skip S1) or NOT_FOUND (run S1); decision recorded
+- [ ] Graphify analysis exit code recorded (0=ok / 1=runtime / 2=setup / 3=lib error) — on non-zero, install hint or fallback noted; or S1 skipped due to cached report
 - [ ] All four S3 Subagent tasks completed, key code has been actually read
 - [ ] S4 cross-validation has no unresolved contradictions
 - [ ] Overview.md has been generated and passed self-check

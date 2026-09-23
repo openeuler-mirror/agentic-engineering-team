@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync, mkdirSync, copyFileSync, readFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, mkdirSync, copyFileSync, readFileSync, existsSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { build } from 'esbuild';
@@ -258,5 +258,220 @@ describe('install.cjs Bootstrap', () => {
       encoding: 'utf8',
     });
     expect(out).toContain('cmd-shim-ok');
+  });
+});
+
+// ── graphify (knowledge-graph tool) install step ──────────────────────────
+// The bootstrap script installs graphify into ~/.aet/venv as a NON-FATAL
+// optional step (mirrors the legacy install_knowledge_graph() from
+// scripts/install.sh). These tests pin the non-fatal contract: a graphify
+// failure (no python3, pip install fails) NEVER turns into a non-zero exit,
+// and the failure reason is surfaced verbatim so the agent can relay it. The
+// harness uses FULL PATH isolation (PATH = fakeBin only) so the developer's
+// real system python3 cannot leak in and make the tests non-hermetic.
+
+// venv python3 shim: `-c "import graphify"` succeeds iff a marker file exists
+// in the venv dir (the pip-ok shim writes that marker on a successful install,
+// simulating "graphify is now importable"). This lets one shim cover both the
+// "not yet installed" and "installed" states without mid-run mutation.
+const VENV_PY_SHIM = `#!/usr/bin/env node
+const fs = require('fs');
+const path = require('path');
+const a = process.argv.slice(2);
+if (a[0] === '-c') {
+  const marker = path.join(process.env.AET_GLOBAL_ROOT || '', '.aet', 'venv', '.graphify-installed');
+  process.exit(fs.existsSync(marker) ? 0 : 1);
+}
+process.exit(0);
+`;
+
+// venv pip shim (success): on `install`, writes the marker so the next
+// `import graphify` check passes, then exits 0.
+const VENV_PIP_OK_SHIM = `#!/usr/bin/env node
+const fs = require('fs');
+const path = require('path');
+const a = process.argv.slice(2);
+if (a.includes('install')) {
+  const marker = path.join(process.env.AET_GLOBAL_ROOT || '', '.aet', 'venv', '.graphify-installed');
+  fs.writeFileSync(marker, '');
+  process.exit(0);
+}
+process.exit(0);
+`;
+
+// venv pip shim (failure): on `install`, writes a stderr line and exits 1 —
+// simulates a network/dependency error. The marker is NOT written, so the
+// verify step would also fail (but the script reports the pip failure first).
+const VENV_PIP_FAIL_SHIM = `#!/usr/bin/env node
+const a = process.argv.slice(2);
+if (a.includes('install')) {
+  process.stderr.write('pip install failed (simulated network error)\\n');
+  process.exit(1);
+}
+process.exit(0);
+`;
+
+// Fake system python3: --version ok, `-c "import graphify"` exits 1 (system
+// python does NOT have graphify — forces the install path). Its `-m venv` is
+// never reached in these tests because the venv is pre-seeded.
+const SYSTEM_PY_SHIM = `#!/usr/bin/env node
+const a = process.argv.slice(2);
+if (a[0] === '--version') { console.log('Python 3.11.0'); process.exit(0); }
+if (a[0] === '-c') process.exit(1);
+process.exit(0);
+`;
+
+/**
+ * Hermetic harness for the graphify install step. Builds a minimal plugin dir
+ * (cli/ + runtime/ + bin/install.cjs) and an isolated AET_GLOBAL_ROOT, then
+ * runs the bootstrap with PATH = fakeBin ONLY (no real PATH) so the real
+ * system python3 cannot interfere. The fakeBin always has `aet` + `npm` shims
+ * (so the CLI step is idempotent/skipped); a fake system `python3` is added
+ * when requested. A prior venv (venv/bin/python3 + venv/bin/pip) can be
+ * pre-seeded to simulate a prior/partial install.
+ */
+function runGraphifyScenario(opts: {
+  cliVersion?: string;
+  /** 'absent' = no python3 on PATH; 'present' = system python3 present (no graphify module). */
+  systemPython3?: 'absent' | 'present';
+  /** Pre-seed ~/.aet/venv/bin/python3 with this shim content. */
+  preVenvPython?: string;
+  /** Pre-seed ~/.aet/venv/bin/pip with this shim content. */
+  preVenvPip?: string;
+  /** Also pre-create the graphify-installed marker (simulates a ready venv). */
+  preVenvMarker?: boolean;
+  whitelist?: string[];
+} = {}) {
+  const root = mkdtempSync(join(tmpdir(), 'aet-graphify-test-'));
+  mkdirSync(join(root, 'bin'));
+  const cliDir = join(root, 'cli');
+  mkdirSync(cliDir);
+  const ver = opts.cliVersion ?? '0.2.0';
+  writeFileSync(
+    join(cliDir, 'package.json'),
+    JSON.stringify({ name: 'aet-cli', version: ver, bin: { aet: './aet.js' } }, null, 2),
+    'utf8',
+  );
+
+  const runtimeDir = join(root, 'runtime');
+  mkdirSync(join(runtimeDir, 'config'), { recursive: true });
+  writeFileSync(join(runtimeDir, 'config', 'workflow.json'), JSON.stringify({ test: true }), 'utf8');
+  writeFileSync(
+    join(runtimeDir, 'runtime-meta.json'),
+    JSON.stringify({ whitelist: opts.whitelist ?? [] }, null, 2),
+    'utf8',
+  );
+
+  copyFileSync(INSTALL_SCRIPT, join(root, 'bin', 'install.cjs'));
+
+  const aetRoot = mkdtempSync(join(tmpdir(), 'aet-graphify-homedir-'));
+
+  // fakeBin: aet + npm always (CLI step idempotent); python3 when requested.
+  // PATH = fakeBin ONLY — hermetic, real system python3 cannot leak in.
+  // The real `node` binary is symlinked into fakeBin so that (a) the outer
+  // execFileSync(nodePath, ...) resolves under a PATH that contains ONLY
+  // fakeBin, and (b) the `#!/usr/bin/env node` shebangs on the aet/npm
+  // shims resolve when cross-spawn spawns them (the kernel's shebang
+  // resolution searches PATH for `node`). Without this symlink both the
+  // outer spawn and every shebang shim fail with `spawnSync node ENOENT`.
+  const fakeBin = mkdtempSync(join(tmpdir(), 'aet-graphify-fakebin-'));
+  symlinkSync(process.execPath, join(fakeBin, 'node'));
+  writeFileSync(join(fakeBin, 'aet'), `#!/usr/bin/env node\nconsole.log("aet ${ver} (test)")\n`, { mode: 0o755 });
+  writeFileSync(
+    join(fakeBin, 'npm'),
+    `#!/usr/bin/env node\nconst a = process.argv.slice(2);\nif (a.includes('--version')) { console.log('10.8.2'); process.exit(0); }\nprocess.exit(0);\n`,
+    { mode: 0o755 },
+  );
+  if (opts.systemPython3 === 'present') {
+    writeFileSync(join(fakeBin, 'python3'), SYSTEM_PY_SHIM, { mode: 0o755 });
+  }
+
+  // Pre-seed a prior venv (~/.aet/venv/bin/{python3,pip}) if requested.
+  if (opts.preVenvPython !== undefined || opts.preVenvPip !== undefined) {
+    const venvBin = join(aetRoot, '.aet', 'venv', 'bin');
+    mkdirSync(venvBin, { recursive: true });
+    if (opts.preVenvPython !== undefined) {
+      writeFileSync(join(venvBin, 'python3'), opts.preVenvPython, { mode: 0o755 });
+    }
+    if (opts.preVenvPip !== undefined) {
+      writeFileSync(join(venvBin, 'pip'), opts.preVenvPip, { mode: 0o755 });
+    }
+  }
+  if (opts.preVenvMarker) {
+    const venvDir = join(aetRoot, '.aet', 'venv');
+    mkdirSync(venvDir, { recursive: true });
+    writeFileSync(join(venvDir, '.graphify-installed'), '');
+  }
+
+  const env: NodeJS.ProcessEnv = {
+    ...process.env,
+    AET_GLOBAL_ROOT: aetRoot,
+    PATH: fakeBin, // HERMETIC: fakeBin only.
+  };
+
+  try {
+    const stdout = execFileSync(process.execPath, [join(root, 'bin', 'install.cjs')], {
+      env,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    return { status: 0, stdout, aetRoot };
+  } catch (err) {
+    const e = err as NodeJS.ErrnoException & { stdout?: string; stderr?: string };
+    return { status: e.status ?? 1, stdout: e.stdout ?? '', aetRoot };
+  }
+}
+
+describe('install.cjs graphify step (non-fatal optional install)', () => {
+  it('does NOT abort /init when python3 is absent (reports honestly, exits 0)', () => {
+    const res = runGraphifyScenario({ systemPython3: 'absent' });
+    // The script still succeeds — graphify failure is non-fatal.
+    expect(res.status).toBe(0);
+    // Runtime sync still happened (the main install was NOT blocked).
+    expect(res.stdout).toMatch(/syncing AET runtime/);
+    // The graphify failure is surfaced verbatim with a clear reason.
+    expect(res.stdout).toMatch(/graphify NOT installed/);
+    expect(res.stdout).toMatch(/python3 not available/);
+  });
+
+  it('detects an already-installed graphify in ~/.aet/venv and skips', () => {
+    const res = runGraphifyScenario({
+      systemPython3: 'absent', // detection short-circuits at the venv check before reaching system python3
+      preVenvPython: VENV_PY_SHIM,
+      preVenvMarker: true, // marker present → `import graphify` succeeds → "already installed"
+    });
+    expect(res.status).toBe(0);
+    expect(res.stdout).toMatch(/graphify already installed.*~\/\.aet\/venv/);
+    expect(res.stdout).toMatch(/skipping/);
+    // No install attempt was made.
+    expect(res.stdout).not.toMatch(/pip install/);
+  });
+
+  it('reports a pip install failure honestly WITHOUT aborting (exit 0, runtime synced)', () => {
+    const res = runGraphifyScenario({
+      systemPython3: 'present',
+      preVenvPython: VENV_PY_SHIM, // no marker → import fails → detection fails → install attempted
+      preVenvPip: VENV_PIP_FAIL_SHIM, // pip exits 1 with a stderr message
+    });
+    // Non-fatal: the script still exits 0 and the runtime is synced.
+    expect(res.status).toBe(0);
+    expect(res.stdout).toMatch(/syncing AET runtime/);
+    // The pip failure is surfaced verbatim — the agent can relay it to the user.
+    expect(res.stdout).toMatch(/graphify NOT installed/);
+    expect(res.stdout).toMatch(/pip install graphifyy failed/);
+    expect(res.stdout).toMatch(/simulated network error/);
+  });
+
+  it('installs graphify end-to-end when venv + pip succeed (exit 0, verified)', () => {
+    const res = runGraphifyScenario({
+      systemPython3: 'present',
+      preVenvPython: VENV_PY_SHIM, // no marker initially → import fails → install attempted
+      preVenvPip: VENV_PIP_OK_SHIM, // pip writes the marker → verify import passes
+    });
+    expect(res.status).toBe(0);
+    expect(res.stdout).toMatch(/installing graphifyy/);
+    expect(res.stdout).toMatch(/graphify installed into ~\/\.aet\/venv/);
+    // The verify step (import graphify) passed because the pip shim wrote the marker.
+    expect(existsSync(join(res.aetRoot, '.aet', 'venv', '.graphify-installed'))).toBe(true);
   });
 });

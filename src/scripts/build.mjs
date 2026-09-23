@@ -299,10 +299,15 @@ async function copySkills(src, dest) {
 // ---------------------------------------------------------------------------
 
 // The aet-install skill lives under skills/aet-install/ and is copied into every
-// host by SKILLS_SRC (the whole skills/ tree). Its scripts/ is rebuilt from TS:
-// scripts/src/install.ts is bundled by assembleCliSelfInstall into
-// scripts/install.cjs (inlining cross-spawn for cross-platform subprocess
-// spawning). The TS source is kept OUT of dist — only the built .cjs ships.
+// host by SKILLS_SRC (the whole skills/ tree). Its scripts/install.cjs is
+// PRE-BUILT by the skill's own toolchain
+// (skills/aet-install/scripts/src/build.mjs — aet-design-env pattern) and
+// COMMITTED to the repo; copySkills carries it into dist verbatim (644, called
+// via `node scripts/install.cjs`). assembleCliSelfInstall does NOT touch
+// install.cjs — it only assembles cli/ (npm-installable aet CLI package) +
+// runtime/ (base config synced to ~/.aet/), which depend on main repo artifacts
+// (dist/bin/aet.js, src/config/) and so cannot live in the skill. The TS source
+// + build toolchain are kept OUT of dist (copySkills explicitly skips .../scripts/src/).
 
 /**
  * Stamp the AET install resources into `<pluginDir>/skills/aet-install/`.
@@ -311,7 +316,7 @@ async function copySkills(src, dest) {
  *
  *   <pluginDir>/skills/aet-install/
  *   ├── SKILL.md                  # install instructions (from skills/aet-install/, via SKILLS_SRC copy)
- *   ├── scripts/install.cjs       # bootstrap script (BUNDLED from scripts/src/install.ts)
+ *   ├── scripts/install.cjs       # bootstrap script (PRE-BUILT by skill's own build.mjs, committed to repo)
  *   ├── runtime/                  # src/config/workflow.json + extensions merged (runtime-meta merged)
  *   └── cli/                      # npm-installable aet CLI package
  *
@@ -329,38 +334,10 @@ async function copySkills(src, dest) {
  */
 async function assembleCliSelfInstall(pluginDir, rootPkg, label) {
   const installDir = join(pluginDir, 'skills', 'aet-install');
-  const scriptsDir = join(installDir, 'scripts');
   const cliDir = join(installDir, 'cli');
   const runtimeDir = join(installDir, 'runtime');
 
-  // 1. scripts/install.cjs — bundled from TS source. The bootstrap script is
-  //    authored as TS (skills/aet-install/scripts/src/install.ts) and esbuild
-  //    compiles+bundles it here to CJS, inlining cross-spawn so the shipped
-  //    `.cjs` stays zero-dependency (only `node:*` builtins at runtime). The
-  //    raw TS source is NOT copied into dist (kept as source only).
-  const installSrc = join('skills', 'aet-install', 'scripts', 'src', 'install.ts');
-  const installOut = join(scriptsDir, 'install.cjs');
-  await mkdir(scriptsDir, { recursive: true });
-  await build({
-    entryPoints: [installSrc],
-    bundle: true,
-    platform: 'node',
-    format: 'cjs',
-    target: 'node18',
-    outfile: installOut,
-    banner: { js: '#!/usr/bin/env node' },
-    // Keep the bundle readable for debugging; the shipped .cjs is still a
-    // plain script the agent can read. Flip to `true` for production.
-    minify: false,
-    sourcemap: false,
-    treeShaking: true,
-    legalComments: 'none',
-    logLevel: 'info',
-  });
-  await chmod(installOut, 0o755);
-  console.log(`[aet:build] ${label.padEnd(12)} → ${installOut} (bundle install, ${rootPkg.version})`);
-
-  // 2. cli/ — the npm-installable package wrapping the CLI bundle.
+  // 1. cli/ — the npm-installable package wrapping the CLI bundle.
   await mkdir(cliDir, { recursive: true });
   const cliPkg = {
     name: 'aet-cli',
@@ -380,7 +357,7 @@ async function assembleCliSelfInstall(pluginDir, rootPkg, label) {
   );
   console.log(`[aet:build] ${label.padEnd(12)} → ${join(cliDir, 'package.json')} + aet.js (cli self-install)`);
 
-  // 3. runtime/ — the base AET runtime files, copied to ~/.aet/ at bootstrap.
+  // 2. runtime/ — the base AET runtime files, copied to ~/.aet/ at bootstrap.
   //    Base source: src/config/workflow.json → runtime/config/workflow.json,
   //    src/config/repository.json → runtime/config/repository.json.
   //    Extension-provided runtime files (src/extensions/*/runtime) are merged

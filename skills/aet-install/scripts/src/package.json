@@ -1,0 +1,21 @@
+{
+  "name": "aet-install-scripts",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Dev toolchain for aet-install scripts – build, test, typecheck",
+  "scripts": {
+    "build": "node build.mjs",
+    "test": "node node_modules/vitest/vitest.mjs run",
+    "test:watch": "node node_modules/vitest/vitest.mjs",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/cross-spawn": "^6.0.6",
+    "@types/node": "^20",
+    "cross-spawn": "^7.0.6",
+    "esbuild": "^0.28.2",
+    "typescript": "^5.4.5",
+    "vitest": "^4.1.10"
+  }
+}
