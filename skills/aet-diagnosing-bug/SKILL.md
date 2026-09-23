@@ -62,6 +62,39 @@ strings to the caller, so they can be passed directly as inputs to the next step
 Project source code / test edits made in later steps still go to their normal
 locations, regardless of mode.
 
+## Small Bug Fast Path (Light Path)
+
+When the caller (`aet-bugfix` agent, `main.md` Step 1.6 Size Triage) passes
+`path=light` — i.e. the bug is in In-memory mode and all three Size Triage conditions
+hold (root cause stated + fix direction stated + estimated footprint ≤ 50 lines) — this
+skill takes the **Small Bug Fast Path** instead of the full Phase 0-6 workflow.
+
+**What the fast path does:**
+
+- **Phase 1-3 still execute** (Bug Understanding → Root Cause Localization → Affected
+  Files Analysis) — these are needed to extract/confirm the root cause and identify the
+  affected files that fill the inline summary.
+- **Phase 4 (Diagnosis Report Generation) is skipped** — no full structured report is
+  produced.
+- **Phase 5 (Hand off Diagnosis Report) still runs**, but hands off the inline summary
+  (not file paths).
+- **Phase 6 (Generate Fix Plan) is skipped** — no checkbox fix-plan is produced.
+
+**Output: a ≤10-line inline summary** (format below), passed forward as an inline
+markdown string to Step 3 (`aet-implementing-requirement`). **No file is written to disk**
+(In-memory mode constraint).
+
+```
+## Bug Inline Summary (Light Path)
+- Root Cause: [1-2 行，从输入提取]
+- Affected Files: [1-3 行，文件:行范围 + 变更类型]
+- Acceptance Criteria: [1-3 行，bug regression 验收点]
+```
+
+> Total ≤ 10 lines. The inline summary replaces both the Diagnosis Report and the Fix Plan
+> in the light path. Acceptance Criteria in the summary must be specific enough to drive a
+> regression test (cover the bug's Reproduction Steps or Trigger Conditions).
+
 ## Diagnosis Workflow
 
 ### Phase 0: Vulnerability Identifier Detection (CVE)
