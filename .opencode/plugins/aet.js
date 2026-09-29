@@ -17,6 +17,7 @@ import { ConfigManager } from '../../.platform/utils/config-manager.js';
 import { CheckpointManager } from '../../.platform/utils/checkpoint-manager.js';
 import { WorkflowEngine } from '../../.platform/utils/workflow-engine.js';
 import { TraceLogger, TRACE_DIR } from '../../.platform/utils/trace-logger.js';
+import { AgentInsightClient, generateCollaborationId, generateEventId } from '../../.platform/utils/agent-insight-client.js';
 import {
   ensureStringPath,
   detectProjectAnalysisFolder,
@@ -223,6 +224,11 @@ let pluginClient = null;
 let pluginDirectory = null;
 let rootSessionID = null;
 
+// agent-insight 协作上传
+let agentInsightClient = null;
+let collaborationId = null;
+let currentAgentId = null; // 追踪当前 agent，用于协作上传时获取 fromAgent
+
 // ============================================
 // Hook Handling
 // ============================================
@@ -245,7 +251,7 @@ async function triggerAfterHook(sessionID, stage, checkpointID) {
     const currentIdx = stages.findIndex(s => (s.stage_id || s.agent_id) === (stage.stage_id || stage.agent_id));
     const nextStage = stages[currentIdx + 1];
     if (nextStage) {
-      await executeStageHandover(nextStage, null, checkpointID);
+      await executeStageHandover(nextStage, null, checkpointID, null, sessionID);
     }
     return;
   }
@@ -258,7 +264,7 @@ async function triggerAfterHook(sessionID, stage, checkpointID) {
     const currentIdx = stages.findIndex(s => (s.stage_id || s.agent_id) === (stage.stage_id || stage.agent_id));
     const nextStage = stages[currentIdx + 1];
     if (nextStage) {
-      await executeStageHandover(nextStage, null, checkpointID);
+      await executeStageHandover(nextStage, null, checkpointID, null, sessionID);
     } else {
       // Last stage: complete the checkpoint (the existing `auto` branch
       // omits this case — automation must terminate cleanly when there
@@ -451,6 +457,23 @@ async function createSessionForClearIfNeeded(oldSessionID, agentId, checkpointID
       return oldSessionID;
     }
 
+    // 上传协作事件到 agent-insight 平台（同 agent 清上下文也属于新建 session 的协作事件）
+    if (agentInsightClient?.enabled) {
+      if (!collaborationId) {
+        collaborationId = generateCollaborationId();
+      }
+      const fromAgent = currentAgentId || agentId;
+      const toAgent = agentId;
+      await agentInsightClient.uploadEvent({
+        collaborationId,
+        eventId: generateEventId(),
+        fromSessionId: oldSessionID,
+        toSessionId: newSessionID,
+        description: `${fromAgent} → ${toAgent}: ${stage} 阶段清上下文重建 session`,
+        observedAt: new Date().toISOString(),
+      });
+    }
+
     try {
       await pluginClient.tui.publish({
         body: {
@@ -576,7 +599,7 @@ function resolveSessionAgent(sessionID, fallbackAgent = null) {
 // Stage Handover
 // ============================================
 
-async function executeStageHandover(stage, context, checkpointID, promptForAgent = null) {
+async function executeStageHandover(stage, context, checkpointID, promptForAgent = null, fromSessionId = null) {
   // promptForAgent: 发送给 agent 的 prompt（resume 时用 resumePrompt）
   // context: 保存到 execution 的 context（保持原始值，不应被 resumePrompt 覆盖）
   // 如果没有 promptForAgent，用 context 作为 prompt
@@ -621,6 +644,31 @@ async function executeStageHandover(stage, context, checkpointID, promptForAgent
       const currentStageExecution = checkpointManager.getCurrentExecution(checkpoint, checkpoint.workflow.currentStage);
       const currentStageSteps = currentStageExecution?.steps || null;
       const currentStageCurrentStep = currentStageExecution?.currentStep || null;
+
+      // 上传跨 Session 协作关系到 agent-insight 平台（仅当 enabled 时）
+      // 在 newSession 创建后、startExecutionOn 之前执行：
+      //   fromAgent = currentAgentId（追踪的当前 agent，不依赖 checkpoint）
+      //   toAgent = stage.agent_id（即将切换到的 agent）
+      //   上传后切换 currentAgentId 为新 agent
+      if (agentInsightClient?.enabled) {
+        if (!collaborationId) {
+          collaborationId = generateCollaborationId();
+        }
+        const eventId = generateEventId();
+        const fromSession = fromSessionId || 'root';
+        const fromAgent = currentAgentId || 'Build';
+        const toAgent = stage.agent_id;
+        const desc = `${fromAgent} → ${toAgent}: ${stageName} 阶段启动`;
+        await agentInsightClient.uploadEvent({
+          collaborationId,
+          eventId,
+          fromSessionId: fromSession,
+          toSessionId: newSessionID,
+          description: desc,
+          observedAt: new Date().toISOString(),
+        });
+        currentAgentId = toAgent;
+      }
 
       // 获取目标阶段的 execution（用于 resume 目标阶段的情况）
       const targetStageExecution = checkpointManager.getCurrentExecution(checkpoint, stageName);
@@ -917,6 +965,9 @@ export const aetPlugin = async ({ client, directory }) => {
   }));
   traceLogger.install();
 
+  // 初始化 AgentInsightClient
+  agentInsightClient = new AgentInsightClient(configManager.getAgentInsightConfig());
+
   return {
     config: async (config) => {
       configManager.reloadConfig(pluginDirectory);
@@ -1088,6 +1139,11 @@ export const aetPlugin = async ({ client, directory }) => {
         // 使用路由后的 agent
         const finalAgent = output?.message?.agent || sessionAgent;
 
+        // 追踪当前 agent，供跨 session 上传时获取 fromAgent
+        if (finalAgent) {
+          currentAgentId = finalAgent;
+        }
+
         try {
           const msgs = await pluginClient.session.messages({ path: { id: sessionID } });
           const msgCount = msgs.data?.length || 0;
@@ -1190,6 +1246,7 @@ export const aetPlugin = async ({ client, directory }) => {
                       // 最后阶段，直接完成 workflow 并归档
                       checkpointManager.completeCheckpoint(currentCheckpointID);
                       currentCheckpointID = null;
+                      collaborationId = null;
                     } else {
                       await triggerAfterHook(sessionID, fullStageConfig || { agent_id: sessionAgent, stage_id: checkpoint.workflow.currentStage }, currentCheckpointID);
                     }
@@ -1341,7 +1398,7 @@ export const aetPlugin = async ({ client, directory }) => {
           }
           currentCheckpointID = checkpointID;
           const stageToStart = isScenario ? firstStage : { agent_id: targetAgent, stage_id: targetAgent };
-          await executeStageHandover(stageToStart, desc, checkpointID);
+          await executeStageHandover(stageToStart, desc, checkpointID, null, context?.sessionID);
           return JSON.stringify({ success: true, mode: 'new-session', checkpointID, stage: stageToStart.stage_id || stageToStart.agent_id }, null, 2);
         },
       }),
@@ -1417,13 +1474,14 @@ export const aetPlugin = async ({ client, directory }) => {
               { agent_id: execution.agentId, stage_id: targetStage },
               originalContext,
               targetCheckpointID,
-              resumePrompt
+              resumePrompt,
+              context?.sessionID
             );
           } else {
             const stages = workflowEngine.getScenarioWorkflow(checkpoint.workflow.name);
             const stageConfig = stages.find(s => (s.stage_id || s.agent_id) === targetStage);
             if (stageConfig) {
-              await executeStageHandover(stageConfig, originalContext, targetCheckpointID, resumePrompt);
+              await executeStageHandover(stageConfig, originalContext, targetCheckpointID, resumePrompt, context?.sessionID);
             }
           }
 
@@ -1487,10 +1545,11 @@ export const aetPlugin = async ({ client, directory }) => {
             // Workflow 完成
             checkpointManager.completeCheckpoint(currentCheckpointID);
             currentCheckpointID = null;
+            collaborationId = null;
             return JSON.stringify({ success: true, done: true, message: 'Workflow completed' }, null, 2);
           }
 
-          await executeStageHandover(nextStage, ctx, currentCheckpointID);
+          await executeStageHandover(nextStage, ctx, currentCheckpointID, null, context?.sessionID);
 
           return JSON.stringify({ success: true, stage: nextStage.stage_id || nextStage.agent_id }, null, 2);
         },

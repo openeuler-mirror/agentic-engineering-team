@@ -5,8 +5,8 @@
  * 读取 .aet/project-analysis/ 目录下的 Markdown 文件，格式化为 XML 风格的结构化文本。
  */
 
-const path = require('path');
-const fs = require('fs');
+import path from 'path';
+import fs from 'fs';
 
 function ensureStringPath(input) {
   if (typeof input === 'string') return input;
@@ -181,7 +181,7 @@ function extractDescriptionFromFrontmatter(frontmatter) {
   return match ? (match[1] || match[2]).trim() : null;
 }
 
-module.exports = {
+export {
   ensureStringPath,
   detectProjectAnalysisFolder,
   extractFrontmatter,

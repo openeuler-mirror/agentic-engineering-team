@@ -6,6 +6,12 @@
     "enabled": true,
     "_comment": "LLM 请求/响应追踪日志。enabled=true 时拦截 fetch 并记录到 ~/.aet/log/trace/"
   },
+  "agentInsight": {
+    "enabled": false,
+    "apiBaseUrl": "http://localhost:3000",
+    "apiKey": "",
+    "_comment": "Agent Insight 跨 Session 协作上报配置。enabled=true 时在任务结束后上传协作记录，enabled=false 时不上传。apiKey 对应请求头 x-witty-api-key"
+  },
   "codePlatform": {
     "_comment": "代码托管平台配置：包含多平台 Token",
     "platforms": {

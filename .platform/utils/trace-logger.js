@@ -7,9 +7,9 @@
  * 通过构造函数注入。
  */
 
-const path = require('path');
-const fs = require('fs');
-const os = require('os');
+import path from 'path';
+import fs from 'fs';
+import os from 'os';
 
 const TRACE_DIR = path.join(os.homedir(), '.aet', 'log', 'trace');
 
@@ -284,4 +284,4 @@ class TraceLogger {
   }
 }
 
-module.exports = { TraceLogger, redactHeaders, TRACE_DIR, SENSITIVE_HEADERS };
+export { TraceLogger, redactHeaders, TRACE_DIR, SENSITIVE_HEADERS };

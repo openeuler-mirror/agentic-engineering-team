@@ -86,4 +86,4 @@ class WorkflowEngine {
   }
 }
 
-module.exports = { WorkflowEngine };
+export { WorkflowEngine };
