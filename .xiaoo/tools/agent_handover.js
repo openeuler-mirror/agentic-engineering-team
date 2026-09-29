@@ -64,8 +64,31 @@ async function main() {
       return;
     }
 
-    // 完成当前阶段（与 opencode completeExecution 对齐）
     const currentStage = checkpoint.workflow.currentStage;
+
+    // Stage-level before confirm check：
+    // 目标阶段配置了 before !== 'auto'，且尚未发送 stage before_confirm，
+    // 拒绝调用，强制走 idle handler 的 before_confirm 流程。
+    {
+      const we = new WorkflowEngine(configManager, checkpointManager);
+      const stages = we.getScenarioWorkflow(checkpoint.workflow.name);
+      const targetStageConfig = stages?.find(s =>
+        (s.agent_id || s.stage_id) === resolvedAgent
+      );
+      const stageBefore = targetStageConfig?.before || 'auto';
+      if (stageBefore !== 'auto') {
+        const sent = checkpoint.workflow.stageBeforeConfirmSent?.[resolvedAgent];
+        if (!sent) {
+          outputError(
+            `阶段 "${resolvedAgent}" 配置了 before:${stageBefore}，需要等待系统发送确认提示词后再开始执行。` +
+            `请立即结束当前回复，等待系统确认提示。`
+          );
+          return;
+        }
+      }
+    }
+
+    // 完成当前阶段（与 opencode completeExecution 对齐）
     if (currentStage) {
       const currentExecution = checkpointManager.getCurrentExecution(checkpoint, currentStage);
 
@@ -80,7 +103,7 @@ async function main() {
         const afterHook = currentStepConfig?.after || 'auto';
         if (afterHook !== 'auto' && !currentStepState?.confirmSent) {
           outputError(
-            `当前步骤 "${currentStepConfig.name}" 配置了 after:${currentStepConfig.after}，需要等待系统发送确认提示词后再进行阶段移交。` +
+            `当前步骤 "${currentStepConfig.name}" 配置了 after:${afterHook}，需要等待系统发送确认提示词后再进行阶段移交。` +
             `请立即结束当前回复，等待系统确认提示。`
           );
           return;

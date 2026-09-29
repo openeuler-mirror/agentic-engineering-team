@@ -115,24 +115,117 @@ function main() {
       : null;
     const actions = [];
 
+    // 标记 step beforeConfirmSent，保持 pending
+    function markBeforeConfirmSent(stage, stepId) {
+      const cp = checkpointManager.getCheckpoint(checkpointID);
+      const cpExec = checkpointManager.getCurrentExecution(cp, stage);
+      if (cpExec && cpExec.steps[stepId]) {
+        cpExec.steps[stepId] = { ...cpExec.steps[stepId], beforeConfirmSent: true };
+        checkpointManager.saveCheckpoint(cp);
+      }
+    }
+    // pending → in_progress + push history + save
+    function startStepInProgress(stage, stepId) {
+      const cp = checkpointManager.getCheckpoint(checkpointID);
+      const cpExec = checkpointManager.getCurrentExecution(cp, stage);
+      if (cpExec && cpExec.steps[stepId]?.status === 'pending') {
+        const stepCtx = cpExec.steps[stepId].context || cpExec.context || null;
+        cpExec.steps[stepId] = {
+          ...cpExec.steps[stepId],
+          status: 'in_progress',
+          startedAt: new Date().toISOString(),
+          context: stepCtx,
+        };
+        cp.history.push({
+          ts: new Date().toISOString(),
+          event: 'step_started',
+          stage,
+          executionId: cpExec.executionId,
+          step: stepId,
+        });
+        checkpointManager.saveCheckpoint(cp);
+      }
+    }
+    // 构造首步 prompt：before 非 auto → confirm prompt + markBeforeConfirmSent；否则 formatStepPrompt + startStepInProgress
+    function buildFirstStepPrompt(stage, firstStep) {
+      const firstStepId = firstStep.step_id || firstStep.name;
+      const before = firstStep.before || 'auto';
+      if (before !== 'auto') {
+        markBeforeConfirmSent(stage, firstStepId);
+        return buildHookConfirmPrompt(
+          workflowEngine,
+          before,
+          `\n\nCurrent Step: **${firstStep.name}**\n\n**If user approves, please end your turn. The system will automatically inject the step instructions.**`,
+          confirmPrompt.stepBefore(firstStep.name)
+        );
+      }
+      startStepInProgress(stage, firstStepId);
+      return formatStepPrompt(firstStep);
+    }
+    // 标记 stage beforeConfirmSent（per-stage map），用于 agent_handover 守卫
+    function markStageBeforeConfirmSent(stageId) {
+      const cp = checkpointManager.getCheckpoint(checkpointID);
+      cp.workflow.stageBeforeConfirmSent = cp.workflow.stageBeforeConfirmSent || {};
+      cp.workflow.stageBeforeConfirmSent[stageId] = true;
+      checkpointManager.saveCheckpoint(cp);
+    }
+    // 处理 auto stage transition：检查 next stage before，决定发 confirm 还是启动 execution
+    function handleAutoStageTransition(nextStage, nextAgentId, nextAgentConfig, contextForExec, contextForPrompt) {
+      const nextStageBefore = nextStage.before || 'auto';
+      if (nextStageBefore !== 'auto') {
+        // next stage 有 before confirm → 检查是否已发送
+        if (checkpoint.workflow.stageBeforeConfirmSent?.[nextAgentId]) {
+          return; // 已发送，等待 agent_handover
+        }
+        // 发送 before_confirm，不启动 execution
+        const confirmText = buildHookConfirmPrompt(
+          workflowEngine,
+          nextStageBefore,
+          `\n\nCurrent Stage: **${nextAgentId}**\n\n**If user approves, please call agent_handover with checkpoint_id: "${checkpointID}" and target_agent: "${nextAgentId}" to begin this stage.**`,
+          `阶段 **${nextAgentId}** 需要确认后才能开始执行。`
+        );
+        markStageBeforeConfirmSent(nextAgentId);
+        actions.push({ kind: 'send_prompt', session_id: sessionId, text: confirmText });
+        return;
+      }
+      // before:auto → 启动 execution + 注入首步 prompt
+      checkpointManager.startExecution(
+        checkpointID,
+        nextAgentId,
+        sessionId,
+        nextAgentId,
+        contextForExec
+      );
+      if (nextAgentConfig?.workflow?.length > 0) {
+        checkpointManager.initSteps(checkpointID, nextAgentId, nextAgentConfig.workflow);
+      }
+      let stageText;
+      if (nextAgentConfig?.workflow?.length > 0) {
+        stageText = buildFirstStepPrompt(nextAgentId, nextAgentConfig.workflow[0]);
+      } else {
+        stageText = contextForPrompt
+          ? `## Context from previous stage:\n${asText(contextForPrompt)}`
+          : `Continue workflow stage: ${nextAgentId}`;
+      }
+      actions.push({ kind: 'send_prompt', session_id: sessionId, text: stageText });
+    }
+
     if (!execution || execution.status === 'interrupted') {
       // 无 execution — 检查是否为首阶段 stage before confirm（workflow_start 创建但未启动 execution）
       if (!currentStage && checkpoint.workflow.status === 'in_progress') {
         const stages = workflowEngine.getScenarioWorkflow(checkpoint.workflow.name);
         if (stages && stages.length > 0) {
           const firstStage = stages[0];
+          const stageAgentId = firstStage.agent_id || firstStage.stage_id;
           const stageBefore = firstStage.before || 'auto';
-          if (stageBefore !== 'auto' && !checkpoint.workflow.stageBeforeConfirmSent) {
-            const stageAgentId = firstStage.agent_id || firstStage.stage_id;
+          if (stageBefore !== 'auto' && !checkpoint.workflow.stageBeforeConfirmSent?.[stageAgentId]) {
             const confirmText = buildHookConfirmPrompt(
               workflowEngine,
               stageBefore,
               `\n\nCurrent Stage: **${stageAgentId}**\n\n**If user approves, please call agent_handover with checkpoint_id: "${checkpointID}" and target_agent: "${stageAgentId}" to begin this stage.**`,
               `Workflow "${checkpoint.workflow.name}" 已创建。阶段 **${stageAgentId}** 需要确认后才能开始执行。`
             );
-            const cp = checkpointManager.getCheckpoint(checkpointID);
-            cp.workflow.stageBeforeConfirmSent = true;
-            checkpointManager.saveCheckpoint(cp);
+            markStageBeforeConfirmSent(stageAgentId);
             actions.push({ kind: 'send_prompt', session_id: sessionId, text: confirmText });
           }
         }
@@ -154,43 +247,26 @@ function main() {
       const currentStepState = execution.steps[currentStepId];
 
       if (currentStepState?.status === 'pending') {
-        // step pending → 注入 step 指令 + pending → in_progress
+        // step pending → 检查 before hook
         const currentStepConfig = agentConfig.workflow.find(
           s => (s.step_id || s.name) === currentStepId
         );
         if (currentStepConfig) {
           let stepText;
           const stepBefore = currentStepConfig.before || 'auto';
-          if (stepBefore !== 'auto') {
+          if (stepBefore !== 'auto' && !currentStepState.beforeConfirmSent) {
+            // before 非 auto 且尚未发送确认提示 → 注入 before_confirm，保持 pending
             stepText = buildHookConfirmPrompt(
               workflowEngine,
               stepBefore,
-              `\n\nCurrent Step: **${currentStepConfig.name}**\n\n**If user approves, please call step_handover to continue.**`,
+              `\n\nCurrent Step: **${currentStepConfig.name}**\n\n**If user approves, please end your turn. The system will automatically inject the step instructions.**`,
               confirmPrompt.stepBefore(currentStepConfig.name)
             );
+            markBeforeConfirmSent(currentStage, currentStepId);
           } else {
+            // before:auto 或 before_confirm 已发送 → 注入 step 指令 + pending → in_progress
             stepText = formatStepPrompt(currentStepConfig);
-          }
-
-          // pending → in_progress
-          const cp = checkpointManager.getCheckpoint(checkpointID);
-          const cpExecution = checkpointManager.getCurrentExecution(cp, currentStage);
-          if (cpExecution && cpExecution.steps[currentStepId]?.status === 'pending') {
-            const stepCtx = cpExecution.steps[currentStepId].context || cpExecution.context || null;
-            cpExecution.steps[currentStepId] = {
-              ...cpExecution.steps[currentStepId],
-              status: 'in_progress',
-              startedAt: new Date().toISOString(),
-              context: stepCtx,
-            };
-            cp.history.push({
-              ts: new Date().toISOString(),
-              event: 'step_started',
-              stage: currentStage,
-              executionId: cpExecution.executionId,
-              step: currentStepId,
-            });
-            checkpointManager.saveCheckpoint(cp);
+            startStepInProgress(currentStage, currentStepId);
           }
 
           actions.push({
@@ -289,61 +365,11 @@ function main() {
                   );
                   actions.push({ kind: 'send_prompt', session_id: sessionId, text: confirmText });
                 } else {
-                  checkpointManager.startExecution(
-                    checkpointID,
-                    nextAgentId,
-                    sessionId,
-                    nextAgentId,
-                    execResult || execution.context || checkpoint.workflow.description
+                  handleAutoStageTransition(
+                    nextStage, nextAgentId, nextAgentConfig,
+                    execResult || execution.context || checkpoint.workflow.description,
+                    execResult || execution.context
                   );
-
-                  if (nextAgentConfig?.workflow?.length > 0) {
-                    checkpointManager.initSteps(checkpointID, nextAgentId, nextAgentConfig.workflow);
-                  }
-
-                  let stageText;
-                  if (nextAgentConfig?.workflow?.length > 0) {
-                    const firstStep = nextAgentConfig.workflow[0];
-                    const before = firstStep.before || 'auto';
-                    if (before !== 'auto') {
-                      stageText = buildHookConfirmPrompt(
-                        workflowEngine,
-                        before,
-                        `\n\nCurrent Step: **${firstStep.name}**\n\n**If user approves, please call step_handover to continue.**`,
-                        confirmPrompt.stepBefore(firstStep.name)
-                      );
-                    } else {
-                      stageText = formatStepPrompt(firstStep);
-                    }
-
-                    // pending → in_progress
-                    const cp = checkpointManager.getCheckpoint(checkpointID);
-                    const cpExecution = checkpointManager.getCurrentExecution(cp, nextAgentId);
-                    const firstStepId = firstStep.step_id || firstStep.name;
-                    if (cpExecution && cpExecution.steps[firstStepId]?.status === 'pending') {
-                      const stepCtx = cpExecution.steps[firstStepId].context || cpExecution.context || null;
-                      cpExecution.steps[firstStepId] = {
-                        ...cpExecution.steps[firstStepId],
-                        status: 'in_progress',
-                        startedAt: new Date().toISOString(),
-                        context: stepCtx,
-                      };
-                      cp.history.push({
-                        ts: new Date().toISOString(),
-                        event: 'step_started',
-                        stage: nextAgentId,
-                        executionId: cpExecution.executionId,
-                        step: firstStepId,
-                      });
-                      checkpointManager.saveCheckpoint(cp);
-                    }
-                  } else {
-                    stageText = (execResult || execution.context)
-                      ? `## Context from previous stage:\n${asText(execResult || execution.context)}`
-                      : `Continue workflow stage: ${nextAgentId}`;
-                  }
-
-                  actions.push({ kind: 'send_prompt', session_id: sessionId, text: stageText });
                 }
               }
             } else {
@@ -357,41 +383,21 @@ function main() {
               if (nextBefore === 'auto') {
                 // before:auto/null → 注入下一步指令 + pending→in_progress
                 const stepText = formatStepPrompt(nextStepConfig);
-
-                // pending → in_progress
-                const cp = checkpointManager.getCheckpoint(checkpointID);
-                const cpExecution = checkpointManager.getCurrentExecution(cp, currentStage);
-                if (cpExecution && cpExecution.steps[nextStepId]?.status === 'pending') {
-                  const stepCtx = cpExecution.steps[nextStepId].context || null;
-                  cpExecution.steps[nextStepId] = {
-                    ...cpExecution.steps[nextStepId],
-                    status: 'in_progress',
-                    startedAt: new Date().toISOString(),
-                    context: stepCtx,
-                  };
-                  cp.history.push({
-                    ts: new Date().toISOString(),
-                    event: 'step_started',
-                    stage: currentStage,
-                    executionId: cpExecution.executionId,
-                    step: nextStepId,
-                  });
-                  checkpointManager.saveCheckpoint(cp);
-                }
-
+                startStepInProgress(currentStage, nextStepId);
                 actions.push({
                   kind: 'send_prompt',
                   session_id: sessionId,
                   text: stepText,
                 });
-              } else if (nextBefore !== 'auto') {
-                // before:非 auto → 发确认 prompt，等 LLM 调 step_handover
+              } else {
+                // before:非 auto → 发确认 prompt，保持 pending，下次 idle 注入 step prompt
                 const confirmText = buildHookConfirmPrompt(
                   workflowEngine,
                   nextBefore,
-                  `\n\nCurrent Step: **${nextStepConfig.name}**\n\n**If user approves, please call step_handover to continue.**`,
+                  `\n\nCurrent Step: **${nextStepConfig.name}**\n\n**If user approves, please end your turn. The system will automatically inject the step instructions.**`,
                   confirmPrompt.stepBefore(nextStepConfig.name)
                 );
+                markBeforeConfirmSent(currentStage, nextStepId);
                 actions.push({
                   kind: 'send_prompt',
                   session_id: sessionId,
@@ -441,68 +447,12 @@ function main() {
             text: confirmText,
           });
         } else {
-          // stage after:auto → 在当前 session 内推进到下一阶段
-          checkpointManager.startExecution(
-            checkpointID,
-            nextAgentId,
-            sessionId,
-            nextAgentId,
-            execution.context || checkpoint.workflow.description
+          // stage after:auto → 检查 next stage before，决定发 confirm 还是启动 execution
+          handleAutoStageTransition(
+            nextStage, nextAgentId, nextAgentConfig,
+            execution.context || checkpoint.workflow.description,
+            execution.context
           );
-
-          // 初始化新阶段 steps
-          if (nextAgentConfig?.workflow?.length > 0) {
-            checkpointManager.initSteps(checkpointID, nextAgentId, nextAgentConfig.workflow);
-          }
-
-          // 构造新阶段 prompt
-          let stageText;
-          if (nextAgentConfig?.workflow?.length > 0) {
-            const firstStep = nextAgentConfig.workflow[0];
-            const before = firstStep.before || 'auto';
-            if (before !== 'auto') {
-              stageText = buildHookConfirmPrompt(
-                workflowEngine,
-                before,
-                `\n\nCurrent Step: **${firstStep.name}**\n\n**If user approves, please call step_handover to continue.**`,
-                confirmPrompt.stepBefore(firstStep.name)
-              );
-            } else {
-              stageText = formatStepPrompt(firstStep);
-            }
-
-            // pending → in_progress
-            const cp = checkpointManager.getCheckpoint(checkpointID);
-            const cpExecution = checkpointManager.getCurrentExecution(cp, nextAgentId);
-            const firstStepId = firstStep.step_id || firstStep.name;
-            if (cpExecution && cpExecution.steps[firstStepId]?.status === 'pending') {
-              const stepCtx = cpExecution.steps[firstStepId].context || cpExecution.context || null;
-              cpExecution.steps[firstStepId] = {
-                ...cpExecution.steps[firstStepId],
-                status: 'in_progress',
-                startedAt: new Date().toISOString(),
-                context: stepCtx,
-              };
-              cp.history.push({
-                ts: new Date().toISOString(),
-                event: 'step_started',
-                stage: nextAgentId,
-                executionId: cpExecution.executionId,
-                step: firstStepId,
-              });
-              checkpointManager.saveCheckpoint(cp);
-            }
-          } else {
-            stageText = execution.context
-              ? `## Context from previous stage:\n${asText(execution.context)}`
-              : `Continue workflow stage: ${nextAgentId}`;
-          }
-
-          actions.push({
-            kind: 'send_prompt',
-            session_id: sessionId,
-            text: stageText,
-          });
         }
       }
     }

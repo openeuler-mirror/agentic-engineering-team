@@ -76,7 +76,7 @@ async function main() {
       const afterHook = currentStepConfig?.after || 'auto';
       if (afterHook !== 'auto' && !currentStepState.confirmSent) {
         outputError(
-          `当前步骤 "${currentStepConfig.name}" 配置了 after:${currentStepConfig.after}，需要等待系统发送确认提示词后再调用 step_handover。` +
+          `当前步骤 "${currentStepConfig.name}" 配置了 after:${afterHook}，需要等待系统发送确认提示词后再调用 step_handover。` +
           `请立即结束当前回复，等待系统确认提示。`
         );
         return;
