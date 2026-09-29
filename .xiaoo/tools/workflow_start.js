@@ -46,7 +46,7 @@ async function main() {
 
     // 确定首阶段 agent
     let targetAgent;
-    let firstStageBefore = null;
+    let firstStageBefore = 'auto';
     if (isScenario) {
       const stages = workflowEngine.getScenarioWorkflow(name);
       if (!stages || stages.length === 0) {

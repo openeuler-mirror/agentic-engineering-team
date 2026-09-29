@@ -318,7 +318,7 @@ init_global_config() {
     else
         # 本地安装兜底：从脚本所在目录查找
         local script_dir="$(cd "$(dirname "$0")" && pwd)"
-        init_script="$script_dir/scripts/init-global-config.sh"
+        init_script="$script_dir/init-global-config.sh"
     fi
     
     if [ ! -f "$init_script" ]; then
