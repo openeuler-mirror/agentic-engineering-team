@@ -7,16 +7,10 @@
  * - agent：仅单 agent 直入任务
  */
 
-'use strict';
-
-const path = require('path');
-const { resolveProjectRoot, readStdinJson, outputResult, outputError, AET_ROOT } = require('../tool-utils');
-
-const lib = (name) => require(path.join(AET_ROOT, '.platform/utils', name));
-
-const { CheckpointManager } = lib('checkpoint-manager');
-const { ConfigManager } = lib('config-manager');
-const { WorkflowEngine } = lib('workflow-engine');
+import { resolveProjectRoot, readStdinJson, outputResult, outputError } from '../tool-utils.js';
+import { CheckpointManager } from '../../.platform/utils/checkpoint-manager.js';
+import { ConfigManager } from '../../.platform/utils/config-manager.js';
+import { WorkflowEngine } from '../../.platform/utils/workflow-engine.js';
 
 async function main() {
   try {

@@ -2,12 +2,8 @@
  * AET xiaoO Workflow List Tool - 列出所有可用的工作流场景
  */
 
-'use strict';
-
-const path = require('path');
-const { resolveProjectRoot, readStdinJson, outputResult, outputError, AET_ROOT } = require('../tool-utils');
-
-const { ConfigManager } = require(path.join(AET_ROOT, '.platform/utils/config-manager'));
+import { resolveProjectRoot, readStdinJson, outputResult, outputError } from '../tool-utils.js';
+import { ConfigManager } from '../../.platform/utils/config-manager.js';
 
 async function main() {
   try {

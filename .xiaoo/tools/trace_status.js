@@ -5,16 +5,11 @@
  * 查询当前 trace 日志状态
  */
 
-'use strict';
-
-const fs = require('fs');
-const path = require('path');
-const os = require('os');
-const { resolveProjectRoot, readStdinJson, outputResult, outputError, AET_ROOT } = require('../tool-utils');
-
-const lib = (name) => require(path.join(AET_ROOT, '.platform/utils', name));
-
-const { ConfigManager } = lib('config-manager');
+import fs from 'fs';
+import path from 'path';
+import os from 'os';
+import { resolveProjectRoot, readStdinJson, outputResult, outputError } from '../tool-utils.js';
+import { ConfigManager } from '../../.platform/utils/config-manager.js';
 
 const TRACE_DIR = path.join(os.homedir(), '.aet', 'log', 'trace');
 
