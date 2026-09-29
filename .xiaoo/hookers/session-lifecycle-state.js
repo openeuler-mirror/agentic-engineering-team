@@ -11,7 +11,7 @@
  * 重要设计决策（与 opencode 对齐）：
  * - step pending → 注入 step 指令 + pending→in_progress（send_prompt）
  * - step in_progress + idle → 触发 after hook
- *   - after: 'confirm' → send_prompt 确认消息，等 LLM 调 step_handover
+ *   - after: 非 auto → send_prompt 确认消息，等 LLM 调 step_handover
  *   - after: 'auto' / null → 自动推进到下一个 step + send_prompt 下一步指令
  * - 所有 step 完成 → 处理 stage 推进
  *
@@ -25,25 +25,20 @@
  * Output: { result: "ack" } | { result: "ack", actions: [{kind, ...}] }
  */
 
-'use strict';
-
-const path = require('path');
-const {
-  AET_ROOT,
+import {
   resolveProjectRoot,
   readPayload,
   writeResult,
   asText,
   confirmPrompt,
+  buildHookConfirmPrompt,
   formatStepPrompt,
-} = require('../hook-utils');
+} from '../hook-utils.js';
 
-const lib = (name) => require(path.join(AET_ROOT, '.platform/utils', name));
-
-const { ConfigManager } = lib('config-manager');
-const { CheckpointManager } = lib('checkpoint-manager');
-const { WorkflowEngine } = lib('workflow-engine');
-const { StateStore } = require('../state-store');
+import { ConfigManager } from '../../.platform/utils/config-manager.js';
+import { CheckpointManager } from '../../.platform/utils/checkpoint-manager.js';
+import { WorkflowEngine } from '../../.platform/utils/workflow-engine.js';
+import { StateStore } from '../state-store.js';
 
 function main() {
   const payload = readPayload();
@@ -118,15 +113,40 @@ function main() {
     const execution = currentStage
       ? checkpointManager.getCurrentExecution(checkpoint, currentStage)
       : null;
+    const actions = [];
 
     if (!execution || execution.status === 'interrupted') {
-      writeResult({ result: 'ack' });
+      // 无 execution — 检查是否为首阶段 stage before confirm（workflow_start 创建但未启动 execution）
+      if (!currentStage && checkpoint.workflow.status === 'in_progress') {
+        const stages = workflowEngine.getScenarioWorkflow(checkpoint.workflow.name);
+        if (stages && stages.length > 0) {
+          const firstStage = stages[0];
+          const stageBefore = firstStage.before || 'auto';
+          if (stageBefore !== 'auto' && !checkpoint.workflow.stageBeforeConfirmSent) {
+            const stageAgentId = firstStage.agent_id || firstStage.stage_id;
+            const confirmText = buildHookConfirmPrompt(
+              workflowEngine,
+              stageBefore,
+              `\n\nCurrent Stage: **${stageAgentId}**\n\n**If user approves, please call agent_handover with checkpoint_id: "${checkpointID}" and target_agent: "${stageAgentId}" to begin this stage.**`,
+              `Workflow "${checkpoint.workflow.name}" 已创建。阶段 **${stageAgentId}** 需要确认后才能开始执行。`
+            );
+            const cp = checkpointManager.getCheckpoint(checkpointID);
+            cp.workflow.stageBeforeConfirmSent = true;
+            checkpointManager.saveCheckpoint(cp);
+            actions.push({ kind: 'send_prompt', session_id: sessionId, text: confirmText });
+          }
+        }
+      }
+      if (actions.length > 0) {
+        writeResult({ result: 'ack', actions });
+      } else {
+        writeResult({ result: 'ack' });
+      }
       return;
     }
 
     const agentConfig = configManager.getAgentConfig(execution.agentId);
     const hasWorkflow = agentConfig?.workflow && agentConfig.workflow.length > 0;
-    const actions = [];
 
     // === 与 opencode 对齐：idle handler 触发 step after hook ===
     if (hasWorkflow && execution.currentStep) {
@@ -140,8 +160,14 @@ function main() {
         );
         if (currentStepConfig) {
           let stepText;
-          if (currentStepConfig.before === 'confirm') {
-            stepText = confirmPrompt.stepBefore(currentStepConfig.name);
+          const stepBefore = currentStepConfig.before || 'auto';
+          if (stepBefore !== 'auto') {
+            stepText = buildHookConfirmPrompt(
+              workflowEngine,
+              stepBefore,
+              `\n\nCurrent Step: **${currentStepConfig.name}**\n\n**If user approves, please call step_handover to continue.**`,
+              confirmPrompt.stepBefore(currentStepConfig.name)
+            );
           } else {
             stepText = formatStepPrompt(currentStepConfig);
           }
@@ -179,10 +205,10 @@ function main() {
           s => (s.step_id || s.name) === currentStepId
         );
         if (currentStepConfig) {
-          const after = currentStepConfig.after || null;
+          const after = currentStepConfig.after || 'auto';
 
-          if (after === 'confirm') {
-            // after:confirm → 发确认 prompt，等用户确认后 LLM 调 step_handover
+          if (after !== 'auto') {
+            // after:非 auto → 发确认 prompt，等用户确认后 LLM 调 step_handover
             // 防止重复发送：已发送过 confirmSent 的跳过
             if (currentStepState.confirmSent) {
               // 已发送过确认提示词，LLM 尚未调用 step_handover，不做任何操作
@@ -252,10 +278,15 @@ function main() {
               } else {
                 const nextAgentId = nextStage.agent_id || nextStage.stage_id;
                 const nextAgentConfig = configManager.getAgentConfig(nextAgentId);
-                const stageAfter = stages[stageIdx]?.after || null;
+                const stageAfter = stages[stageIdx]?.after || 'auto';
 
-                if (stageAfter === 'confirm') {
-                  const confirmText = confirmPrompt.stageAfter(currentStage, nextAgentId);
+                if (stageAfter !== 'auto') {
+                  const confirmText = buildHookConfirmPrompt(
+                    workflowEngine,
+                    stageAfter,
+                    `\n\nCurrent Stage: **${currentStage}**\n\n**If user approves, please call agent_handover to advance to the next stage.**\n- target_agent: "${nextAgentId}"\n- context: "Continue workflow"`,
+                    confirmPrompt.stageAfter(currentStage, nextAgentId)
+                  );
                   actions.push({ kind: 'send_prompt', session_id: sessionId, text: confirmText });
                 } else {
                   checkpointManager.startExecution(
@@ -273,9 +304,14 @@ function main() {
                   let stageText;
                   if (nextAgentConfig?.workflow?.length > 0) {
                     const firstStep = nextAgentConfig.workflow[0];
-                    const before = firstStep.before || null;
-                    if (before === 'confirm') {
-                      stageText = confirmPrompt.stepBefore(firstStep.name);
+                    const before = firstStep.before || 'auto';
+                    if (before !== 'auto') {
+                      stageText = buildHookConfirmPrompt(
+                        workflowEngine,
+                        before,
+                        `\n\nCurrent Step: **${firstStep.name}**\n\n**If user approves, please call step_handover to continue.**`,
+                        confirmPrompt.stepBefore(firstStep.name)
+                      );
                     } else {
                       stageText = formatStepPrompt(firstStep);
                     }
@@ -317,7 +353,8 @@ function main() {
               checkpointManager.advanceStep(checkpointID, currentStage, nextStepId, { summary: `Step ${currentStepConfig.name} completed` }, { idleDriven: true });
 
               // 检查 next step 的 before 配置
-              if (!nextStepConfig.before || nextStepConfig.before === 'auto') {
+              const nextBefore = nextStepConfig.before || 'auto';
+              if (nextBefore === 'auto') {
                 // before:auto/null → 注入下一步指令 + pending→in_progress
                 const stepText = formatStepPrompt(nextStepConfig);
 
@@ -347,9 +384,14 @@ function main() {
                   session_id: sessionId,
                   text: stepText,
                 });
-              } else if (nextStepConfig.before === 'confirm') {
-                // before:confirm → 发确认 prompt，等 LLM 调 step_handover
-                const confirmText = confirmPrompt.stepBefore(nextStepConfig.name);
+              } else if (nextBefore !== 'auto') {
+                // before:非 auto → 发确认 prompt，等 LLM 调 step_handover
+                const confirmText = buildHookConfirmPrompt(
+                  workflowEngine,
+                  nextBefore,
+                  `\n\nCurrent Step: **${nextStepConfig.name}**\n\n**If user approves, please call step_handover to continue.**`,
+                  confirmPrompt.stepBefore(nextStepConfig.name)
+                );
                 actions.push({
                   kind: 'send_prompt',
                   session_id: sessionId,
@@ -383,11 +425,16 @@ function main() {
       } else {
         const nextAgentId = nextStage.agent_id || nextStage.stage_id;
         const nextAgentConfig = configManager.getAgentConfig(nextAgentId);
-        const stageAfter = stages[stageIdx]?.after || null;
+        const stageAfter = stages[stageIdx]?.after || 'auto';
 
-        if (stageAfter === 'confirm') {
-          // stage after:confirm → 需要用户确认后推进
-          const confirmText = confirmPrompt.stageAfter(currentStage, nextAgentId);
+        if (stageAfter !== 'auto') {
+          // stage after:非 auto → 需要用户确认后推进
+          const confirmText = buildHookConfirmPrompt(
+            workflowEngine,
+            stageAfter,
+            `\n\nCurrent Stage: **${currentStage}**\n\n**If user approves, please call agent_handover to advance to the next stage.**\n- target_agent: "${nextAgentId}"\n- context: "Continue workflow"`,
+            confirmPrompt.stageAfter(currentStage, nextAgentId)
+          );
           actions.push({
             kind: 'send_prompt',
             session_id: sessionId,
@@ -412,9 +459,14 @@ function main() {
           let stageText;
           if (nextAgentConfig?.workflow?.length > 0) {
             const firstStep = nextAgentConfig.workflow[0];
-            const before = firstStep.before || null;
-            if (before === 'confirm') {
-              stageText = confirmPrompt.stepBefore(firstStep.name);
+            const before = firstStep.before || 'auto';
+            if (before !== 'auto') {
+              stageText = buildHookConfirmPrompt(
+                workflowEngine,
+                before,
+                `\n\nCurrent Step: **${firstStep.name}**\n\n**If user approves, please call step_handover to continue.**`,
+                confirmPrompt.stepBefore(firstStep.name)
+              );
             } else {
               stageText = formatStepPrompt(firstStep);
             }

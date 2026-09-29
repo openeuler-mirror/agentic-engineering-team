@@ -6,25 +6,27 @@
  * 本文件仅提供 checkpoint/workflow 操作和基础 IO 工具。
  */
 
-'use strict';
-
-const fs = require('fs');
-const path = require('path');
-const os = require('os');
+import fs from 'fs';
+import path from 'path';
+import os from 'os';
+import { ConfigManager } from '../.platform/utils/config-manager.js';
+import { CheckpointManager } from '../.platform/utils/checkpoint-manager.js';
+import { WorkflowEngine } from '../.platform/utils/workflow-engine.js';
+import { StateStore } from './state-store.js';
 
 const AET_ROOT = path.join(os.homedir(), '.xiaoo', 'aet');
-const lib = (name) => require(path.join(AET_ROOT, '.platform/utils', name));
-const { StateStore } = require('./state-store');
 
 /**
  * 确认提示模板（统一管理，避免硬编码重复）
- * - step before=confirm: 开始执行 step 前需用户确认
- * - step after=confirm: step 完成后需用户确认
- * - stage after=confirm: stage 完成后需用户确认进入下一阶段
+ * - step before 非 auto/null: 开始执行 step 前需用户确认
+ * - step after 非 auto/null: step 完成后需用户确认
+ * - stage after 非 auto/null: stage 完成后需用户确认进入下一阶段
  */
 const confirmPrompt = {
   stepBefore: (stepName) =>
     `即将执行的 Step: **${stepName}**\n\n**If user approves, please call step_handover to continue.**`,
+  stageBefore: (stageName) =>
+    `即将执行的 Stage: **${stageName}**\n\n**If user approves, please call agent_handover to begin this stage.**`,
   stepAfter: (stepName, nextStepName) =>
     `Step **${stepName}** completed.\n\n` +
     (nextStepName
@@ -44,6 +46,24 @@ const confirmPrompt = {
     + `   - 恢复：调用 checkpoint_resume({ checkpoint_id: "用户确认的ID" })，从其当前步骤继续；\n`
     + `   - 新任务：调用 workflow_start({ name: "${agentId}", context: "本次任务描述" })，从第一步开始。`,
 };
+
+/**
+ * 从 hook 配置构建确认提示词
+ * 优先使用 promptTemplate + suffix，无配置时回退到 fallback
+ */
+function buildHookConfirmPrompt(workflowEngine, hookName, suffix, fallback) {
+  const hookConfig = workflowEngine.getHookConfig(hookName);
+  if (hookConfig?.promptTemplate) {
+    const description = hookConfig.description || '';
+    const optionsText = hookConfig.options?.map(opt => `- ${opt.label}`).join('\n') || '';
+    let text = hookConfig.promptTemplate
+      .replace('{description}', description)
+      .replace('{options}', optionsText);
+    if (suffix) text += suffix;
+    return text;
+  }
+  return fallback;
+}
 
 /**
  * 生成 step 执行指令（统一入口，含 per-step 完成指令）
@@ -155,12 +175,9 @@ function transitionStepToInProgress(checkpointManager, checkpoint, currentStage,
  * 启动工作流并返回首步骤指令（与 opencode bootstrapAgentCheckpoint + takeCurrentStepText 对齐）
  */
 function startWorkflowAndGetStepInstruction(projectRoot, agentId, context, sessionID) {
-  const { ConfigManager } = lib('config-manager');
   const configManager = new ConfigManager();
   configManager.reloadConfig(projectRoot);
-  const { CheckpointManager } = lib('checkpoint-manager');
   const checkpointManager = new CheckpointManager(projectRoot);
-  const { WorkflowEngine } = lib('workflow-engine');
   const workflowEngine = new WorkflowEngine(configManager, checkpointManager);
   const stateStore = new StateStore(projectRoot);
 
@@ -187,16 +204,59 @@ function startWorkflowAndGetStepInstruction(projectRoot, agentId, context, sessi
 
   const agentConfig = configManager.getAgentConfig(stageAgentId);
 
+  // 检查 stage 级 before hook（与 opencode executeStageHandover 对齐）
+  const stageBeforeHook = firstStage?.before || 'auto';
+  if (stageBeforeHook !== 'auto') {
+    const stageText = buildHookConfirmPrompt(
+      workflowEngine,
+      stageBeforeHook,
+      `\n\nCurrent Stage: **${stageAgentId}**\n\n**If user approves, please call agent_handover to begin this stage.**`,
+      confirmPrompt.stageBefore(stageAgentId)
+    );
+    // 仍然初始化 steps 并推进首步状态，让 idle handler 能在确认后继续推进
+    if (agentConfig?.workflow?.length > 0) {
+      checkpointManager.initSteps(checkpointID, stageAgentId, agentConfig.workflow);
+      const firstStepId = agentConfig.workflow[0].step_id || agentConfig.workflow[0].name;
+      const cp = checkpointManager.getCheckpoint(checkpointID);
+      const cpExecution = checkpointManager.getCurrentExecution(cp, stageAgentId);
+      if (cpExecution && cpExecution.steps[firstStepId]?.status === 'pending') {
+        const now = new Date().toISOString();
+        const stepCtx = cpExecution.steps[firstStepId].context || cpExecution.context || null;
+        cpExecution.steps[firstStepId] = {
+          ...cpExecution.steps[firstStepId],
+          status: 'in_progress',
+          startedAt: now,
+          context: stepCtx,
+        };
+        cp.history.push({
+          ts: now,
+          event: 'step_started',
+          stage: stageAgentId,
+          executionId: cpExecution.executionId,
+          step: firstStepId,
+        });
+        checkpointManager.saveCheckpoint(cp);
+      }
+    }
+    stateStore.setCurrentCheckpointID(projectRoot, checkpointID);
+    return { error: null, checkpointID, instruction: stageText };
+  }
+
   let stepInstruction = null;
   if (agentConfig?.workflow?.length > 0) {
     checkpointManager.initSteps(checkpointID, stageAgentId, agentConfig.workflow);
 
     const firstStep = agentConfig.workflow[0];
     const firstStepId = firstStep.step_id || firstStep.name;
-    const before = firstStep.before || null;
+    const before = firstStep.before || 'auto';
 
-    if (before === 'confirm') {
-      stepInstruction = confirmPrompt.stepBefore(firstStep.name);
+    if (before !== 'auto') {
+      stepInstruction = buildHookConfirmPrompt(
+        workflowEngine,
+        before,
+        `\n\nCurrent Step: **${firstStep.name}**\n\n**If user approves, please call step_handover to continue.**`,
+        confirmPrompt.stepBefore(firstStep.name)
+      );
     } else {
       stepInstruction = formatStepPrompt(firstStep, context);
     }
@@ -241,10 +301,8 @@ function startWorkflowAndGetStepInstruction(projectRoot, agentId, context, sessi
  * 与 opencode bootstrapAgentCheckpoint 对齐
  */
 function bootstrapAgentCheckpoint(projectRoot, agentId, description, sessionID) {
-  const { ConfigManager } = lib('config-manager');
   const configManager = new ConfigManager();
   configManager.reloadConfig(projectRoot);
-  const { CheckpointManager } = lib('checkpoint-manager');
   const checkpointManager = new CheckpointManager(projectRoot);
   const stateStore = new StateStore(projectRoot);
 
@@ -290,7 +348,6 @@ function bootstrapAgentCheckpoint(projectRoot, agentId, description, sessionID) 
  * 与 opencode listAgentResumableCheckpoints 对齐
  */
 function listAgentResumableCheckpoints(projectRoot, agentId) {
-  const { CheckpointManager } = lib('checkpoint-manager');
   const checkpointManager = new CheckpointManager(projectRoot);
   return checkpointManager.getResumableCheckpoints()
     .map(e => checkpointManager.getCheckpoint(e.checkpointID))
@@ -310,7 +367,6 @@ function listAgentResumableCheckpoints(projectRoot, agentId) {
  * 与 opencode buildCommandEntryPrompt 对齐
  */
 function buildCommandEntryPrompt(agentId, desc, candidates) {
-  const { CheckpointManager } = lib('checkpoint-manager');
   const projectRoot = resolveProjectRoot();
   if (!projectRoot) {
     return `\n\n## 本次任务\n${desc || '(无描述)'}\n`;
@@ -357,7 +413,6 @@ function buildResumableCommandText(command, arguments_, candidates, cm, sectionT
  * 与 opencode takeCurrentStepText 对齐
  */
 function takeCurrentStepText(projectRoot, checkpointID) {
-  const { CheckpointManager } = lib('checkpoint-manager');
   const checkpointManager = new CheckpointManager(projectRoot);
   const checkpoint = checkpointManager.getCheckpoint(checkpointID);
   if (!checkpoint) return null;
@@ -366,9 +421,9 @@ function takeCurrentStepText(projectRoot, checkpointID) {
   const execution = checkpointManager.getCurrentExecution(checkpoint, currentStage);
   if (!execution) return null;
 
-  const { ConfigManager } = lib('config-manager');
   const configManager = new ConfigManager();
   configManager.reloadConfig(projectRoot);
+  const workflowEngine = new WorkflowEngine(configManager, checkpointManager);
   const agentConfig = configManager.getAgentConfig(execution.agentId);
 
   if (!agentConfig?.workflow || agentConfig.workflow.length === 0) {
@@ -383,7 +438,19 @@ function takeCurrentStepText(projectRoot, checkpointID) {
   const stepConfig = agentConfig.workflow.find(s => (s.step_id || s.name) === currentStepId);
   if (!stepConfig) return null;
 
-  let text = `## Please continue executing this step:\nStep name:\n${stepConfig.name}\nTask:\n${stepConfig.description}`;
+  // 检查 before hook：非 auto 时返回确认 prompt（仍推进 step 状态）
+  const beforeHook = stepConfig.before || 'auto';
+  let text;
+  if (beforeHook !== 'auto') {
+    text = buildHookConfirmPrompt(
+      workflowEngine,
+      beforeHook,
+      `\n\nCurrent Step: **${stepConfig.name}**\n\n**If user approves, please call step_handover to continue.**`,
+      confirmPrompt.stepBefore(stepConfig.name)
+    );
+  } else {
+    text = `## Please continue executing this step:\nStep name:\n${stepConfig.name}\nTask:\n${stepConfig.description}`;
+  }
 
   // 仅 pending → in_progress 需转换；in_progress 说明已在执行，直接返回 instruction
   if (currentStepState.status === 'pending') {
@@ -398,7 +465,6 @@ function takeCurrentStepText(projectRoot, checkpointID) {
  */
 function ensureCheckpointRunning(projectRoot, checkpointID) {
   if (!checkpointID) return;
-  const { CheckpointManager } = lib('checkpoint-manager');
   const checkpointManager = new CheckpointManager(projectRoot);
   const checkpoint = checkpointManager.getCheckpoint(checkpointID);
   if (!checkpoint) return;
@@ -431,9 +497,10 @@ function ensureCheckpointRunning(projectRoot, checkpointID) {
   }
 }
 
-module.exports = {
+export {
   AET_ROOT,
   confirmPrompt,
+  buildHookConfirmPrompt,
   formatStepPrompt,
   resolveProjectRoot,
   readPayload,
