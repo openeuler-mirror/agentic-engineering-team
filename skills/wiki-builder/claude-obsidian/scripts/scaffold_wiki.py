@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 """Scaffold a claude-obsidian-style repository wiki.
 
 Usage:

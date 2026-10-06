@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 """Lint a claude-obsidian-style OpenCode wiki vault.
 
 Usage:
