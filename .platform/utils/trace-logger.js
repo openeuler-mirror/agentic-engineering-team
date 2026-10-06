@@ -50,7 +50,7 @@ class TraceLogger {
     this.installed = true;
     this._writeConfig();
     const enabled = this._configManager.isTraceEnabled();
-    console.log('[AET] Trace logging installed →', TRACE_DIR, '(enabled:', enabled, ')');
+    console.error('[AET] Trace logging installed →', TRACE_DIR, '(enabled:', enabled, ')');
   }
 
   uninstall() {
