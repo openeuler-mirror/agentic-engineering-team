@@ -36,9 +36,9 @@ base_commit: [git commit hash]
 
 |ID|名称|职责|路径|所属层|文档链接|
 |-|-|-|-|-|-|
-|M001|[]|[]|[]|[]|[Details](modules/M001-xxx/M001-xxx.md)|
-|M001.1|[]|[]|[]|[]|[Details](modules/M001-xxx/M001.1-yyy.md)|
-|M002|[]|[]|[]|[]|[Details](modules/M002-xxx.md)|
+|M001|[]|[]|[]|[]|[Details](components/M001-xxx/M001-xxx.md)|
+|M001.1|[]|[]|[]|[]|[Details](components/M001-xxx/M001.1-yyy.md)|
+|M002|[]|[]|[]|[]|[Details](components/M002-xxx.md)|
 
 ---
 
