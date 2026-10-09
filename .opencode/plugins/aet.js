@@ -17,6 +17,7 @@ import { ConfigManager } from '../../.platform/utils/config-manager.js';
 import { CheckpointManager } from '../../.platform/utils/checkpoint-manager.js';
 import { WorkflowEngine } from '../../.platform/utils/workflow-engine.js';
 import { TraceLogger, TRACE_DIR } from '../../.platform/utils/trace-logger.js';
+import { AgentInsightClient, generateCollaborationId, generateEventId } from '../../.platform/utils/agent-insight-client.js';
 import {
   ensureStringPath,
   detectProjectAnalysisFolder,
@@ -223,6 +224,11 @@ let pluginClient = null;
 let pluginDirectory = null;
 let rootSessionID = null;
 
+// agent-insight 协作上传
+let agentInsightClient = null;
+let collaborationId = null;
+let currentAgentId = null; // 追踪当前 agent，用于协作上传时获取 fromAgent
+
 // ============================================
 // Hook Handling
 // ============================================
@@ -234,31 +240,36 @@ function isAutomationMode(checkpointID) {
 }
 
 async function triggerAfterHook(sessionID, stage, checkpointID) {
-  if (!stage || !stage.after) {
+  if (!stage) {
     return;
   }
 
-  if (stage.after === 'auto') {
+  const afterHook = stage.after || 'auto';
+
+  if (afterHook === 'auto') {
     // 自动推进到下一阶段
     const workflowName = checkpointManager.getCheckpoint(checkpointID)?.workflow.name;
     const stages = workflowEngine.getScenarioWorkflow(workflowName);
     const currentIdx = stages.findIndex(s => (s.stage_id || s.agent_id) === (stage.stage_id || stage.agent_id));
     const nextStage = stages[currentIdx + 1];
     if (nextStage) {
-      await executeStageHandover(nextStage, null, checkpointID);
+      await executeStageHandover(nextStage, null, checkpointID, null, sessionID);
+    } else {
+      // Last stage: complete the checkpoint
+      checkpointManager.completeCheckpoint(checkpointID);
     }
     return;
   }
 
-  // Automation short-circuit: confirm === auto when automation mode.
+  // Automation short-circuit: any non-auto hook becomes auto in automation mode.
   // Skip the user-facing session.prompt call and advance directly.
-  if (stage.after === 'confirm' && isAutomationMode(checkpointID)) {
+  if (afterHook !== 'auto' && isAutomationMode(checkpointID)) {
     const workflowName = checkpointManager.getCheckpoint(checkpointID)?.workflow.name;
     const stages = workflowEngine.getScenarioWorkflow(workflowName);
     const currentIdx = stages.findIndex(s => (s.stage_id || s.agent_id) === (stage.stage_id || stage.agent_id));
     const nextStage = stages[currentIdx + 1];
     if (nextStage) {
-      await executeStageHandover(nextStage, null, checkpointID);
+      await executeStageHandover(nextStage, null, checkpointID, null, sessionID);
     } else {
       // Last stage: complete the checkpoint (the existing `auto` branch
       // omits this case — automation must terminate cleanly when there
@@ -268,15 +279,13 @@ async function triggerAfterHook(sessionID, stage, checkpointID) {
     return;
   }
 
-  const hookConfig = workflowEngine.getHookConfig(stage.after);
+  const hookConfig = workflowEngine.getHookConfig(afterHook);
   if (hookConfig && hookConfig.options && hookConfig.options.length > 0) {
     const description = hookConfig.description || 'Please confirm';
     const optionsText = hookConfig.options.map(opt => `- ${opt.label}`).join('\n');
     const template = hookConfig.promptTemplate || 'Question: "{description}"\n{options}';
     let userPrompt = template.replace('{description}', description).replace('{options}', optionsText);
-    if (stage.after === 'confirm') {
-      userPrompt += '\n\n**If user approves, please call agent_handover to advance to the next stage.**';
-    }
+    userPrompt += '\n\n**If user approves, please call agent_handover to advance to the next stage.**';
     startSessionCheckpoint(sessionID);
     try {
       await pluginClient.session.prompt({
@@ -301,32 +310,32 @@ async function triggerStepAfterHook(sessionID, agentId, agentConfig, checkpointI
   }
 
   const stepConfig = agentConfig.workflow?.find(s => (s.step_id || s.name) === currentStepInfo.stepId);
-  if (!stepConfig || !stepConfig.after) {
+  if (!stepConfig) {
     return;
   }
 
-  if (stepConfig.after === 'auto') {
+  const afterHook = stepConfig.after || 'auto';
+
+  if (afterHook === 'auto') {
     await advanceToNextStep(sessionID, agentId, agentConfig, checkpointID, stage, null);
     return;
   }
 
-  // Automation short-circuit: confirm === auto when automation mode.
+  // Automation short-circuit: any non-auto hook becomes auto in automation mode.
   // Skip the user-facing session.prompt call and advance directly.
-  if (stepConfig.after === 'confirm' && isAutomationMode(checkpointID)) {
+  if (afterHook !== 'auto' && isAutomationMode(checkpointID)) {
     await advanceToNextStep(sessionID, agentId, agentConfig, checkpointID, stage, null);
     return;
   }
 
-  const hookConfig = workflowEngine.getHookConfig(stepConfig.after);
+  const hookConfig = workflowEngine.getHookConfig(afterHook);
   if (hookConfig && hookConfig.options && hookConfig.options.length > 0) {
     const description = hookConfig.description || 'Confirm before proceeding to next step';
     const optionsText = hookConfig.options.map(opt => `- ${opt.label}`).join('\n');
     const template = hookConfig.promptTemplate || 'Question: "{description}"\n{options}';
     let userPrompt = template.replace('{description}', description).replace('{options}', optionsText);
     userPrompt += `\n\nCurrent Step: **${stepConfig.name}**`;
-    if (stepConfig.after === 'confirm') {
-      userPrompt += '\n\n**If user approves, please call step_handover to advance to the next step.**';
-    }
+    userPrompt += '\n\n**If user approves, please call step_handover to advance to the next step.**';
     startSessionCheckpoint(sessionID);
     try {
       await pluginClient.session.prompt({
@@ -377,8 +386,8 @@ async function advanceToNextStep(sessionID, agentId, agentConfig, checkpointID, 
   const shouldClear = nextStepConfig.clear === true;
 
   // 检查 before hook
-  if (!nextStepConfig.before || nextStepConfig.before === 'auto' ||
-      (nextStepConfig.before === 'confirm' && isAutomationMode(checkpointID))) {
+  const beforeHook = nextStepConfig.before || 'auto';
+  if (beforeHook === 'auto' || isAutomationMode(checkpointID)) {
     if (shouldClear) {
       sendStepPromptWithNewSession(sessionID, agentId, checkpointID, stage, nextStepConfig);
     } else {
@@ -387,16 +396,14 @@ async function advanceToNextStep(sessionID, agentId, agentConfig, checkpointID, 
     return;
   }
 
-  const hookConfig = workflowEngine.getHookConfig(nextStepConfig.before);
+  const hookConfig = workflowEngine.getHookConfig(beforeHook);
   if (hookConfig && hookConfig.options && hookConfig.options.length > 0) {
     const description = hookConfig.description || 'Confirm before starting next step';
     const optionsText = hookConfig.options.map(opt => `- ${opt.label}`).join('\n');
     const template = hookConfig.promptTemplate || 'Question: "{description}"\n{options}';
     let userPrompt = template.replace('{description}', description).replace('{options}', optionsText);
     userPrompt += `\n\n即将执行的 Step: **${nextStepConfig.name}**`;
-    if (nextStepConfig.before === 'confirm') {
-      userPrompt += '\n\n**If user approves, please call step_handover to continue.**';
-    }
+    userPrompt += '\n\n**If user approves, please call step_handover to continue.**';
     if (shouldClear) {
       const hookSessionID = await createSessionForClearIfNeeded(sessionID, agentId, checkpointID, stage, true);
       startSessionCheckpoint(hookSessionID);
@@ -449,6 +456,23 @@ async function createSessionForClearIfNeeded(oldSessionID, agentId, checkpointID
     if (!newSessionID) {
       console.error('[AET] Failed to create new session for clear=true');
       return oldSessionID;
+    }
+
+    // 上传协作事件到 agent-insight 平台（同 agent 清上下文也属于新建 session 的协作事件）
+    if (agentInsightClient?.enabled) {
+      if (!collaborationId) {
+        collaborationId = generateCollaborationId();
+      }
+      const fromAgent = currentAgentId || agentId;
+      const toAgent = agentId;
+      await agentInsightClient.uploadEvent({
+        collaborationId,
+        eventId: generateEventId(),
+        fromSessionId: oldSessionID,
+        toSessionId: newSessionID,
+        description: `${fromAgent} → ${toAgent}: ${stage} 阶段清上下文重建 session`,
+        observedAt: new Date().toISOString(),
+      });
     }
 
     try {
@@ -576,7 +600,7 @@ function resolveSessionAgent(sessionID, fallbackAgent = null) {
 // Stage Handover
 // ============================================
 
-async function executeStageHandover(stage, context, checkpointID, promptForAgent = null) {
+async function executeStageHandover(stage, context, checkpointID, promptForAgent = null, fromSessionId = null) {
   // promptForAgent: 发送给 agent 的 prompt（resume 时用 resumePrompt）
   // context: 保存到 execution 的 context（保持原始值，不应被 resumePrompt 覆盖）
   // 如果没有 promptForAgent，用 context 作为 prompt
@@ -621,6 +645,31 @@ async function executeStageHandover(stage, context, checkpointID, promptForAgent
       const currentStageExecution = checkpointManager.getCurrentExecution(checkpoint, checkpoint.workflow.currentStage);
       const currentStageSteps = currentStageExecution?.steps || null;
       const currentStageCurrentStep = currentStageExecution?.currentStep || null;
+
+      // 上传跨 Session 协作关系到 agent-insight 平台（仅当 enabled 时）
+      // 在 newSession 创建后、startExecutionOn 之前执行：
+      //   fromAgent = currentAgentId（追踪的当前 agent，不依赖 checkpoint）
+      //   toAgent = stage.agent_id（即将切换到的 agent）
+      //   上传后切换 currentAgentId 为新 agent
+      if (agentInsightClient?.enabled) {
+        if (!collaborationId) {
+          collaborationId = generateCollaborationId();
+        }
+        const eventId = generateEventId();
+        const fromSession = fromSessionId || 'root';
+        const fromAgent = currentAgentId || 'Build';
+        const toAgent = stage.agent_id;
+        const desc = `${fromAgent} → ${toAgent}: ${stageName} 阶段启动`;
+        await agentInsightClient.uploadEvent({
+          collaborationId,
+          eventId,
+          fromSessionId: fromSession,
+          toSessionId: newSessionID,
+          description: desc,
+          observedAt: new Date().toISOString(),
+        });
+        currentAgentId = toAgent;
+      }
 
       // 获取目标阶段的 execution（用于 resume 目标阶段的情况）
       const targetStageExecution = checkpointManager.getCurrentExecution(checkpoint, stageName);
@@ -680,8 +729,9 @@ async function executeStageHandover(stage, context, checkpointID, promptForAgent
       // / advanceToNextStep confirm short-circuits; without it, automation
       // mode would still call session.prompt with the confirm question,
       // blocking the agent.
-      if (stage.before && !(stage.before === 'confirm' && isAutomationMode(checkpointID))) {
-        const hookConfig = workflowEngine.getHookConfig(stage.before);
+      const beforeHook = stage.before || 'auto';
+      if (beforeHook !== 'auto' && !isAutomationMode(checkpointID)) {
+        const hookConfig = workflowEngine.getHookConfig(beforeHook);
         if (hookConfig && hookConfig.options && hookConfig.options.length > 0) {
           const description = hookConfig.description || 'Please confirm';
           const optionsText = hookConfig.options.map(opt => `- ${opt.label}`).join('\n');
@@ -690,9 +740,7 @@ async function executeStageHandover(stage, context, checkpointID, promptForAgent
           if (context) {
             userPrompt += `\n\nTask context:\n${context}`;
           }
-          if (stage.before === 'confirm') {
-            userPrompt += '\n\nIf user approves, please call agent_handover to begin this stage.';
-          }
+          userPrompt += '\n\nIf user approves, please call agent_handover to begin this stage.';
 
           startSessionCheckpoint(newSessionID);
           await pluginClient.session.prompt({
@@ -917,6 +965,9 @@ export const aetPlugin = async ({ client, directory }) => {
   }));
   traceLogger.install();
 
+  // 初始化 AgentInsightClient
+  agentInsightClient = new AgentInsightClient(configManager.getAgentInsightConfig());
+
   return {
     config: async (config) => {
       configManager.reloadConfig(pluginDirectory);
@@ -1088,6 +1139,11 @@ export const aetPlugin = async ({ client, directory }) => {
         // 使用路由后的 agent
         const finalAgent = output?.message?.agent || sessionAgent;
 
+        // 追踪当前 agent，供跨 session 上传时获取 fromAgent
+        if (finalAgent) {
+          currentAgentId = finalAgent;
+        }
+
         try {
           const msgs = await pluginClient.session.messages({ path: { id: sessionID } });
           const msgCount = msgs.data?.length || 0;
@@ -1190,6 +1246,7 @@ export const aetPlugin = async ({ client, directory }) => {
                       // 最后阶段，直接完成 workflow 并归档
                       checkpointManager.completeCheckpoint(currentCheckpointID);
                       currentCheckpointID = null;
+                      collaborationId = null;
                     } else {
                       await triggerAfterHook(sessionID, fullStageConfig || { agent_id: sessionAgent, stage_id: checkpoint.workflow.currentStage }, currentCheckpointID);
                     }
@@ -1341,7 +1398,7 @@ export const aetPlugin = async ({ client, directory }) => {
           }
           currentCheckpointID = checkpointID;
           const stageToStart = isScenario ? firstStage : { agent_id: targetAgent, stage_id: targetAgent };
-          await executeStageHandover(stageToStart, desc, checkpointID);
+          await executeStageHandover(stageToStart, desc, checkpointID, null, context?.sessionID);
           return JSON.stringify({ success: true, mode: 'new-session', checkpointID, stage: stageToStart.stage_id || stageToStart.agent_id }, null, 2);
         },
       }),
@@ -1417,13 +1474,14 @@ export const aetPlugin = async ({ client, directory }) => {
               { agent_id: execution.agentId, stage_id: targetStage },
               originalContext,
               targetCheckpointID,
-              resumePrompt
+              resumePrompt,
+              context?.sessionID
             );
           } else {
             const stages = workflowEngine.getScenarioWorkflow(checkpoint.workflow.name);
             const stageConfig = stages.find(s => (s.stage_id || s.agent_id) === targetStage);
             if (stageConfig) {
-              await executeStageHandover(stageConfig, originalContext, targetCheckpointID, resumePrompt);
+              await executeStageHandover(stageConfig, originalContext, targetCheckpointID, resumePrompt, context?.sessionID);
             }
           }
 
@@ -1487,10 +1545,11 @@ export const aetPlugin = async ({ client, directory }) => {
             // Workflow 完成
             checkpointManager.completeCheckpoint(currentCheckpointID);
             currentCheckpointID = null;
+            collaborationId = null;
             return JSON.stringify({ success: true, done: true, message: 'Workflow completed' }, null, 2);
           }
 
-          await executeStageHandover(nextStage, ctx, currentCheckpointID);
+          await executeStageHandover(nextStage, ctx, currentCheckpointID, null, context?.sessionID);
 
           return JSON.stringify({ success: true, stage: nextStage.stage_id || nextStage.agent_id }, null, 2);
         },

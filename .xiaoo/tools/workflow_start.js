@@ -8,17 +8,11 @@
  * - 都不匹配：返回错误
  */
 
-'use strict';
-
-const path = require('path');
-const { resolveProjectRoot, readStdinJson, outputError, AET_ROOT } = require('../tool-utils');
-
-const lib = (name) => require(path.join(AET_ROOT, '.platform/utils', name));
-
-const { ConfigManager } = lib('config-manager');
-const { CheckpointManager } = lib('checkpoint-manager');
-const { WorkflowEngine } = lib('workflow-engine');
-const { StateStore } = require('../state-store');
+import { resolveProjectRoot, readStdinJson, outputError } from '../tool-utils.js';
+import { ConfigManager } from '../../.platform/utils/config-manager.js';
+import { CheckpointManager } from '../../.platform/utils/checkpoint-manager.js';
+import { WorkflowEngine } from '../../.platform/utils/workflow-engine.js';
+import { StateStore } from '../state-store.js';
 
 async function main() {
   try {
@@ -52,6 +46,7 @@ async function main() {
 
     // 确定首阶段 agent
     let targetAgent;
+    let firstStageBefore = 'auto';
     if (isScenario) {
       const stages = workflowEngine.getScenarioWorkflow(name);
       if (!stages || stages.length === 0) {
@@ -59,6 +54,7 @@ async function main() {
         return;
       }
       targetAgent = stages[0].agent_id;
+      firstStageBefore = stages[0].before || 'auto';
     } else {
       targetAgent = name;
     }
@@ -66,6 +62,19 @@ async function main() {
     // 创建 checkpoint（与 opencode aet.js L1115 对齐）
     const desc = typeof context === 'string' ? context : (context != null ? JSON.stringify(context) : '');
     const checkpointID = checkpointManager.createCheckpoint(name, desc);
+
+    // stage 级 before 非 auto → 不启动 execution，引导 LLM 结束 turn
+    // idle handler 检测到无 execution + stage before 非 auto → 通过 send_prompt 注入 before_confirm 模板
+    if (firstStageBefore !== 'auto') {
+      stateStore.setCurrentCheckpointID(projectRoot, checkpointID);
+      process.stdout.write(JSON.stringify({
+        success: true,
+        checkpointID,
+        agentId: targetAgent,
+        message: `Workflow "${name}" started. 请立即结束当前session到idle状态，系统将自动注入阶段确认提示。`,
+      }, null, 2) + '\n');
+      return;
+    }
 
     // 启动首阶段 execution
     // sessionID：优先从 StateStore 读取真实 xiaoO session_id，否则生成描述性 ID

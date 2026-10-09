@@ -15,16 +15,14 @@
  * - Output: { result: "allow" } | { result: "transform", body: "..." }
  */
 
-'use strict';
-
-const {
+import {
   resolveProjectRoot,
   readPayload,
   writeResult,
   isAETCommand,
-} = require('../hook-utils');
+} from '../hook-utils.js';
 
-const { StateStore } = require('../state-store');
+import { StateStore } from '../state-store.js';
 
 function main() {
   const payload = readPayload();

@@ -9,20 +9,14 @@
  * - Output: { result: "allow" } | { result: "transform", system: [...] }
  */
 
-'use strict';
-
-const path = require('path');
-const {
-  AET_ROOT,
+import {
   resolveProjectRoot,
   readPayload,
   writeResult,
-} = require('../hook-utils');
+} from '../hook-utils.js';
 
-const lib = (name) => require(path.join(AET_ROOT, '.platform/utils', name));
-
-const { ConfigManager } = lib('config-manager');
-const { formatProjectAnalysis, detectProjectAnalysisFolder } = lib('project-analysis');
+import { ConfigManager } from '../../.platform/utils/config-manager.js';
+import { formatProjectAnalysis, detectProjectAnalysisFolder } from '../../.platform/utils/project-analysis.js';
 
 function main() {
   const payload = readPayload();

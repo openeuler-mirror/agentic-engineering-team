@@ -21,11 +21,7 @@
  * - Output: { result: "accept" } | { result: "transform", message: {...} }
  */
 
-'use strict';
-
-const path = require('path');
-const {
-  AET_ROOT,
+import {
   resolveProjectRoot,
   readPayload,
   writeResult,
@@ -34,12 +30,11 @@ const {
   buildCommandEntryPrompt,
   buildResumableCommandText,
   takeCurrentStepText,
-} = require('../hook-utils');
+} from '../hook-utils.js';
 
-const lib = (name) => require(path.join(AET_ROOT, '.platform/utils', name));
-
-const { ConfigManager } = lib('config-manager');
-const { StateStore } = require('../state-store');
+import { ConfigManager } from '../../.platform/utils/config-manager.js';
+import { CheckpointManager } from '../../.platform/utils/checkpoint-manager.js';
+import { StateStore } from '../state-store.js';
 
 function injectText(message, text) {
   const blocks = message.blocks || [];
@@ -108,7 +103,6 @@ function main() {
 
         if (isScenario) {
           // 先检查是否有可恢复的 interrupted checkpoint（与 opencode 对齐）
-          const { CheckpointManager } = lib('checkpoint-manager');
           const cm = new CheckpointManager(projectRoot);
           const index = cm.loadIndex();
           const interruptedCandidates = (index.interrupted || []).filter(e =>
@@ -143,7 +137,6 @@ function main() {
         // aet-router 没有 workflow，但应该检查是否有 scenario 类型的可恢复 checkpoint
         // 与 opencode listAgentResumableCheckpoints 对齐：active + interrupted 都检查
         if (!hasWorkflow && agentId === 'aet-router') {
-          const { CheckpointManager } = lib('checkpoint-manager');
           const cm = new CheckpointManager(projectRoot);
           const resumableCandidates = cm.getResumableCheckpoints()
             .filter(e => {

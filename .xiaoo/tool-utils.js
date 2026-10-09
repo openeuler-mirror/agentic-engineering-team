@@ -2,11 +2,9 @@
  * AET xiaoO Tool Utils - 公共辅助函数
  */
 
-'use strict';
-
-const fs = require('fs');
-const path = require('path');
-const os = require('os');
+import fs from 'fs';
+import path from 'path';
+import os from 'os';
 
 const AET_ROOT = path.join(os.homedir(), '.xiaoo', 'aet');
 
@@ -74,7 +72,7 @@ function formatStepPrompt(stepConfig, context) {
   return text;
 }
 
-module.exports = {
+export {
   AET_ROOT,
   resolveProjectRoot,
   readStdinJson,

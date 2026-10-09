@@ -6,9 +6,9 @@
  * 同时管理全局配置 (~/.aet/config.json)，包含 trace、codePlatform 等跨项目设置
  */
 
-const path = require('path');
-const fs = require('fs');
-const os = require('os');
+import path from 'path';
+import fs from 'fs';
+import os from 'os';
 
 class ConfigManager {
   constructor() {
@@ -243,6 +243,11 @@ class ConfigManager {
     const global = this.getGlobalConfig();
     return global?.trace?.enabled !== false;
   }
+
+  getAgentInsightConfig() {
+    const global = this.getGlobalConfig();
+    return global?.agentInsight || { enabled: false, apiBaseUrl: '', apiKey: '' };
+  }
 }
 
-module.exports = { ConfigManager };
+export { ConfigManager };

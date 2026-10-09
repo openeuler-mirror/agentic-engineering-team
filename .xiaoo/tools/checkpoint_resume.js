@@ -8,16 +8,10 @@
  * 4. 更新 current-checkpoint.json
  */
 
-'use strict';
-
-const path = require('path');
-const { resolveProjectRoot, readStdinJson, outputResult, outputError, formatStepPrompt, AET_ROOT } = require('../tool-utils');
-
-const lib = (name) => require(path.join(AET_ROOT, '.platform/utils', name));
-
-const { CheckpointManager } = lib('checkpoint-manager');
-const { ConfigManager } = lib('config-manager');
-const { StateStore } = require('../state-store');
+import { resolveProjectRoot, readStdinJson, outputResult, outputError, formatStepPrompt } from '../tool-utils.js';
+import { CheckpointManager } from '../../.platform/utils/checkpoint-manager.js';
+import { ConfigManager } from '../../.platform/utils/config-manager.js';
+import { StateStore } from '../state-store.js';
 
 async function main() {
   try {

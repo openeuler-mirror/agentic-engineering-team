@@ -203,6 +203,16 @@ opencode_create_directories() {
     ln -sf "$aet_dir/.opencode/plugins/aet.js" "$HOME/.config/opencode/plugins/aet.js" || \
         log_error "无法创建插件符号链接"
     
+    # 本地安装模式：aet.js 通过 symlink 指向项目源码，Node.js 解析 symlink 后
+    # 从项目根目录查找 @opencode-ai/plugin，需要在项目 node_modules 中创建链接
+    if [ "$install_mode" = "local" ] && [ -d "$HOME/.config/opencode/node_modules/@opencode-ai/plugin" ]; then
+        local project_root="$(readlink -f "$aet_dir")"
+        mkdir -p "$project_root/node_modules/@opencode-ai"
+        ln -sf "$HOME/.config/opencode/node_modules/@opencode-ai/plugin" \
+              "$project_root/node_modules/@opencode-ai/plugin"
+        log_info "已链接 @opencode-ai/plugin 到项目 node_modules（本地开发模式）"
+    fi
+    
     # 创建 skills 目录
     mkdir -p "$HOME/.config/opencode/skills" || log_error "无法创建 skills 目录"
     
@@ -301,10 +311,12 @@ init_global_config() {
     fi
 
     # 获取初始化脚本路径
-    # 优先使用 AET 安装目录中的脚本（远程安装场景）
-    local init_script="$HOME/.config/opencode/aet/scripts/init-global-config.sh"
-    # 如果是本地安装，尝试从脚本所在目录获取
-    if [ ! -f "$init_script" ]; then
+    # 优先使用 AET_ROOT（已由 resolve_aet_root 设置，适用于远程和本地安装）
+    local init_script=""
+    if [ -n "${AET_ROOT}" ] && [ -f "${AET_ROOT}/scripts/init-global-config.sh" ]; then
+        init_script="${AET_ROOT}/scripts/init-global-config.sh"
+    else
+        # 本地安装兜底：从脚本所在目录查找
         local script_dir="$(cd "$(dirname "$0")" && pwd)"
         init_script="$script_dir/init-global-config.sh"
     fi

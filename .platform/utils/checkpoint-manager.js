@@ -6,8 +6,8 @@
  * 支持同一阶段多次执行（executions 数组）
  */
 
-const path = require('path');
-const fs = require('fs');
+import path from 'path';
+import fs from 'fs';
 
 const CHECKPOINT_VERSION = '1.0';
 
@@ -609,4 +609,4 @@ class CheckpointManager {
   }
 }
 
-module.exports = { CheckpointManager, CHECKPOINT_VERSION };
+export { CheckpointManager, CHECKPOINT_VERSION };
