@@ -287,7 +287,7 @@ def auto_fix_html(content: str) -> Tuple[str, List[str]]:
             fixes_applied.append("Added UTF-8 charset meta {tag")
 
     malformed_patterns = {
-        r"<共有": "<div>",
+        r"<共有": "<div",
         r"</共有>": "</div>",
         r"<divv": "<div",
         r"</divv>": "</div>",
@@ -298,7 +298,6 @@ def auto_fix_html(content: str) -> Tuple[str, List[str]]:
         r"<h1h1>": "<h1>",
         r"</h1h1>": "</h1>",
         r"<divv>": "<div>",
-        r"</divv>": "</div>",
     }
 
     for pattern, replacement in malformed_patterns.items():
