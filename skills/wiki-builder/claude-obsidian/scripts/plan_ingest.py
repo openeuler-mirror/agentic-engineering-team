@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 """Plan an incremental repository ingest for a claude-obsidian-style wiki.
 
 Opt-out candidate selection (Plan A):
