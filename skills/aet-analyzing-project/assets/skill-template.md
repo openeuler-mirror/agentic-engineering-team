@@ -27,7 +27,7 @@ metadata:
 | `Overview.md` | Project overview, tech stack, and directory structure | When first entering the project |
 | `Architecture.md` | System boundaries, layering, core flows | When understanding the overall design |
 | `Modules.md` | Module decomposition, dependencies, communication patterns | When locating which module owns a feature |
-| `modules/` | Detailed description for each module and submodule | When making deeper changes in a module |
+| `components/` | Detailed description for each module and submodule | When making deeper changes in a module |
 | `principles/` | Development principles split by topic | Before coding / before refactoring |
 
 ## Module index
@@ -36,8 +36,8 @@ metadata:
 
 | ID | Name | Responsibility | Doc |
 |----|------|------|------|
-| M001 | [To be filled] | [To be filled] | `modules/M001-xxx.md` |
-| M001.1 | [To be filled] | [To be filled] | `modules/M001/M001.1-yyy.md` |
+| M001 | [To be filled] | [To be filled] | `components/M001-xxx.md` |
+| M001.1 | [To be filled] | [To be filled] | `components/M001/M001.1-yyy.md` |
 
 ## Notes
 
@@ -58,6 +58,6 @@ metadata:
 ## How to use
 
 1. Read `references/Overview.md` and `references/Architecture.md` first.
-2. Then locate by functionality: read `references/Modules.md` and the corresponding `references/modules/*.md`.
+2. Then locate by functionality: read `references/Modules.md` and the corresponding `references/components/*.md`.
 3. Before coding, check `principles/*.md`.
 4. When conflicts arise, use source code and architectural evidence as the source of truth.

@@ -41,7 +41,7 @@ depended_by: [[Maaa, Mbbb, ...] | null]
 <!--
   instruction: Keep this section only if this module contains submodules; otherwise delete the entire section.
   rule: Submodules use the same template as this document and are stored under a directory with the same name.
-        Example: M001's submodules are stored at references/modules/M001/M001.1-xxx.md
+        Example: M001's submodules are stored at references/components/M001/M001.1-xxx.md
 -->
 
 |ID|名称|职责|文档链接|
