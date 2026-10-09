@@ -978,7 +978,7 @@ export const aetPlugin = async ({ client, directory }) => {
         const projectAgentsDir = getProjectAgentsDir(pluginDirectory);
         agents = await loadAgentDefinitions(projectAgentsDir);
         if (Object.keys(agents).length > 0) {
-          console.log(`[AET] Loaded ${Object.keys(agents).length} agents from project directory`);
+          console.error(`[AET] Loaded ${Object.keys(agents).length} agents from project directory`);
         }
       }
 
