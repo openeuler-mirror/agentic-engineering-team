@@ -1,72 +1,89 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { applyEventsViaClient, applyResult } from './json_to_op.js';
 import { out, err } from '../../definitions/events.js';
 import type { CommandResult, OutputEvent } from '../../definitions/events.js';
 import type { PluginContext } from './types.js';
 
-function mockCtx(): { ctx: PluginContext; session: any; tui: any; log: any } {
-  const session = { create: vi.fn(async () => ({ id: 'sess-1' })), prompt: vi.fn(async () => ({})) };
-  const tui = { publish: vi.fn(async () => ({})) };
-  const log = vi.fn(async () => ({}));
-  const ctx = { client: { session, tui, app: { log } } } as unknown as PluginContext;
-  return { ctx, session, tui, log };
-}
+/**
+ * V2 mock ctx: ctx.session.create / ctx.session.prompt + console.log/warn/error/debug.
+ * V2 ctx has NO `client` (D-009) — the V1 OpencodeClient shape is gone.
+ *
+ * The spies are (re)created per-test via beforeEach so call counts don't
+ * accumulate across tests.
+ */
+let ctx: PluginContext;
+let session: { create: ReturnType<typeof vi.fn>; prompt: ReturnType<typeof vi.fn> };
+let logSpy: ReturnType<typeof vi.spyOn>;
+let consoleError: ReturnType<typeof vi.spyOn>;
+let consoleWarn: ReturnType<typeof vi.spyOn>;
+let consoleDebug: ReturnType<typeof vi.spyOn>;
 
-describe('applyEventsViaClient', () => {
-  it('clears context by creating a session + publishing a tui session.select', async () => {
-    const { ctx, session, tui } = mockCtx();
+beforeEach(() => {
+  session = {
+    create: vi.fn(async () => ({ id: 'sess-1' })),
+    prompt: vi.fn(async () => ({})),
+  };
+  logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+  consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+  consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  consoleDebug = vi.spyOn(console, 'debug').mockImplementation(() => {});
+  ctx = { session } as unknown as PluginContext;
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
+describe('applyEventsViaClient (V2 — ctx.session + console, no host-client property)', () => {
+  it('clears context by creating a session + logging a hint (tui DEGRADED — AC-023)', async () => {
     await applyEventsViaClient(ctx, [out('context.clear', { reason: 'next step' })]);
     expect(session.create).toHaveBeenCalledWith({});
-    expect(tui.publish).toHaveBeenCalledWith({
-      type: 'tui.session.select',
-      sessionID: 'sess-1',
-      reason: 'next step',
-    });
-  });
-
-  it('degrades when there is no tui surface', async () => {
-    const { ctx, session } = mockCtx();
-    const { ctx: noTui } = mockCtx();
-    (noTui.client as any).tui = undefined;
-    (noTui.client as any).session = session;
-    await applyEventsViaClient(noTui, [out('context.clear', { reason: 'x' })]);
-    expect(session.create).toHaveBeenCalledWith({});
+    // console.log was called with the [AET] context.clear hint including session id + AC-023 note.
+    expect(logSpy).toHaveBeenCalled();
+    const msg = logSpy.mock.calls[0][0] as string;
+    expect(msg).toContain('[aet]');
+    expect(msg).toContain('context.clear');
+    expect(msg).toContain('AC-023');
+    expect(msg).toContain('next step');
   });
 
   it('logs prompt.inject as a warn (delivery tracked by plugin session)', async () => {
-    const { ctx, log } = mockCtx();
     await applyEventsViaClient(ctx, [out('prompt.inject', { text: 'hi', type: 'task' })]);
-    expect(log.mock.calls[0][0].body.level).toBe('warn');
-    expect(log.mock.calls[0][0].body.extra.text).toBe('hi');
+    expect(consoleWarn).toHaveBeenCalled();
+    const msg = consoleWarn.mock.calls[0][0] as string;
+    expect(msg).toContain('[aet]');
+    expect(msg).toContain('prompt.inject');
+    expect(consoleWarn.mock.calls[0][1]).toEqual({ text: 'hi' });
   });
 
-  it('logs hook.func and inject_system info', async () => {
-    const { ctx, log } = mockCtx();
+  it('logs hook.func and inject_system via console.log (info-level)', async () => {
     await applyEventsViaClient(ctx, [
       out('hook.func', { command: 'node', cwd: '/tmp' }),
       out('prompt.inject_system', { text: 'sys' }),
     ]);
-    expect(log.mock.calls[0][0].body.level).toBe('info');
-    expect(log.mock.calls[1][0].body.level).toBe('info');
+    expect(logSpy).toHaveBeenCalledTimes(2);
+    expect(logSpy.mock.calls[0][0]).toContain('hook.func');
+    expect(logSpy.mock.calls[1][0]).toContain('prompt.inject_system');
   });
 
   it('logs errors at error level (R9)', async () => {
-    const { ctx, log } = mockCtx();
     await applyEventsViaClient(ctx, [out('error', { code: 'E1', message: 'bad' })]);
-    expect(log.mock.calls[0][0].body.level).toBe('error');
-    expect(log.mock.calls[0][0].body.message).toContain('[AET ERROR E1] bad');
+    expect(consoleError).toHaveBeenCalled();
+    const msg = consoleError.mock.calls[0][0] as string;
+    expect(msg).toContain('[aet]');
+    expect(msg).toContain('[AET ERROR E1] bad');
   });
 
-  it('logs unknown events at debug level', async () => {
-    const { ctx, log } = mockCtx();
-    await applyEventsViaClient(ctx, [{ id: 'mystery', payload: {} } as OutputEvent]);
-    expect(log.mock.calls[0][0].body.level).toBe('debug');
+  it('logs unknown events via console.debug', async () => {
+    await applyEventsViaClient(ctx, [{ id: 'mystery', payload: {} } as unknown as OutputEvent]);
+    expect(consoleDebug).toHaveBeenCalled();
+    const msg = consoleDebug.mock.calls[0][0] as string;
+    expect(msg).toContain('unknown event');
   });
 });
 
 describe('applyResult', () => {
-  it('synthesizes + applies an error event when the command failed', async () => {
-    const { ctx, log } = mockCtx();
+  it('synthesizes + applies an error event when the command failed (console.error, R9)', async () => {
     const result: CommandResult = {
       ok: false,
       prompt: 'ERROR: X — y',
@@ -74,25 +91,26 @@ describe('applyResult', () => {
       error: { code: 'X', message: 'y' },
     };
     await applyResult(ctx, result, 'via-client');
-    expect(log.mock.calls[0][0].body.level).toBe('error');
-    expect(log.mock.calls[0][0].body.message).toContain('X');
+    expect(consoleError).toHaveBeenCalled();
+    const msg = consoleError.mock.calls[0][0] as string;
+    expect(msg).toContain('[AET ERROR X] y');
   });
 
   it('does nothing when ok with no events', async () => {
-    const { ctx, log } = mockCtx();
     await applyResult(ctx, { ok: true, prompt: 'fine', events: [] }, 'via-client');
-    expect(log).not.toHaveBeenCalled();
+    expect(logSpy).not.toHaveBeenCalled();
+    expect(consoleError).not.toHaveBeenCalled();
+    expect(consoleWarn).not.toHaveBeenCalled();
+    expect(consoleDebug).not.toHaveBeenCalled();
   });
 
   it('applies in-hook events into an output object when mode is in-hook', async () => {
-    const { ctx } = mockCtx();
     const output = { parts: [] as { type: string; text: string }[] };
     await applyResult(ctx, { ok: true, prompt: '', events: [out('prompt.inject', { text: 'x', type: 'task' })] }, 'in-hook', output);
     expect(output.parts.map((p) => p.text)).toEqual(['x']);
   });
 
   it('injects the top-level result.prompt as a text part (in-hook) — aligns with CC additionalContext', async () => {
-    const { ctx } = mockCtx();
     const output = { parts: [] as { type: string; text: string }[] };
     const result: CommandResult = {
       ok: true,
@@ -104,7 +122,6 @@ describe('applyResult', () => {
   });
 
   it('injects prompt then applies events (in-hook), matching CC ordering', async () => {
-    const { ctx } = mockCtx();
     const output = { parts: [] as { type: string; text: string }[] };
     await applyResult(
       ctx,
@@ -114,4 +131,15 @@ describe('applyResult', () => {
     );
     expect(output.parts.map((p) => p.text)).toEqual(['banner', expect.stringContaining('新会话')]);
   });
+
+  it('has zero host-client residue (V2 ctx has no client property — D-009)', async () => {
+    // Sanity check: the mock ctx we built has `session` but NOT a host-client property.
+    // If applyEventsViaClient tried to read a host-client property, this test would crash.
+    expect((ctx as unknown as { client?: unknown }).client).toBeUndefined();
+    await applyEventsViaClient(ctx, [out('context.clear', { reason: 'x' })]);
+    // No throw = success.
+  });
 });
+
+// err() helper import kept for parity with the V1 test (unused but mirrors import surface).
+void err;

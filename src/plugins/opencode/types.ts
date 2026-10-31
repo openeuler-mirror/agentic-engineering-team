@@ -1,84 +1,32 @@
 /**
  * @file src/plugins/opencode/types.ts
  *
- * Minimal ambient types for the OpenCode Plugin API surface that the AET
- * plugin (op_plugin) consumes. These are intentionally minimal — they
- * describe only what we use, not the full OpenCode API.
+ * V2 type surface for the AET OpenCode plugin. The plugin consumes the
+ * real V2 types from `@opencode/plugin` (type-only import — stripped by
+ * esbuild so the zero-runtime-dep invariant holds) and re-exports the
+ * subset downstream hooks / tests use.
  *
- * For the canonical types, install `@opencode-ai/plugin` as a devDep and
- * the real types will override these ambient declarations. Without that
- * devDep, these declarations let the plugin typecheck and bundle cleanly
- * (the zero-runtime-dep invariant is preserved).
+ * Canonical V2 API (per node_modules/@opencode/plugin 2.2.5,
+ * dist/promise/): Plugin.define({ id, setup(ctx) }) where ctx exposes
+ * skill / command / tool / session / event / app domains. V2 has NO
+ * host-client property (D-009) and NO hooks-object return (V2 setup
+ * registers hooks imperatively via `await ctx.<domain>.hook|transform(...)`).
  *
- * Source of truth for the shapes below (per ctx7 docs):
- *   - chat.message hook:
- *     (input: { sessionID, agent?, model?, messageID?, variant? },
- *      output: { message: UserMessage; parts: Part[] }) => Promise<void>
- *   - command.execute.before hook:
- *     (input: { command, sessionID, arguments },
- *      output: { parts: Part[] }) => Promise<void>
- *   - event hook:
- *     (event: { type: string; [k: string]: unknown }) => Promise<void>
- *   - experimental.chat.system.transform hook (legacy):
- *     (input: {}, output: { system: string[] }) => Promise<void>
+ * Source of truth for AET-specific shapes (src/AGENTS.md Core contract):
+ *   - CommandResult: dual-channel envelope (prompt + events + data)
+ *   - OutputEvent: discriminated union by `id` (plugins-only channel)
  */
 
-// ── Plugin lifecycle ──────────────────────────────────────────────────────
+// ── V2 Plugin types (re-exported, type-only — stripped at build) ──────────
 
-/** A part of a chat message (text/tool-call/etc). The plugin only pushes
- *  text parts; other shapes are opaque to us. */
-export interface MessagePart {
-  type: string;
-  text?: string;
-  // Allow other opaque fields without forcing `any`.
-  [key: string]: unknown;
-}
+import type { Plugin as PluginNS } from '@opencode/plugin';
 
-/** User message as exposed by the chat.message hook. */
-export interface UserMessage {
-  id?: string;
-  sessionID: string;
-  role: 'user';
-  agent?: string;
-  model?: { providerID: string; modelID: string };
-  time?: { created: number };
-  [key: string]: unknown;
-}
-
-/** OpencodeClient subset — the host API surface the plugin uses. */
-export interface OpencodeClient {
-  /** session.create is invoked on context.clear events. */
-  session: {
-    create(input?: { location?: { directory?: string } }): Promise<{ id: string }>;
-    prompt(input: { sessionID: string; prompt: { parts: MessagePart[] } }): Promise<unknown>;
-  };
-  /** tui.publish is invoked on tui.session.select events. */
-  tui?: {
-    publish(input: { type: string; sessionID?: string; [key: string]: unknown }): Promise<unknown>;
-  };
-  /** app.log for structured logging (replaces console.log per ctx7 docs). */
-  app: {
-    log(input: {
-      body: { service: string; level: 'debug' | 'info' | 'warn' | 'error'; message: string; extra?: Record<string, unknown> };
-    }): Promise<unknown>;
-  };
-}
-
-/** Plugin context passed to the plugin entry. */
-export interface PluginContext {
-  client: OpencodeClient;
-  /** Hook registration surface — keys are hook IDs. */
-  // The actual hook map has many keys; we expose only the ones we register.
-  [key: string]: unknown;
-}
-
-/** The Plugin entry signature. */
-export type Plugin = (ctx: PluginContext) => Promise<PluginHooks | void>;
-
-/** Map of hook ID → hook handler. The plugin returns this from its entry. */
-export interface PluginHooks {
-  [hookId: string]: (input: unknown, output: unknown) => Promise<void>;
-}
+/** V2 plugin interface: `{ id, setup(ctx) => cleanup | void }`. */
+export type Plugin = PluginNS.Plugin;
+/** V2 setup context: exposes `skill` / `command` / `tool` / `session` / `event` / `app` domains. */
+export type PluginContext = PluginNS.Context;
+/** V2 setup cleanup function. */
+export type PluginCleanup = PluginNS.Cleanup;
 
 // ── AET CLI result shape (parsed from JSON output) ───────────────────────
 
@@ -95,34 +43,63 @@ export interface OutputEvent {
   payload: Record<string, unknown>;
 }
 
-/** Result of an `aet` CLI invocation (JSON mode). */
+/**
+ * Result of an `aet` CLI invocation (JSON mode).
+ *
+ * Per src/AGENTS.md Core contract — dual-channel design:
+ *   - `prompt`: agent-visible text (plugin passes through / suppresses)
+ *   - `events`: PLUGIN-ONLY, agent never sees raw
+ *   - `data`: lifecycle metadata (`status` 8-state machine)
+ *   - `error`: only when `ok === false`
+ */
 export interface CommandResult {
   ok: boolean;
+  /** Agent-visible text. Primary channel — surfaced by the plugin to the agent. */
+  prompt?: string;
+  /** Plugin-only events (context.clear / prompt.inject / omit_prompt / error / …). */
   events?: OutputEvent[];
+  /** Lifecycle metadata — `status` is one of 8 states (workflow_started / step_advanced / …). */
+  data?: {
+    status?: string;
+    currentStep?: string | null;
+    nextStep?: string | null;
+    [key: string]: unknown;
+  };
+  /** Error envelope — only present when `ok === false`. */
   error?: { code: string; message: string };
 }
 
-/** Convenience: hook input shape for command.execute.before. */
-export interface CommandBeforeInput {
-  command: string;
-  sessionID: string;
-  arguments?: string | string[];
+// ── Ambient minimal types kept for backward compat ───────────────────────
+//
+// V2 ctx has no host-client property (D-009). json_to_op.ts drives
+// ctx.session / console directly. OpencodeClient is retained as a minimal
+// ambient shape because index.ts re-exports it and some tests still
+// reference the structural form while migrating; it carries no runtime
+// weight.
+
+/** A part of a chat message (text/tool-call/etc). */
+export interface MessagePart {
+  type: string;
+  text?: string;
+  // Allow other opaque fields without forcing `any`.
+  [key: string]: unknown;
 }
 
-/** Convenience: hook output shape for command.execute.before. */
-export interface CommandBeforeOutput {
-  parts: MessagePart[];
-}
-
-/** Convenience: hook input shape for chat.message. */
-export interface ChatMessageInput {
-  sessionID: string;
-  agent?: string;
-  messageID?: string;
-}
-
-/** Convenience: hook output shape for chat.message. */
-export interface ChatMessageOutput {
-  message: UserMessage;
-  parts: MessagePart[];
+/** OpencodeClient subset — retained for backward compat (V2 ctx has no host-client property). */
+export interface OpencodeClient {
+  /** session.create / session.prompt — V2 ctx.session mirrors this shape. */
+  session: {
+    create(input?: { location?: { directory?: string } }): Promise<{ id: string }>;
+    prompt(input: { sessionID: string; text: string }): Promise<unknown>;
+  };
+  /** tui.publish — V2 TUI is a separate plugin part; retained here as optional. */
+  tui?: {
+    publish(input: { type: string; sessionID?: string; [key: string]: unknown }): Promise<unknown>;
+  };
+  /** app.log — V2 ctx.app has no log(); use console.log/warn with [AET] prefix. Retained as compat. */
+  app?: {
+    log(input: {
+      body: { service: string; level: 'debug' | 'info' | 'warn' | 'error'; message: string; extra?: Record<string, unknown> };
+    }): Promise<unknown>;
+  };
 }

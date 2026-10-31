@@ -1,9 +1,9 @@
 /**
  * @file src/plugins/opencode/hooks/session_status.ts
  *
- * Passive hook: `event` (新方案.md §3.1).
+ * V2 Passive hook: `ctx.event.subscribe()` (新方案.md §3.1) + AbortController.
  *
- * OpenCode's `event` hook fires for many event types (per ctx7 docs):
+ * OpenCode's event stream fires for many event types (per ctx7 docs):
  *   session.created, session.compacted, session.deleted, session.idle,
  *   session.status, session.updated, message.updated, message.removed,
  *   tui.prompt.append, tui.command.execute, tui.toast.show, etc.
@@ -39,16 +39,24 @@
  * active workflow. Every no-match returns an empty prompt → we inject nothing
  * and the stop proceeds cleanly. This is the "don't feed AET guidance to an
  * unrelated session" guard.
+ *
+ * V2 cleanup (D-004): the subscription runs in a background async loop driven
+ * by an AbortController; the setup() cleanup function aborts it on plugin
+ * unload so the host doesn't keep a dangling iterator.
  */
 import { AET_PLUGIN_ID } from '../constants.js';
 import { runAetSafe } from '../cli.js';
 import type { PluginContext } from '../types.js';
 
-/** Event payload shape for OpenCode's `event` hook. */
-interface EventHookPayload {
+/** V2 OpenCodeEvent shape (subset we consume — duck-typed). */
+interface OpenCodeEventLike {
   type: string;
-  sessionID?: string;
-  properties?: Record<string, unknown>;
+  data?: {
+    sessionID?: string;
+    info?: AssistantMessageInfo;
+    status?: { type?: string };
+    [key: string]: unknown;
+  };
   [key: string]: unknown;
 }
 
@@ -60,49 +68,75 @@ interface AssistantMessageInfo {
   content?: Array<{ type?: string }>;
 }
 
+/** Cleanup collector — setup() passes this in; we push our abort fn. */
+type CleanupCollector = (fn: () => Promise<void> | void) => void;
+
 /**
- * Build the `event` hook handler. On a naturally-completed assistant message
- * (no user interrupt, no pending tool call), reports the stopping session to
- * Core (`aet event ca-stop`) and delivers the returned guidance (if any) back to
- * that session. Returns the handler so the plugin entry can return its hooks
- * object (the OpenCode Plugin API contract). The hook receives
- * `{ event: Event }` — destructure it before reading event fields.
+ * V2 `ctx.event.subscribe()` registration with AbortController cleanup.
+ *
+ * On a naturally-completed assistant message (no user interrupt, no pending
+ * tool call), reports the stopping session to Core (`aet event ca-stop`) and
+ * delivers the returned guidance (if any) back to that session via
+ * `ctx.session.prompt`. Returns `Promise<void>` — the cleanup fn is
+ * registered with the collector passed by setup().
  */
-export function registerSessionStatusHook(ctx: PluginContext): (input: unknown) => Promise<void> {
-  return async (rawInput: unknown): Promise<void> => {
-    // OpenCode passes `{ event }`; the SDK Event carries `type` + `properties`.
-    const event = (rawInput as { event?: EventHookPayload }).event;
-    if (!event?.type) return;
+export async function registerSessionStatusHook(
+  ctx: PluginContext,
+  cleanup: CleanupCollector,
+): Promise<void> {
+  const abortController = new AbortController();
 
-    const sessionID = event.sessionID ?? (event.properties as Record<string, unknown> | undefined)?.['sessionID'];
-    if (!sessionID) return;
-
-    // Only a final assistant message is the "stop" signal. `message.updated`
-    // fires for every message (user + assistant + mid-stream deltas); we
-    // judge only the final assistant turn.
-    if (event.type === 'message.updated') {
-      const info = event.properties?.['info'] as AssistantMessageInfo | undefined;
-      if (!isFinalAssistantMessage(info)) return;
-      if (isUserInterrupt(info)) return; // user stopped us — do NOT inject
-      if (hasPendingToolCall(info)) return; // agent is mid-workflow — not stopping
-      await deliverCaStop(ctx, sessionID);
-      return;
+  // Background subscriber — runs until aborted. Catches its own errors so the
+  // host process is never affected by a subscriber crash.
+  (async () => {
+    try {
+      for await (const event of ctx.event.subscribe({ signal: abortController.signal })) {
+        try {
+          await handleEvent(ctx, event as unknown as OpenCodeEventLike);
+        } catch (err) {
+          // Per R9, errors are never silenced — log with [AET] prefix.
+          console.error(`[${AET_PLUGIN_ID}] session_status event handler error:`, (err as Error).message);
+        }
+      }
+    } catch (err) {
+      // The iterator throws on abort (signal) — distinguish real errors.
+      if (!abortController.signal.aborted) {
+        console.error(`[${AET_PLUGIN_ID}] session_status subscribe error:`, (err as Error).message);
+      }
     }
+  })();
 
+  // Register cleanup so setup() can abort the subscription on unload.
+  cleanup(() => abortController.abort());
+}
+
+/** Dispatch a single OpenCode event. Exported for unit testing. */
+async function handleEvent(ctx: PluginContext, event: OpenCodeEventLike): Promise<void> {
+  if (!event?.type) return;
+
+  // Only `message.updated` carries the assistant message info we judge on.
+  if (event.type !== 'message.updated') {
     // `session.idle` / `session.status idle` are NOT used as the trigger —
     // they fire on user interrupt too and after every tool call. Log for
     // observability only.
-    if (event.type === 'session.idle' || isIdleStatus(event.type, event.properties)) {
-      await ctx.client.app.log({
-        body: {
-          service: AET_PLUGIN_ID,
-          level: 'debug',
-          message: `session idle observed (not a ca.stop trigger — ambiguous with user interrupt)`,
-          extra: { sessionID, type: event.type },
-        },
-      });
+    if (event.type === 'session.idle' || isIdleStatus(event)) {
+      const sessionID = event.data?.sessionID;
+      console.debug(
+        `[${AET_PLUGIN_ID}] session idle observed (not a ca.stop trigger — ambiguous with user interrupt)`,
+        { sessionID, type: event.type },
+      );
     }
-  };
+    return;
+  }
+
+  const sessionID = event.data?.sessionID;
+  if (!sessionID) return;
+
+  const info = event.data?.info;
+  if (!isFinalAssistantMessage(info)) return;
+  if (isUserInterrupt(info)) return; // user stopped us — do NOT inject
+  if (hasPendingToolCall(info)) return; // agent is mid-workflow — not stopping
+  await deliverCaStop(ctx, sessionID);
 }
 
 /** True when the assistant message is final (role=assistant + time.completed set). */
@@ -130,17 +164,17 @@ async function deliverCaStop(ctx: PluginContext, sessionID: string): Promise<voi
   if (!text) return;
 
   // Deliver the guidance back to the stopping session so the agent keeps
-  // working. This is the out-of-hook delivery path — the `event` hook has
-  // no `output.parts` to mutate, so we drive the host API directly.
-  await ctx.client.session.prompt({
+  // working. V2 ctx.session.prompt takes { sessionID, text } (D-009 — no
+  // legacy `prompt({ parts: [...] })` shape; the V2 API takes a flat `text`
+  // field).
+  await ctx.session.prompt({
     sessionID,
-    prompt: { parts: [{ type: 'text', text }] },
+    text,
   });
 }
 
 /** True when a `session.status` event reports an idle status. */
-function isIdleStatus(type: string, properties: Record<string, unknown> | undefined): boolean {
-  if (type !== 'session.status') return false;
-  const status = properties?.['status'] as { type?: string } | undefined;
-  return status?.type === 'idle';
+function isIdleStatus(event: OpenCodeEventLike): boolean {
+  if (event.type !== 'session.status') return false;
+  return event.data?.status?.type === 'idle';
 }

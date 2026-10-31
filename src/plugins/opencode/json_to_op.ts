@@ -1,23 +1,32 @@
 /**
  * @file src/plugins/opencode/json_to_op.ts
  *
- * Translates AET Core output events (CLI JSON output) into OpenCode
- * Plugin API calls. Per 新方案.md §3.2:
+ * Translates AET Core output events (CLI JSON output) into V2 OpenCode
+ * Plugin API calls. Per 新方案.md §3.2 (V2 port — D-009):
  *
- *   context.clear        → client.session.create + tui.publish(tui.session.select)
- *   prompt.inject        → client.session.prompt({parts:[{type:'text',text}]})
- *                          OR appendText(output, ...) in hook context
- *   prompt.inject_system → output.system.push(...) (legacy)
- *   error                → ALWAYS visible (R9); log + re-throw if no hook ctx
+ *   context.clear        → ctx.session.create + (tui.publish DEGRADED — V2 TUI
+ *                          is a separate plugin part, not accessible from here)
+ *                          → degrade to "new session + console hint" (AC-023)
+ *   prompt.inject        → ctx.session.prompt({ sessionID, text }) when a
+ *                          session tracker is wired; otherwise log + drop
+ *                          (out-of-hook delivery needs a tracker)
+ *   prompt.inject_system → requires session.hook("context"); log + degrade
+ *   error                → ALWAYS visible (R9); console.error with [AET] prefix
+ *
+ * Known degradation (D-009, AC-023): context.clear TUI联动 (tui.session.select)
+ * is no longer available from the src plugin part — V2 ctx has no TUI surface.
+ * We degrade to creating a new session + logging a hint. The deployable plugin
+ * part (with TUI access) can override this with the real tui.session.select
+ * call.
  *
  * Two application modes:
  *   (a) In-hook: the hook has access to an `output` object (e.g.
- *       { parts, message }) that we mutate. Used by command.execute.before
- *       hooks.
- *   (b) Out-of-hook: no `output` to mutate, so we drive the host API
- *       directly (client.session.create / client.session.prompt /
- *       client.tui.publish). Used when events arrive via a CLI call that
- *       wasn't a hook (e.g. background init triggered by something else).
+ *       { parts, message }) that we mutate. Used by the command_before prompt
+ *       hook (collects text parts, then replaces event.prompt.text).
+ *   (b) Out-of-hook: no `output` to mutate, so we drive the V2 domain API
+ *       directly (ctx.session.create / ctx.session.prompt). Used when events
+ *       arrive via a CLI call that wasn't a hook (e.g. background init
+ *       triggered by something else).
  */
 
 import { AET_PLUGIN_ID } from './constants.js';
@@ -91,36 +100,38 @@ export function applyEventsInHook(
   }
 }
 
-// ── Out-of-hook application: drive client.session/tui directly ───────────
+// ── Out-of-hook application: drive ctx.session directly ──────────────────
 
 /**
- * Apply events via the OpencodeClient API directly. Used when the plugin
+ * Apply events via the V2 ctx.session API directly. Used when the plugin
  * has triggered a CLI call outside a host hook context (e.g. background
  * workflow init from a slash command that the host didn't intercept).
  *
- * Per 新方案.md §3.2 the canonical translations are:
- *   context.clear      → client.session.create + client.tui.publish
- *   prompt.inject      → client.session.prompt({ parts: [{type:'text',text}] })
- *   error              → log via client.app.log (always visible)
+ * Per 新方案.md §3.2 the canonical V2 translations are:
+ *   context.clear      → ctx.session.create + console hint (tui.publish
+ *                         DEGRADED — V2 TUI is a separate plugin part, AC-023)
+ *   prompt.inject      → ctx.session.prompt({ sessionID, text }) (needs tracker)
+ *   error              → console.error with [AET] prefix (always visible, R9)
  */
 export async function applyEventsViaClient(
   ctx: PluginContext,
   events: OutputEvent[],
 ): Promise<void> {
-  const client = ctx.client;
   for (const ev of events) {
     const p = ev.payload;
     try {
       switch (ev.id) {
         case 'context.clear': {
-          const created = await client.session.create({});
-          if (client.tui && created?.id) {
-            await client.tui.publish({
-              type: 'tui.session.select',
-              sessionID: created.id,
-              reason: String(p.reason ?? 'context.clear'),
-            });
-          }
+          // V2 ctx.session.create; tui.publish is NOT available (V2 TUI is a
+          // separate plugin part). Degrade to "new session + console hint"
+          // (AC-023). The deployable plugin part (with TUI access) can
+          // override this with the real tui.session.select call.
+          const created = await ctx.session.create({});
+          console.log(
+            `[${AET_PLUGIN_ID}] context.clear → new session created (id=${created?.id ?? '?'}). ` +
+              `tui.session.select DEGRADED (V2 TUI is a separate plugin part — AC-023). ` +
+              `Reason: ${p.reason ?? 'context.clear'}`,
+          );
           break;
         }
         case 'prompt.inject': {
@@ -130,42 +141,30 @@ export async function applyEventsViaClient(
           // payload (core never carries sessionID). Out-of-hook delivery
           // needs a plugin session-tracker which is not yet wired here;
           // log + drop until it is.
-          await client.app.log({
-            body: {
-              service: AET_PLUGIN_ID,
-              level: 'warn',
-              message: `prompt.inject out-of-hook delivery needs a plugin session tracker; text not delivered`,
-              extra: { text },
-            },
-          });
+          console.warn(
+            `[${AET_PLUGIN_ID}] prompt.inject out-of-hook delivery needs a plugin session tracker; text not delivered`,
+            { text },
+          );
           break;
         }
         case 'prompt.inject_system': {
           // No direct system-prompt injection API outside of
-          // experimental.chat.system.transform hook. Log + degrade.
-          await client.app.log({
-            body: {
-              service: AET_PLUGIN_ID,
-              level: 'info',
-              message: `prompt.inject_system received; requires system_transform hook`,
-              extra: { text: String(p.text ?? '') },
-            },
-          });
+          // ctx.session.hook("context"). Log + degrade.
+          console.log(
+            `[${AET_PLUGIN_ID}] prompt.inject_system received; requires ctx.session.hook("context")`,
+            { text: String(p.text ?? '') },
+          );
           break;
         }
         case 'hook.prompt': {
           // BLOCKING step hook — text served as CLI's direct return. Out
           // of hook we have no output to mutate; log it for visibility
           // (a session tracker, when wired, could deliver it via
-          // client.session.prompt).
-          await client.app.log({
-            body: {
-              service: AET_PLUGIN_ID,
-              level: 'info',
-              message: `hook.prompt received out-of-hook; text not delivered to agent`,
-              extra: { text: String(p.text ?? '') },
-            },
-          });
+          // ctx.session.prompt).
+          console.log(
+            `[${AET_PLUGIN_ID}] hook.prompt received out-of-hook; text not delivered to agent`,
+            { text: String(p.text ?? '') },
+          );
           break;
         }
         case 'hook.func': {
@@ -173,52 +172,26 @@ export async function applyEventsViaClient(
           // generic in-process spawn surfaced via the plugin API; log +
           // degrade. Future: run host-side.
           const cmd = String((p as { command?: unknown }).command ?? '');
-          await client.app.log({
-            body: {
-              service: AET_PLUGIN_ID,
-              level: 'info',
-              message: `hook.func received; OpenCode cannot execute in-process`,
-              extra: {
-                command: cmd,
-                args: (p as { args?: unknown }).args,
-                cwd: (p as { cwd?: unknown }).cwd,
-              },
-            },
+          console.log(`[${AET_PLUGIN_ID}] hook.func received; OpenCode cannot execute in-process`, {
+            command: cmd,
+            args: (p as { args?: unknown }).args,
+            cwd: (p as { cwd?: unknown }).cwd,
           });
           break;
         }
         case 'error': {
           // R9: errors are NEVER silenced. Log at error level.
-          await client.app.log({
-            body: {
-              service: AET_PLUGIN_ID,
-              level: 'error',
-              message: `[AET ERROR ${p.code ?? 'UNKNOWN'}] ${p.message ?? ''}`,
-            },
-          });
+          console.error(`[${AET_PLUGIN_ID}] [AET ERROR ${p.code ?? 'UNKNOWN'}] ${p.message ?? ''}`);
           break;
         }
         default:
           // Unknown event — log + skip.
-          await client.app.log({
-            body: {
-              service: AET_PLUGIN_ID,
-              level: 'debug',
-              message: `unknown event ${ev.id}; ignored`,
-              extra: { payload: p },
-            },
-          });
+          console.debug(`[${AET_PLUGIN_ID}] unknown event ${ev.id}; ignored`, { payload: p });
           break;
       }
     } catch (err) {
       // Per R9, errors from applying events must surface — never silent.
-      await client.app.log({
-        body: {
-          service: AET_PLUGIN_ID,
-          level: 'error',
-          message: `failed to apply ${ev.id}: ${(err as Error).message}`,
-        },
-      });
+      console.error(`[${AET_PLUGIN_ID}] failed to apply ${ev.id}: ${(err as Error).message}`);
     }
   }
 }
