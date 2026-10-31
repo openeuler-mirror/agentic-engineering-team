@@ -62,6 +62,7 @@
     "version": "npm run build"
   },
   "devDependencies": {
+    "@opencode/plugin": "2.2.5",
     "@types/cross-spawn": "^6.0.6",
     "@types/node": "^20.12.12",
     "@vitest/coverage-v8": "^4.1.10",

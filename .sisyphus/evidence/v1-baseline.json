@@ -1,0 +1,44 @@
+{
+  "timestamp": "2026-10-31T07:06:35.604Z",
+  "environment": {
+    "node": "v25.7.0",
+    "platform": "darwin",
+    "arch": "arm64",
+    "cpuCores": 10,
+    "machine": "paradiseyphdeMacBook-Pro-3.local"
+  },
+  "runtime": {
+    "name": "opencode-v1",
+    "version": "1.19.5",
+    "pluginPkg": "@opencode-ai/plugin",
+    "pluginVersion": "1.18.33"
+  },
+  "metrics": {
+    "setup": {
+      "total_ms": 3.19,
+      "decomposition": {
+        "ConfigManager": 0.12,
+        "CheckpointManager": 0.19,
+        "WorkflowEngine": 0.01,
+        "TraceLogger": 0.01,
+        "TraceLogger_install": 2.84,
+        "AgentInsightClient": 0.02
+      }
+    },
+    "tools": {
+      "count": 9,
+      "total_ms": 0.16,
+      "decomposition": {
+        "workflow_list": 0.01,
+        "checkpoint_list_active": 0.04,
+        "workflow_start": 0.01,
+        "checkpoint_resume": 0.01,
+        "agent_handover": 0.01,
+        "step_handover": 0.01,
+        "trace_enable": 0.03,
+        "trace_disable": 0.02,
+        "trace_status": 0.02
+      }
+    }
+  }
+}
