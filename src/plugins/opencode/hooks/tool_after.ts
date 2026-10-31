@@ -20,40 +20,36 @@
 import { AET_WORKFLOW_RE } from '../../shared_hooks.js';
 import type { CommandResult, PluginContext } from '../types.js';
 
-/** V2 execute.after event shape (subset we consume). */
-interface ToolAfterEvent {
-  readonly tool: string;
-  readonly sessionID: string;
-  readonly id: string;
-  readonly input: { command?: string; [key: string]: unknown } | null;
-  readonly status: 'completed' | 'error';
-  result?: {
-    readonly output?: unknown;
-    readonly content?: string | ReadonlyArray<{ type: string; text?: string }> | ReadonlyArray<unknown>;
-    readonly metadata?: unknown;
-    [key: string]: unknown;
-  };
-  error?: { message?: string };
-  [key: string]: unknown;
-}
-
 /**
  * V2 `ctx.tool.hook("execute.after", ...)` registration. Replaces the bash
  * tool result with `result.prompt` when the command was an `aet workflow`
  * invocation. Returns `Promise<void>` — V2 setup registers imperatively.
  */
 export async function registerToolAfterHook(ctx: PluginContext): Promise<void> {
-  await ctx.tool.hook('execute.after', async (event: ToolAfterEvent) => {
+  await ctx.tool.hook('execute.after', async (event) => {
     if (!event?.tool || event.tool !== 'bash') return;
-    if (event.status !== 'completed' || !event.result) return;
+    // V2 execute.after event is a discriminated union by status; cast to the shape we consume.
+    const ev = event as {
+      readonly tool: string;
+      readonly status: 'completed' | 'error';
+      readonly input: { command?: string; [key: string]: unknown } | null;
+      result?: {
+        readonly output?: unknown;
+        readonly content?: string | ReadonlyArray<{ type: string; text?: string }> | ReadonlyArray<unknown>;
+        readonly metadata?: unknown;
+        [key: string]: unknown;
+      };
+      error?: { message?: string };
+    };
+    if (ev.status !== 'completed' || !ev.result) return;
 
-    const command = String(event.input?.command ?? '').trim();
+    const command = String(ev.input?.command ?? '').trim();
     if (!AET_WORKFLOW_RE.test(command)) return;
 
     // The bash tool's result.content is either a raw stdout string or an
     // array of Content items (e.g. [{type:'text', text:stdoutString}]).
     // Normalize to the stdout string we parse as JSON.
-    const content = event.result.content;
+    const content = ev.result.content;
     const stdout =
       typeof content === 'string'
         ? content
@@ -68,8 +64,8 @@ export async function registerToolAfterHook(ctx: PluginContext): Promise<void> {
     } catch {
       // R9: errors are never silenced — surface a synthetic error in the tool
       // result so the agent isn't left guessing about the unparseable stdout.
-      event.result = {
-        ...event.result,
+      ev.result = {
+        ...ev.result,
         content: `[AET ERROR PLUGIN_PARSE_FAILED] aet: failed to parse stdout as JSON for '${command}'. First 200 chars: ${stdout.slice(0, 200)}`,
       };
       return;
@@ -88,6 +84,6 @@ export async function registerToolAfterHook(ctx: PluginContext): Promise<void> {
 
     // Reassign the whole result object — Tool.Result.content is readonly,
     // so we can't mutate it in place. Preserve metadata.
-    event.result = { ...event.result, content: text };
+    ev.result = { ...ev.result, content: text };
   });
 }

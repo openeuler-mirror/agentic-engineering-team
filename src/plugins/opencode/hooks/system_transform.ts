@@ -25,12 +25,6 @@
 import { AET_PLUGIN_ID } from '../constants.js';
 import type { PluginContext } from '../types.js';
 
-/** V2 SessionContext event shape (subset we consume). */
-interface SessionContextEvent {
-  system: Array<{ type: string; text?: string; [key: string]: unknown }>;
-  [key: string]: unknown;
-}
-
 /**
  * V2 `ctx.session.hook("context", ...)` registration — stub.
  *
@@ -40,7 +34,7 @@ interface SessionContextEvent {
  * imperatively.
  */
 export async function registerSystemTransformHook(ctx: PluginContext): Promise<void> {
-  await ctx.session.hook('context', async (event: SessionContextEvent) => {
+  await ctx.session.hook('context', async (event) => {
     if (!event?.system) {
       console.warn(`[${AET_PLUGIN_ID}] session.hook("context"): malformed event (no system array); skipping`);
       return;

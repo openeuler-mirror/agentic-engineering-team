@@ -67,7 +67,7 @@ const Plugin = {
  */
 export default Plugin.define({
   id: AET_PLUGIN_ID,
-  async setup(ctx: PluginContext): Promise<void> {
+  async setup(ctx: PluginContext) {
     // Each register* helper awaits its own V2 registration. Order matters
     // only for config (skills/commands must exist before prompts fire).
     const cleanups: Array<() => Promise<void> | void> = [];

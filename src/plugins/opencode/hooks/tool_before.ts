@@ -26,22 +26,6 @@ import { AET_PLUGIN_INIT_RE, AET_WORKFLOW_RE, rewriteAddFlag } from '../../share
 import { AET_AGENT_ID } from '../constants.js';
 import type { PluginContext } from '../types.js';
 
-/** Shape of the bash tool args the hook rewrites (V2 execute.before event.input). */
-interface BashArgs {
-  command?: string;
-  cwd?: string;
-  [key: string]: unknown;
-}
-
-/** V2 execute.before event shape (subset we consume). */
-interface ToolBeforeEvent {
-  readonly tool: string;
-  readonly sessionID: string;
-  readonly id: string;
-  input: BashArgs | null;
-  [key: string]: unknown;
-}
-
 /**
  * V2 `ctx.tool.hook("execute.before", ...)` registration. Rewrites an AET
  * Bash command to append `--output json` (workflow) / `--agent opencode`
@@ -50,17 +34,19 @@ interface ToolBeforeEvent {
  * — V2 setup registers imperatively.
  */
 export async function registerToolBeforeHook(ctx: PluginContext): Promise<void> {
-  await ctx.tool.hook('execute.before', async (event: ToolBeforeEvent) => {
+  await ctx.tool.hook('execute.before', async (event) => {
     if (!event?.tool || event.tool !== 'bash') return; // opencode's tool id is lowercase `bash`.
-    if (!event.input) return;
+    // V2 execute.before event.input is `unknown`; cast to the bash args shape we rewrite.
+    const input = event.input as { command?: string; [key: string]: unknown } | null;
+    if (!input) return;
 
-    const command = String(event.input.command ?? '').trim();
+    const command = String(input.command ?? '').trim();
     if (!command) return;
 
     if (AET_WORKFLOW_RE.test(command)) {
       let rewritten = rewriteAddFlag(command, ['--output', '-o'], 'json');
       if (rewritten !== null) {
-        event.input.command = rewritten;
+        input.command = rewritten;
       }
       // Bind the coding-agent session when ENTERING a stage — `aet workflow
       // handover` (advance into the next stage) and `aet workflow continue`
@@ -68,16 +54,17 @@ export async function registerToolBeforeHook(ctx: PluginContext): Promise<void> 
       // a different session, so the `ca.stop` event verifies the stopping
       // session owns the CURRENT stage. Applies to the (post-rewrite) command
       // so the flag lands on the same `aet` invocation.
-      if (/(aet\s+workflow\s+handover|aet\s+workflow\s+continue)\b/.test(command) && event.sessionID) {
-        rewritten = rewriteAddFlag(event.input.command, ['--session-id'], event.sessionID);
-        if (rewritten !== null) event.input.command = rewritten;
+      const sessionID = (event as { sessionID?: string }).sessionID;
+      if (/(aet\s+workflow\s+handover|aet\s+workflow\s+continue)\b/.test(command) && sessionID) {
+        rewritten = rewriteAddFlag(input.command ?? '', ['--session-id'], sessionID);
+        if (rewritten !== null) input.command = rewritten;
       }
       return;
     }
 
     if (AET_PLUGIN_INIT_RE.test(command)) {
       const rewritten = rewriteAddFlag(command, ['--agent'], AET_AGENT_ID);
-      if (rewritten !== null) event.input.command = rewritten;
+      if (rewritten !== null) input.command = rewritten;
       return;
     }
 

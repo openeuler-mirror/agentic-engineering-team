@@ -26,16 +26,6 @@ import { applyResult } from '../json_to_op.js';
 import { parseSlash, parseSlashArgs } from '../../shared_hooks.js';
 import type { MessagePart, PluginContext } from '../types.js';
 
-/** V2 SessionPrompt event shape (subset we consume). */
-interface SessionPromptEvent {
-  readonly sessionID: string;
-  prompt: {
-    text: string;
-    [key: string]: unknown;
-  };
-  [key: string]: unknown;
-}
-
 /**
  * V2 `ctx.session.hook("prompt", ...)` registration. Parses slash commands
  * from `event.prompt.text` and routes AET workflow commands through
@@ -43,8 +33,8 @@ interface SessionPromptEvent {
  * imperatively (no hooks-object return).
  */
 export async function registerCommandBeforeHook(ctx: PluginContext): Promise<void> {
-  await ctx.session.hook('prompt', async (event: SessionPromptEvent) => {
-    const text = event?.prompt?.text ?? '';
+  await ctx.session.hook('prompt', async (event) => {
+    const text = (event?.prompt?.text ?? '') as string;
     if (!text) return;
 
     // Parse the slash command from the prompt text. Returns null for

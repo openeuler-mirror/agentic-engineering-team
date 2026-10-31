@@ -1,8 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { applyEventsViaClient, applyResult } from './json_to_op.js';
 import { out, err } from '../../definitions/events.js';
-import type { CommandResult, OutputEvent } from '../../definitions/events.js';
+import type { CommandResult, OutputEvent } from './types.js';
 import type { PluginContext } from './types.js';
+
+// `out(...)` returns the discriminated-union OutputEvent from core definitions
+// (typed payloads). `applyEventsViaClient` consumes the plugin-local OutputEvent
+// shape (`payload: Record<string, unknown>`). Cast through the local type to
+// bridge the one-way dependency (plugins → definitions, NOT plugins → core).
+const ev = (id: Parameters<typeof out>[0], payload: Parameters<typeof out>[1]): OutputEvent =>
+  ({ id, payload } as unknown as OutputEvent);
 
 /**
  * V2 mock ctx: ctx.session.create / ctx.session.prompt + console.log/warn/error/debug.
@@ -36,7 +43,7 @@ afterEach(() => {
 
 describe('applyEventsViaClient (V2 — ctx.session + console, no host-client property)', () => {
   it('clears context by creating a session + logging a hint (tui DEGRADED — AC-023)', async () => {
-    await applyEventsViaClient(ctx, [out('context.clear', { reason: 'next step' })]);
+    await applyEventsViaClient(ctx, [ev('context.clear', { reason: 'next step' })]);
     expect(session.create).toHaveBeenCalledWith({});
     // console.log was called with the [AET] context.clear hint including session id + AC-023 note.
     expect(logSpy).toHaveBeenCalled();
@@ -48,7 +55,7 @@ describe('applyEventsViaClient (V2 — ctx.session + console, no host-client pro
   });
 
   it('logs prompt.inject as a warn (delivery tracked by plugin session)', async () => {
-    await applyEventsViaClient(ctx, [out('prompt.inject', { text: 'hi', type: 'task' })]);
+    await applyEventsViaClient(ctx, [ev('prompt.inject', { text: 'hi', type: 'task' })]);
     expect(consoleWarn).toHaveBeenCalled();
     const msg = consoleWarn.mock.calls[0][0] as string;
     expect(msg).toContain('[aet]');
@@ -58,8 +65,8 @@ describe('applyEventsViaClient (V2 — ctx.session + console, no host-client pro
 
   it('logs hook.func and inject_system via console.log (info-level)', async () => {
     await applyEventsViaClient(ctx, [
-      out('hook.func', { command: 'node', cwd: '/tmp' }),
-      out('prompt.inject_system', { text: 'sys' }),
+      ev('hook.func', { command: 'node', cwd: '/tmp' }),
+      ev('prompt.inject_system', { text: 'sys' }),
     ]);
     expect(logSpy).toHaveBeenCalledTimes(2);
     expect(logSpy.mock.calls[0][0]).toContain('hook.func');
@@ -67,7 +74,7 @@ describe('applyEventsViaClient (V2 — ctx.session + console, no host-client pro
   });
 
   it('logs errors at error level (R9)', async () => {
-    await applyEventsViaClient(ctx, [out('error', { code: 'E1', message: 'bad' })]);
+    await applyEventsViaClient(ctx, [ev('error', { code: 'E1', message: 'bad' })]);
     expect(consoleError).toHaveBeenCalled();
     const msg = consoleError.mock.calls[0][0] as string;
     expect(msg).toContain('[aet]');
@@ -106,7 +113,7 @@ describe('applyResult', () => {
 
   it('applies in-hook events into an output object when mode is in-hook', async () => {
     const output = { parts: [] as { type: string; text: string }[] };
-    await applyResult(ctx, { ok: true, prompt: '', events: [out('prompt.inject', { text: 'x', type: 'task' })] }, 'in-hook', output);
+    await applyResult(ctx, { ok: true, prompt: '', events: [ev('prompt.inject', { text: 'x', type: 'task' })] }, 'in-hook', output);
     expect(output.parts.map((p) => p.text)).toEqual(['x']);
   });
 
@@ -125,7 +132,7 @@ describe('applyResult', () => {
     const output = { parts: [] as { type: string; text: string }[] };
     await applyResult(
       ctx,
-      { ok: true, prompt: 'banner', events: [out('context.clear', { reason: 'next step' })] },
+      { ok: true, prompt: 'banner', events: [ev('context.clear', { reason: 'next step' })] },
       'in-hook',
       output,
     );
@@ -136,7 +143,7 @@ describe('applyResult', () => {
     // Sanity check: the mock ctx we built has `session` but NOT a host-client property.
     // If applyEventsViaClient tried to read a host-client property, this test would crash.
     expect((ctx as unknown as { client?: unknown }).client).toBeUndefined();
-    await applyEventsViaClient(ctx, [out('context.clear', { reason: 'x' })]);
+    await applyEventsViaClient(ctx, [ev('context.clear', { reason: 'x' })]);
     // No throw = success.
   });
 });
