@@ -952,17 +952,27 @@ async function assembleOpencodePlugin(rootPkg) {
     format: 'esm',
   });
 
-  // 2. Root package.json — OpenCode resolves the plugin entry via `main`.
+  // 2. Root package.json — OpenCode resolves the plugin entry via `main` (V1)
+  //    and via `exports["."]` (V2 server part). V2 requires exports["."] to
+  //    recognize the package as a server part; `main` alone is insufficient.
   const pkgJson = {
     name: '@aet/opencode',
     version: rootPkg.version,
     description: 'AET workflow orchestration for OpenCode (skills + workflow command interception + aet Bash rewriting).',
     type: 'module',
     main: 'bin/aet_handler.js',
+    exports: { '.': './bin/aet_handler.js' },
     keywords: ['opencode', 'plugin', 'skills', 'workflow'],
   };
+
+  // V2 server part entry — fail the build if exports["."] is missing,
+  // otherwise V2 silently won't load the plugin (D-008, FR-009).
+  if (!pkgJson.exports || !pkgJson.exports['.']) {
+    throw new Error('[aet:build] opencode plugin package.json missing exports["."] — V2 will not load this plugin');
+  }
+
   await writeFile(join(targetDir, 'package.json'), JSON.stringify(pkgJson, null, 2) + '\n', 'utf8');
-  console.log(`[aet:build] ${'opencode'.padEnd(12)} → ${join(targetDir, 'package.json')} (gen)`);
+  console.log(`[aet:build] ${'opencode'.padEnd(12)} → ${join(targetDir, 'package.json')} (gen, exports["."] for V2)`);
 
   // 3. skills/ — recursive copy (the config hook registers it via skills.paths).
   const skillsDest = join(targetDir, 'skills');
