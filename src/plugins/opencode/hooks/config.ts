@@ -32,6 +32,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import type { PluginContext } from '../types.js';
+import { decodePromptText } from '../prompt_text.js';
 
 /** Shape of a parsed command markdown (frontmatter description + body). */
 export interface ParsedCommand {
@@ -202,7 +203,7 @@ export async function registerConfigHook(
           // For commands with no $ARGUMENTS placeholder in the body (like
           // init.md), the args are simply not substituted — the body is sent
           // as-is, and the command's instructions direct the agent.
-          const userArgs = invocation?.prompt?.text ?? '';
+          const userArgs = decodePromptText(invocation?.prompt?.text).text;
           const rendered = renderTemplate(cmd.body, userArgs);
           await ctx.session.prompt({
             sessionID: invocation.sessionID,

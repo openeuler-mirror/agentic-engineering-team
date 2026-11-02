@@ -24,6 +24,7 @@ import { AET_PLUGIN_ID } from '../constants.js';
 import { runAetSafe } from '../cli.js';
 import { applyResult } from '../json_to_op.js';
 import { parseSlash, parseSlashArgs } from '../../shared_hooks.js';
+import { decodePromptText, encodePromptText } from '../prompt_text.js';
 import type { MessagePart, PluginContext } from '../types.js';
 
 /**
@@ -34,7 +35,8 @@ import type { MessagePart, PluginContext } from '../types.js';
  */
 export async function registerCommandBeforeHook(ctx: PluginContext): Promise<void> {
   await ctx.session.hook('prompt', async (event) => {
-    const text = (event?.prompt?.text ?? '') as string;
+    const decoded = decodePromptText(event?.prompt?.text);
+    const text = decoded.text;
     if (!text) return;
 
     // Parse the slash command from the prompt text. Returns null for
@@ -94,7 +96,7 @@ export async function registerCommandBeforeHook(ctx: PluginContext): Promise<voi
       .filter((t) => t.length > 0)
       .join('\n\n');
     if (assembled) {
-      event.prompt.text = assembled;
+      event.prompt.text = encodePromptText(assembled, decoded.encoded);
     }
 
     // Log a banner so users can see the intercept happened.

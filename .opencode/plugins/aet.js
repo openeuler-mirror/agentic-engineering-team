@@ -18,7 +18,12 @@ import path from 'path';
 import fs from 'fs';
 import os from 'os';
 import { fileURLToPath } from 'url';
-import { Plugin } from "@opencode/plugin";
+// V2 的 Plugin.define 是恒等函数（见 @opencode/plugin dist/effect/plugin.js：
+// `export function define(plugin) { return plugin }`）。此处内联该恒等函数，
+// 使本文件成为一个无运行时依赖的单文件插件——全局安装（~/.config/opencode/aet/
+// 的 git clone 不带 node_modules）也能被 V2 直接加载。
+const Plugin = { define: (plugin) => plugin };
+
 
 import { ConfigManager } from '../../.platform/utils/config-manager.js';
 import { CheckpointManager } from '../../.platform/utils/checkpoint-manager.js';
@@ -121,6 +126,42 @@ function resolveCommandAgent(command) {
   return null;
 }
 
+// V2 的 event.prompt.text 是 JSON 编码后的字符串（实测形如 "\"/design 冒烟\""），
+// 且 event.prompt.parts 不存在。直接对它做正则匹配或拼接都会失效，
+// 因此统一先解码，写回时按原编码还原。
+function decodePromptText(raw) {
+  if (typeof raw !== 'string') return { text: '', encoded: false };
+  const trimmed = raw.trim();
+  if (trimmed.startsWith('"') || trimmed.startsWith('[')) {
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (typeof parsed === 'string') return { text: parsed, encoded: true };
+      if (Array.isArray(parsed)) {
+        const joined = parsed
+          .map(part => {
+            if (typeof part === 'string') return part;
+            if (part && typeof part === 'object') return part.text || part.content || '';
+            return '';
+          })
+          .filter(Boolean)
+          .join('\n');
+        return { text: joined, encoded: true };
+      }
+    } catch { /* 不是 JSON，按原文处理 */ }
+  }
+  return { text: raw, encoded: false };
+}
+
+function encodePromptText(text, encoded) {
+  return encoded ? JSON.stringify(text) : text;
+}
+
+function appendPromptText(event, addition) {
+  if (!event?.prompt) return;
+  const { text, encoded } = decodePromptText(event.prompt.text);
+  event.prompt.text = encodePromptText(text + addition, encoded);
+}
+
 // 从用户输入文本中解析斜杠命令（/design、/implement、/aet-design 等），
 // 返回匹配到的 agentId，未匹配返回 null。
 function resolveSlashCommandAgent(promptText) {
@@ -213,7 +254,7 @@ function yamlStringify(obj, indent = 0) {
       out += `${pad}${key}:\n`;
       for (const item of value) {
         if (item !== null && typeof item === 'object') {
-          out += `${pad}- ${yamlInlineMap(item)}\n`;
+          out += yamlBlockMap(item, pad);
         } else {
           out += `${pad}- ${yamlScalar(item)}\n`;
         }
@@ -228,12 +269,17 @@ function yamlStringify(obj, indent = 0) {
   return out;
 }
 
-function yamlInlineMap(obj) {
-  const parts = [];
-  for (const [k, v] of Object.entries(obj)) {
-    parts.push(`${k}: ${yamlScalar(v)}`);
+// 对象数组元素以块映射形式输出（`- key: value` + 后续同缩进键）。
+// 行内映射 `{a: 1, b: 2}` 不是合法 YAML，会导致 frontmatter 整体解析失败。
+function yamlBlockMap(obj, pad) {
+  const entries = Object.entries(obj);
+  if (entries.length === 0) return `${pad}- {}\n`;
+  const [firstKey, firstValue] = entries[0];
+  let out = `${pad}- ${firstKey}: ${yamlScalar(firstValue)}\n`;
+  for (const [k, v] of entries.slice(1)) {
+    out += `${pad}  ${k}: ${yamlScalar(v)}\n`;
   }
-  return parts.join(', ');
+  return out;
 }
 
 function yamlScalar(v) {
@@ -1471,7 +1517,7 @@ export default Plugin.define({
       const sessionID = event?.sessionID;
       if (!sessionID) return;
 
-      const promptText = event?.prompt?.text || '';
+      const promptText = decodePromptText(event?.prompt?.text).text;
 
       // ── Phase A: 斜杠命令解析与路由 ──
       const slashAgentId = resolveSlashCommandAgent(promptText);
@@ -1524,11 +1570,11 @@ export default Plugin.define({
               const cid = bootstrapAgentCheckpoint(sessionID, agentId, desc);
               if (cid) {
                 const stepText = takeCurrentStepText(cid);
-                if (stepText) event.prompt.text += `\n\n${stepText}`;
+                if (stepText) appendPromptText(event, `\n\n${stepText}`);
               }
             } else {
               // 有历史：列出候选，让模型判断 + 找用户确认
-              event.prompt.text += buildCommandEntryPrompt(agentId, desc, candidates);
+              appendPromptText(event, buildCommandEntryPrompt(agentId, desc, candidates));
             }
           } catch (e) {
             console.error('[AET] command checkpoint entry error:', e.message);
@@ -1584,7 +1630,7 @@ export default Plugin.define({
         const msgCount = msgs?.length || 0;
         if (msgCount <= 1 && finalAgent && targetCheckpointID) {
           const stepText = takeCurrentStepText(targetCheckpointID);
-          if (stepText) event.prompt.text += `\n\n${stepText}`;
+          if (stepText) appendPromptText(event, `\n\n${stepText}`);
         }
       } catch (err) {
         console.error('[AET] prompt hook context error:', err.message);

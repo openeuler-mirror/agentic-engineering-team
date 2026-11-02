@@ -76,6 +76,27 @@ describe('V2 ctx.session.hook("prompt") — slash command routing', () => {
     expect(event.prompt.text).toBe('## banner\nstep-1 task');
   });
 
+  it('decodes the JSON-encoded prompt text V2 sends and re-encodes the result', async () => {
+    const { ctx, sessionHook } = makeCtx();
+    runAetSafe.mockResolvedValue(okResult());
+    applyResult.mockImplementation(async (_ctx: unknown, _r: unknown, _mode: string, output: { parts: { type: string; text: string }[] }) => {
+      output.parts.push({ type: 'text', text: '## banner\nstep-1 task' });
+    });
+    await registerCommandBeforeHook(ctx);
+
+    const cb = sessionHook.mock.calls[0][1] as CapturedPromptHook;
+    const event = { sessionID: 's', prompt: { text: JSON.stringify('/design') } };
+    await cb(event);
+
+    // The slash command is recognized despite the JSON quoting.
+    expect(runAetSafe).toHaveBeenCalledWith(
+      ['workflow', 'command-init', '--name', 'design', '--session-id', 's'],
+      { cwd: expect.any(String) },
+    );
+    // The written-back text keeps the original JSON encoding.
+    expect(event.prompt.text).toBe(JSON.stringify('## banner\nstep-1 task'));
+  });
+
   it('forwards the user arguments as --argument when present', async () => {
     const { ctx, sessionHook } = makeCtx();
     runAetSafe.mockResolvedValue(okResult());
