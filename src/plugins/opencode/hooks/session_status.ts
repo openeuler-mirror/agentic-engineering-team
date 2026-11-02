@@ -3,36 +3,36 @@
  *
  * V2 Passive hook: `ctx.event.subscribe()` (新方案.md §3.1) + AbortController.
  *
- * OpenCode's event stream fires for many event types (per ctx7 docs):
- *   session.created, session.compacted, session.deleted, session.idle,
- *   session.status, session.updated, message.updated, message.removed,
- *   tui.prompt.append, tui.command.execute, tui.toast.show, etc.
+ * V2 event types (per `@opencode/protocol` SessionEventDurable union — verified
+ * in node_modules/@opencode/protocol/dist/groups/event.d.ts:52): the union
+ * contains `session.step.ended` and `session.execution.interrupted` but NOT
+ * the V1 `message.updated` / `message.removed` types. The V1 implementation
+ * below keyed on `message.updated` and was dead code on a real V2 host.
  *
  * JOB: detect when a coding agent STOPS producing output (the "ca.stop"
- * condition) WITHOUT firing on user interrupt. We judge this from a SINGLE
- * `message.updated` event — no cross-event correlation, no race:
+ * condition) WITHOUT firing on user interrupt or mid-workflow tool calls.
+ * We dispatch on TWO V2 event types — no cross-event correlation, no race:
  *
- *   On `message.updated` where the assistant message is FINAL
- *   (`info.role === 'assistant'` AND `info.time.completed` is set):
- *     - `info.error?.name === 'MessageAbortedError'` → USER INTERRUPT → skip.
- *       OpenCode sets this error name on the interrupted assistant message
- *       (confirmed in current source: packages/schema/src/v1/session.ts —
- *       `AbortedError = namedError("MessageAbortedError", …)`). A user
- *       pressing Esc / stopping the agent produces exactly this, and we must
- *       NOT inject a "keep working" prompt on a user-initiated stop.
- *     - `info.content` contains a `tool` part → the agent is MID-WORKFLOW
- *       (it ended its turn by calling a tool, not by finishing) → skip.
- *     - OTHERWISE (final message, no abort error, no pending tool call) →
- *       NATURAL COMPLETION — the model's turn ended without a tool call,
- *       i.e. the agent stopped producing output. Report it to Core via
- *       `aet event ca-stop --session-id <id>`.
+ *   On `session.step.ended` (agent turn ended):
+ *     - `data.finish === 'tool-calls'` → agent is MID-WORKFLOW (it ended its
+ *       turn by calling a tool, not by finishing) → skip.
+ *     - `data.finish === 'error'` → ERRORED stop (not a natural completion;
+ *       injecting guidance here could interfere with error handling) → skip.
+ *     - `data.finish ∈ {stop, length, unknown, content-filter}` → NATURAL
+ *       COMPLETION (the model's turn ended without a pending tool call) →
+ *       report to Core via `aet event ca-stop --session-id <id>`.
+ *
+ *   On `session.execution.interrupted` (user/host halted the agent mid-turn):
+ *     - `data.reason === 'user'` → USER INTERRUPT → skip (must NOT inject a
+ *       "keep working" prompt on a user-initiated stop).
+ *     - `data.reason ∈ {shutdown, superseded, inactivity}` → host-initiated
+ *       halt → also skip (not a natural completion; agent didn't finish).
  *
  * Why NOT `session.idle` / `session.status idle`: those fire on BOTH natural
  * completion AND user interrupt (both go through the runner's `status.set
  * ({type:"idle"})`), and they also fire after every tool execution while the
  * agent is still working. There is no discriminator in the idle event itself.
- * The assistant message's `error.name === 'MessageAbortedError'` is the only
- * reliable way to tell user interrupt apart from a natural completed turn.
+ * `session.step.ended` + `finish` discriminator is the only reliable signal.
  *
  * Core's `ca.stop` additionally guards by session: it returns a guidance
  * prompt ONLY when the stopping session matches the session bound to the
@@ -53,19 +53,13 @@ interface OpenCodeEventLike {
   type: string;
   data?: {
     sessionID?: string;
-    info?: AssistantMessageInfo;
-    status?: { type?: string };
+    /** `session.step.ended` discriminator — how the agent turn ended. */
+    finish?: 'stop' | 'length' | 'tool-calls' | 'content-filter' | 'error' | 'unknown';
+    /** `session.execution.interrupted` discriminator — who halted the agent. */
+    reason?: 'user' | 'shutdown' | 'superseded' | 'inactivity';
     [key: string]: unknown;
   };
   [key: string]: unknown;
-}
-
-/** Shape of the assistant message's `info` carried by `message.updated`. */
-interface AssistantMessageInfo {
-  role?: string;
-  time?: { completed?: number };
-  error?: { name?: string };
-  content?: Array<{ type?: string }>;
 }
 
 /** Cleanup collector — setup() passes this in; we push our abort fn. */
@@ -110,48 +104,41 @@ export async function registerSessionStatusHook(
   cleanup(() => abortController.abort());
 }
 
-/** Dispatch a single OpenCode event. Exported for unit testing. */
+/** Dispatch a single V2 OpenCode event. Exported for unit testing. */
 async function handleEvent(ctx: PluginContext, event: OpenCodeEventLike): Promise<void> {
   if (!event?.type) return;
 
-  // Only `message.updated` carries the assistant message info we judge on.
-  if (event.type !== 'message.updated') {
-    // `session.idle` / `session.status idle` are NOT used as the trigger —
-    // they fire on user interrupt too and after every tool call. Log for
-    // observability only.
-    if (event.type === 'session.idle' || isIdleStatus(event)) {
-      const sessionID = event.data?.sessionID;
-      console.debug(
-        `[${AET_PLUGIN_ID}] session idle observed (not a ca.stop trigger — ambiguous with user interrupt)`,
-        { sessionID, type: event.type },
-      );
-    }
+  // `session.execution.interrupted` — user/host halted the agent mid-turn.
+  // NOT a natural completion; skip (Core's session-match guard would also
+  // return empty, but skipping the CLI spawn entirely is cheaper + clearer).
+  if (event.type === 'session.execution.interrupted') {
     return;
   }
 
-  const sessionID = event.data?.sessionID;
-  if (!sessionID) return;
+  // `session.step.ended` — agent turn ended. The `finish` discriminator tells
+  // us HOW it ended; only natural completion triggers ca.stop.
+  if (event.type === 'session.step.ended') {
+    const sessionID = event.data?.sessionID;
+    if (!sessionID) return;
+    const finish = event.data?.finish;
+    // `tool-calls` = agent is mid-workflow (will continue after tool result).
+    // `error` = errored stop (injecting guidance could interfere with error
+    //           handling; the agent didn't naturally complete its turn).
+    // Both are skipped. `stop` / `length` / `unknown` / `content-filter` are
+    // natural completions (agent stopped producing output, no pending tool
+    // call) → report to Core.
+    if (finish !== 'stop' && finish !== 'length' && finish !== 'unknown' && finish !== 'content-filter') {
+      return;
+    }
+    await deliverCaStop(ctx, sessionID);
+    return;
+  }
 
-  const info = event.data?.info;
-  if (!isFinalAssistantMessage(info)) return;
-  if (isUserInterrupt(info)) return; // user stopped us — do NOT inject
-  if (hasPendingToolCall(info)) return; // agent is mid-workflow — not stopping
-  await deliverCaStop(ctx, sessionID);
-}
-
-/** True when the assistant message is final (role=assistant + time.completed set). */
-function isFinalAssistantMessage(info: AssistantMessageInfo | undefined): boolean {
-  return !!info && info.role === 'assistant' && typeof info.time?.completed === 'number';
-}
-
-/** True when the assistant message was interrupted by the user (OpenCode sets MessageAbortedError). */
-function isUserInterrupt(info: AssistantMessageInfo | undefined): boolean {
-  return info?.error?.name === 'MessageAbortedError';
-}
-
-/** True when the assistant message ended its turn by calling a tool (mid-workflow, not stopping). */
-function hasPendingToolCall(info: AssistantMessageInfo | undefined): boolean {
-  return !!info?.content?.some((part) => part.type === 'tool');
+  // Other events (session.idle, session.status, session.created, session.updated,
+  // etc.) are NOT ca.stop triggers — session.idle/status fire on both natural
+  // completion AND user interrupt (no discriminator), and after every tool call.
+  // Intentionally no logging on this hot path (see N1 finding — console.debug
+  // per-event would be pure waste on a per-tool-call event stream).
 }
 
 /** Report the stopping session to Core and deliver any guidance back to it. */
@@ -171,10 +158,4 @@ async function deliverCaStop(ctx: PluginContext, sessionID: string): Promise<voi
     sessionID,
     text,
   });
-}
-
-/** True when a `session.status` event reports an idle status. */
-function isIdleStatus(event: OpenCodeEventLike): boolean {
-  if (event.type !== 'session.status') return false;
-  return event.data?.status?.type === 'idle';
 }
