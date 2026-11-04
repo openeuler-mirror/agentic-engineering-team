@@ -419,6 +419,27 @@ install_codeagent() {
 
 install_opencode() {
     command -v opencode >/dev/null 2>&1 || { log_warn "未检测到 opencode CLI，跳过"; return 1; }
+
+    # 版本检测：AET 插件仅支持 opencode V2+(V2 是破坏性重写,V1 的 server()
+    # factory 入口与 V2 的 Plugin.define({setup}) 入口不兼容)。V1 host 加载
+    # V2 plugin 会 silent skip 或报 "Plugin must export server function",
+    # 导致用户装了但用不了(/design 不触发 workflow)。检测到 V1 时明确拒绝,
+    # 引导用户升级或保留旧版 AET。
+    local ver_raw ver_major
+    ver_raw="$(opencode --version 2>/dev/null | head -1)" || ver_raw=""
+    # 提取版本号首个数字段(兼容 "opencode v2.2.5" / "opencode 1.18.32" / "v2.2.5" 等格式)
+    ver_major="$(printf '%s' "$ver_raw" | grep -oE '[0-9]+' | head -1)"
+    if [ -z "$ver_major" ]; then
+        log_warn "无法解析 opencode 版本(\"$ver_raw\"),假设为 V2 继续安装"
+        log_warn "若安装后 /design 等斜杠命令不触发 workflow,请检查 opencode 版本(需 V2+)"
+    elif [ "$ver_major" -lt 2 ]; then
+        log_warn "检测到 opencode V$ver_major(\"$ver_raw\"),AET 插件仅支持 opencode V2+"
+        log_warn "V2 是破坏性重写,V1 的 server() factory 入口与 V2 的 Plugin.define 不兼容"
+        log_warn "请执行: opencode upgrade"
+        log_warn "或保留旧版 AET(不再维护,不支持 V2 特性)"
+        return 1
+    fi
+
     # V2 的本地插件靠目录自动发现：~/.config/opencode/plugins/*.js 会被加载。
     # 配置文件里的 plugins 数组只接受包规格（npm/git），写本地路径会被当成
     # npm 包拼 "@latest" 后报 "Plugin entrypoint not found"。因此 V2 的安装
