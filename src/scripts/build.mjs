@@ -920,11 +920,12 @@ function buildOpencodeReadme() {
 /**
  * Assemble the self-contained OpenCode plugin package at OPENCODE_TARGET_DIR.
  *
- * OpenCode loads a plugin from a directory whose \`package.json\` \`main\` field
- * points at a plugin module (superpowers convention). This emits:
+ * OpenCode V2 loads a plugin from a directory whose \`package.json\` declares a
+ * root-level entry (index.js / server.js) — \`exports["."]\` pointing at a
+ * subdirectory file is not resolved. This emits:
  *   - \`bin/aet_handler.js\` — ESM plugin entry built from OPENCODE_ENTRY
- *   - \`package.json\`       — \`{ main: "bin/aet_handler.js", ... }\` so OpenCode
- *                             resolves the plugin entry
+ *   - \`index.js\`            — root-level forwarder to bin/aet_handler.js
+ *   - \`package.json\`       — \`{ main: "index.js", exports: { ".": "./index.js" } }\`
  *   - \`skills/\`            — recursive copy of all AET skills (the plugin's
  *                             \`config\` hook registers this dir via
  *                             \`config.skills.paths\`)
@@ -952,17 +953,32 @@ async function assembleOpencodePlugin(rootPkg) {
     format: 'esm',
   });
 
-  // 2. Root package.json — OpenCode resolves the plugin entry via `main`.
+  // 2. Root package.json — OpenCode resolves the plugin entry via `main` (V1)
+  //    and via `exports["."]` (V2 server part). V2 requires exports["."] to
+  //    recognize the package as a server part; `main` alone is insufficient.
   const pkgJson = {
     name: '@aet/opencode',
     version: rootPkg.version,
     description: 'AET workflow orchestration for OpenCode (skills + workflow command interception + aet Bash rewriting).',
     type: 'module',
-    main: 'bin/aet_handler.js',
+    main: 'index.js',
+    exports: { '.': './index.js' },
     keywords: ['opencode', 'plugin', 'skills', 'workflow'],
   };
+
+  // V2 server part entry — fail the build if exports["."] is missing,
+  // otherwise V2 silently won't load the plugin (D-008, FR-009).
+  if (!pkgJson.exports || !pkgJson.exports['.']) {
+    throw new Error('[aet:build] opencode plugin package.json missing exports["."] — V2 will not load this plugin');
+  }
+
+  // V2 只解析包根目录的入口文件（index.js / server.js）。exports["."] 指向
+  // 子目录文件（./bin/aet_handler.js）时，本地目录插件不会被加载——因此根目录
+  // 放一个转发入口，bundle 仍留在 bin/。
+  await writeFile(join(targetDir, 'index.js'), "export { default } from './bin/aet_handler.js';\n", 'utf8');
+
   await writeFile(join(targetDir, 'package.json'), JSON.stringify(pkgJson, null, 2) + '\n', 'utf8');
-  console.log(`[aet:build] ${'opencode'.padEnd(12)} → ${join(targetDir, 'package.json')} (gen)`);
+  console.log(`[aet:build] ${'opencode'.padEnd(12)} → ${join(targetDir, 'package.json')} (gen, exports["."] for V2)`);
 
   // 3. skills/ — recursive copy (the config hook registers it via skills.paths).
   const skillsDest = join(targetDir, 'skills');

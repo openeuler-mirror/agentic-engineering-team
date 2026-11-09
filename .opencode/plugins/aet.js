@@ -1,17 +1,29 @@
 /**
- * AET Plugin for OpenCode
+ * AET Plugin for OpenCode (V2 — Plugin.define)
  *
  * Provides workflow-based agent execution with configurable steps.
- * Agents are loaded from the agents directory and configured via config.json.
+ * Agents are materialized to ~/.config/opencode/agents/<id>.md (D-006).
  *
- * 状态管理使用 CheckpointManager，存储在项目 .aet/checkpoint/ 目录下
+ * 状态管理使用 CheckpointManager，存储在项目 .aet/core-checkpoint/ 目录下。
+ *
+ * V2 迁移要点 (T005+T006+T007)：
+ *   - 入口：export default Plugin.define({ id, setup(ctx) }) 替代 V1 factory 导出
+ *   - 工具：ctx.tool.transform(editor => editor.add({ name, description, input: JSON Schema, execute })) 替代 tool({ args: zod })
+ *   - Hooks：prompt/context session hook、event subscribe({signal}) 替代 hooks 对象
+ *   - Agent 注册：物化 ~/.config/opencode/agents/<id>.md 替代 config.agent 赋值（D-006）
+ *   - 后端调用（.platform/utils/*）保持不变
  */
 
 import path from 'path';
 import fs from 'fs';
 import os from 'os';
 import { fileURLToPath } from 'url';
-import { tool } from "@opencode-ai/plugin";
+// V2 的 Plugin.define 是恒等函数（见 @opencode/plugin dist/effect/plugin.js：
+// `export function define(plugin) { return plugin }`）。此处内联该恒等函数，
+// 使本文件成为一个无运行时依赖的单文件插件——全局安装（~/.config/opencode/aet/
+// 的 git clone 不带 node_modules）也能被 V2 直接加载。
+const Plugin = { define: (plugin) => plugin };
+
 
 import { ConfigManager } from '../../.platform/utils/config-manager.js';
 import { CheckpointManager } from '../../.platform/utils/checkpoint-manager.js';
@@ -32,11 +44,8 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const configManager = new ConfigManager();
 
-// CheckpointManager 实例（延迟初始化，因为需要 projectRoot）
-let checkpointManager = null;
-
 // ============================================
-// Agent Loading
+// Agent Definition Loading (from global install dir, with project fallback)
 // ============================================
 
 function getAgentsDir() {
@@ -82,17 +91,8 @@ async function loadAgentDefinitions(agentsDir) {
   return agents;
 }
 
-const agentHandoverAgents = new Set();
-
-function buildAgentHandoverParam(agentId) {
-  if (!agentHandoverAgents.has(agentId)) {
-    return {};
-  }
-  return { tools: { agent_handover: true } };
-}
-
 // ============================================
-// Workflow Engine (适配 CheckpointManager)
+// Session Run State Machine（单次执行生命周期）
 // ============================================
 
 const SessionCheckpointState = {
@@ -102,704 +102,19 @@ const SessionCheckpointState = {
   COMPLETED: 'completed',
 };
 
-// 当前活跃的 checkpointID（内存缓存，方便快速访问）
-let currentCheckpointID = null;
-
-// workflowEngine 延迟初始化（需要 checkpointManager，在 aetPlugin 中创建）
-let workflowEngine = null;
-
-// ============================================
-// Trace Logging — LLM request/response recording
-// ============================================
-
-// traceLogger 延迟初始化（需要 configManager 和 checkpointManager，在 aetPlugin 中创建）
-let traceLogger = null;
-
-
-// ============================================
-// Session Run State Machine（单次执行生命周期）
-// ============================================
-
-const sessionCheckpoints = new Map();
-let sessionCheckpointCounter = 0;
 const IDLE_SETTLE_MS = 300;
-
-// 确保 workflow 状态为 in_progress（用于中断后恢复）
-// 同时重置 execution 和 step 的 interrupted 状态
-function ensureCheckpointRunning(checkpointID) {
-  if (!checkpointID || !checkpointManager) return;
-  const checkpoint = checkpointManager.getCheckpoint(checkpointID);
-  if (checkpoint && checkpoint.workflow.status === 'interrupted') {
-    checkpoint.workflow.status = 'in_progress';
-    checkpoint.interruptedAt = null;
-
-    // 重置当前 execution 的 interrupted 状态
-    const currentStage = checkpoint.workflow.currentStage;
-    if (currentStage && checkpoint.executions[currentStage]) {
-      const execution = checkpointManager.getCurrentExecution(checkpoint, currentStage);
-      if (execution && execution.status === 'interrupted') {
-        execution.status = 'in_progress';
-        execution.completedAt = null;
-        execution.result = null;
-
-        // 重置当前 step 的 interrupted 状态
-        if (execution.currentStep && execution.steps[execution.currentStep]) {
-          const stepState = execution.steps[execution.currentStep];
-          if (stepState.status === 'interrupted') {
-            stepState.status = 'pending';
-            stepState.completedAt = null;
-          }
-        }
-      }
-    }
-
-    checkpoint.history.push({
-      ts: new Date().toISOString(),
-      event: 'workflow_resumed',
-    });
-    checkpointManager.saveCheckpoint(checkpoint);
-
-    // 更新 index
-    const index = checkpointManager.loadIndex();
-    index.active = index.active.filter(e => e.checkpointID !== checkpointID);
-    index.interrupted = index.interrupted.filter(e => e.checkpointID !== checkpointID);
-    index.active.push({
-      checkpointID,
-      workflow: checkpoint.workflow.name,
-      description: checkpoint.workflow.description,
-      stage: checkpoint.workflow.currentStage,
-      step: checkpointManager.getCurrentStepId(checkpoint),
-      startedAt: checkpoint.startedAt,
-      updatedAt: checkpoint.updatedAt,
-    });
-    checkpointManager.saveIndex(index);
-  }
-}
-
-function startSessionCheckpoint(sessionID) {
-  const checkpointID = ++sessionCheckpointCounter;
-  sessionCheckpoints.set(sessionID, {
-    checkpointID,
-    state: SessionCheckpointState.RUNNING,
-    startedAt: Date.now(),
-  });
-  return checkpointID;
-}
-
-function getCurrentSessionCheckpoint(sessionID) {
-  return sessionCheckpoints.get(sessionID);
-}
-
-function markSessionCheckpointInterrupted(sessionID) {
-  const sessionCheckpoint = sessionCheckpoints.get(sessionID);
-  if (sessionCheckpoint && (sessionCheckpoint.state === SessionCheckpointState.RUNNING || sessionCheckpoint.state === SessionCheckpointState.PENDING_IDLE)) {
-    sessionCheckpoint.state = SessionCheckpointState.INTERRUPTED;
-  }
-}
-
-function closeSessionCheckpoint(sessionID) {
-  sessionCheckpoints.delete(sessionID);
-}
-
-async function shouldSkipAfterHook(sessionID, expectedCheckpointID) {
-  const currentSessionCheckpoint = getCurrentSessionCheckpoint(sessionID);
-  if (!currentSessionCheckpoint || currentSessionCheckpoint.checkpointID !== expectedCheckpointID || currentSessionCheckpoint.state === SessionCheckpointState.INTERRUPTED) {
-    return true;
-  }
-  try {
-    const msgs = await pluginClient.session.messages({ path: { id: sessionID } });
-    const msgsData = msgs.data || [];
-    const lastMsg = msgsData[msgsData.length - 1];
-    return lastMsg?.info?.error?.name === 'MessageAbortedError';
-  } catch (e) {
-    return false;
-  }
-}
-
-// ============================================
-// Store client reference
-// ============================================
-
-let pluginClient = null;
-let pluginDirectory = null;
-let rootSessionID = null;
-
-// agent-insight 协作上传
-let agentInsightClient = null;
-let collaborationId = null;
-let currentAgentId = null; // 追踪当前 agent，用于协作上传时获取 fromAgent
-
-// ============================================
-// Hook Handling
-// ============================================
-
-function isAutomationMode(checkpointID) {
-  if (!checkpointID || !checkpointManager) return false;
-  const cp = checkpointManager.getCheckpoint(checkpointID);
-  return cp?.workflow?.automation === true;
-}
-
-async function triggerAfterHook(sessionID, stage, checkpointID) {
-  if (!stage) {
-    return;
-  }
-
-  const afterHook = stage.after || 'auto';
-
-  if (afterHook === 'auto') {
-    // 自动推进到下一阶段
-    const workflowName = checkpointManager.getCheckpoint(checkpointID)?.workflow.name;
-    const stages = workflowEngine.getScenarioWorkflow(workflowName);
-    const currentIdx = stages.findIndex(s => (s.stage_id || s.agent_id) === (stage.stage_id || stage.agent_id));
-    const nextStage = stages[currentIdx + 1];
-    if (nextStage) {
-      await executeStageHandover(nextStage, null, checkpointID, null, sessionID);
-    } else {
-      // Last stage: complete the checkpoint
-      checkpointManager.completeCheckpoint(checkpointID);
-    }
-    return;
-  }
-
-  // Automation short-circuit: any non-auto hook becomes auto in automation mode.
-  // Skip the user-facing session.prompt call and advance directly.
-  if (afterHook !== 'auto' && isAutomationMode(checkpointID)) {
-    const workflowName = checkpointManager.getCheckpoint(checkpointID)?.workflow.name;
-    const stages = workflowEngine.getScenarioWorkflow(workflowName);
-    const currentIdx = stages.findIndex(s => (s.stage_id || s.agent_id) === (stage.stage_id || stage.agent_id));
-    const nextStage = stages[currentIdx + 1];
-    if (nextStage) {
-      await executeStageHandover(nextStage, null, checkpointID, null, sessionID);
-    } else {
-      // Last stage: complete the checkpoint (the existing `auto` branch
-      // omits this case — automation must terminate cleanly when there
-      // is no next stage).
-      checkpointManager.completeCheckpoint(checkpointID);
-    }
-    return;
-  }
-
-  const hookConfig = workflowEngine.getHookConfig(afterHook);
-  if (hookConfig && hookConfig.options && hookConfig.options.length > 0) {
-    const description = hookConfig.description || 'Please confirm';
-    const optionsText = hookConfig.options.map(opt => `- ${opt.label}`).join('\n');
-    const template = hookConfig.promptTemplate || 'Question: "{description}"\n{options}';
-    let userPrompt = template.replace('{description}', description).replace('{options}', optionsText);
-    userPrompt += '\n\n**If user approves, please call agent_handover to advance to the next stage.**';
-    startSessionCheckpoint(sessionID);
-    try {
-      await pluginClient.session.prompt({
-        path: { id: sessionID },
-        body: {
-          agent: stage.agent_id,
-          noReply: false,
-          parts: [{ type: 'text', text: userPrompt }],
-          ...buildAgentHandoverParam(stage.agent_id),
-        },
-      });
-    } catch (err) {
-      console.error('[AET] After hook error:', err.message);
-    }
-  }
-}
-
-async function triggerStepAfterHook(sessionID, agentId, agentConfig, checkpointID, stage) {
-  const currentStepInfo = checkpointManager.getCurrentStep(checkpointID, stage);
-  if (!currentStepInfo) {
-    return;
-  }
-
-  const stepConfig = agentConfig.workflow?.find(s => (s.step_id || s.name) === currentStepInfo.stepId);
-  if (!stepConfig) {
-    return;
-  }
-
-  const afterHook = stepConfig.after || 'auto';
-
-  if (afterHook === 'auto') {
-    await advanceToNextStep(sessionID, agentId, agentConfig, checkpointID, stage, null);
-    return;
-  }
-
-  // Automation short-circuit: any non-auto hook becomes auto in automation mode.
-  // Skip the user-facing session.prompt call and advance directly.
-  if (afterHook !== 'auto' && isAutomationMode(checkpointID)) {
-    await advanceToNextStep(sessionID, agentId, agentConfig, checkpointID, stage, null);
-    return;
-  }
-
-  const hookConfig = workflowEngine.getHookConfig(afterHook);
-  if (hookConfig && hookConfig.options && hookConfig.options.length > 0) {
-    const description = hookConfig.description || 'Confirm before proceeding to next step';
-    const optionsText = hookConfig.options.map(opt => `- ${opt.label}`).join('\n');
-    const template = hookConfig.promptTemplate || 'Question: "{description}"\n{options}';
-    let userPrompt = template.replace('{description}', description).replace('{options}', optionsText);
-    userPrompt += `\n\nCurrent Step: **${stepConfig.name}**`;
-    userPrompt += '\n\n**If user approves, please call step_handover to advance to the next step.**';
-    startSessionCheckpoint(sessionID);
-    try {
-      await pluginClient.session.prompt({
-        path: { id: sessionID },
-        body: {
-          agent: agentId,
-          noReply: false,
-          parts: [{ type: 'text', text: userPrompt }],
-        },
-      });
-    } catch (err) {
-      console.error('[AET] Step after hook error:', err.message);
-    }
-  }
-}
-
-async function advanceToNextStep(sessionID, agentId, agentConfig, checkpointID, stage, context, targetStepId = null) {
-  if (!checkpointManager || !checkpointID) {
-    return;
-  }
-
-  const currentStepInfo = checkpointManager.getCurrentStep(checkpointID, stage);
-  if (!currentStepInfo) {
-    return;
-  }
-
-  const stepConfigs = agentConfig.workflow || [];
-  let nextStepConfig;
-  if (targetStepId) {
-    // 跳转到指定 step（前跳=跳过中间步骤，回跳=重做）
-    nextStepConfig = stepConfigs.find(s => (s.step_id || s.name) === targetStepId);
-  } else {
-    const currentIdx = stepConfigs.findIndex(s => (s.step_id || s.name) === currentStepInfo.stepId);
-    nextStepConfig = stepConfigs[currentIdx + 1];
-  }
-
-  if (!nextStepConfig) {
-    // 没有目标 / 已是最后一步 → 所有步骤完成
-    checkpointManager.completeAllSteps(checkpointID, stage);
-    return;
-  }
-
-  const nextStepId = nextStepConfig.step_id || nextStepConfig.name;
-
-  // 推进到下一步
-  checkpointManager.advanceStep(checkpointID, stage, nextStepId, context);
-
-  const shouldClear = nextStepConfig.clear === true;
-
-  // 检查 before hook
-  const beforeHook = nextStepConfig.before || 'auto';
-  if (beforeHook === 'auto' || isAutomationMode(checkpointID)) {
-    if (shouldClear) {
-      sendStepPromptWithNewSession(sessionID, agentId, checkpointID, stage, nextStepConfig);
-    } else {
-      sendStepPrompt(sessionID, agentId, checkpointID, stage, nextStepConfig);
-    }
-    return;
-  }
-
-  const hookConfig = workflowEngine.getHookConfig(beforeHook);
-  if (hookConfig && hookConfig.options && hookConfig.options.length > 0) {
-    const description = hookConfig.description || 'Confirm before starting next step';
-    const optionsText = hookConfig.options.map(opt => `- ${opt.label}`).join('\n');
-    const template = hookConfig.promptTemplate || 'Question: "{description}"\n{options}';
-    let userPrompt = template.replace('{description}', description).replace('{options}', optionsText);
-    userPrompt += `\n\n即将执行的 Step: **${nextStepConfig.name}**`;
-    userPrompt += '\n\n**If user approves, please call step_handover to continue.**';
-    if (shouldClear) {
-      const hookSessionID = await createSessionForClearIfNeeded(sessionID, agentId, checkpointID, stage, true);
-      startSessionCheckpoint(hookSessionID);
-      try {
-        await pluginClient.session.prompt({
-          path: { id: hookSessionID },
-          body: {
-            agent: agentId,
-            noReply: false,
-            parts: [{ type: 'text', text: userPrompt }],
-          },
-        });
-      } catch (err) {
-        console.error('[AET] Step before hook error:', err.message);
-      }
-    } else {
-      startSessionCheckpoint(sessionID);
-      try {
-        await pluginClient.session.prompt({
-          path: { id: sessionID },
-          body: {
-            agent: agentId,
-            noReply: false,
-            parts: [{ type: 'text', text: userPrompt }],
-          },
-        });
-      } catch (err) {
-        console.error('[AET] Step before hook error:', err.message);
-      }
-    }
-    return;
-  }
-
-  if (shouldClear) {
-    sendStepPromptWithNewSession(sessionID, agentId, checkpointID, stage, nextStepConfig);
-  } else {
-    sendStepPrompt(sessionID, agentId, checkpointID, stage, nextStepConfig);
-  }
-}
-
-async function createSessionForClearIfNeeded(oldSessionID, agentId, checkpointID, stage, updateCheckpoint = true) {
-  if (!pluginClient || !pluginDirectory) return oldSessionID;
-
-  try {
-    const createResult = await pluginClient.session.create({
-      body: { title: `${agentId} - ${stage} Stage (context cleared)` },
-      query: { directory: pluginDirectory },
-    });
-    const newSessionID = createResult.data?.id;
-    if (!newSessionID) {
-      console.error('[AET] Failed to create new session for clear=true');
-      return oldSessionID;
-    }
-
-    // 上传协作事件到 agent-insight 平台（同 agent 清上下文也属于新建 session 的协作事件）
-    if (agentInsightClient?.enabled) {
-      if (!collaborationId) {
-        collaborationId = generateCollaborationId();
-      }
-      const fromAgent = currentAgentId || agentId;
-      const toAgent = agentId;
-      await agentInsightClient.uploadEvent({
-        collaborationId,
-        eventId: generateEventId(),
-        fromSessionId: oldSessionID,
-        toSessionId: newSessionID,
-        description: `${fromAgent} → ${toAgent}: ${stage} 阶段清上下文重建 session`,
-        observedAt: new Date().toISOString(),
-      });
-    }
-
-    try {
-      await pluginClient.tui.publish({
-        body: {
-          type: 'tui.session.select',
-          properties: { sessionID: newSessionID },
-        },
-      });
-    } catch (tuiErr) {
-      // Ignore TUI errors
-    }
-
-    if (updateCheckpoint) {
-      const checkpoint = checkpointManager.getCheckpoint(checkpointID);
-      if (checkpoint) {
-        const execution = checkpointManager.getCurrentExecution(checkpoint, stage);
-        if (execution) {
-          execution.sessionID = newSessionID;
-          checkpointManager.saveCheckpoint(checkpoint);
-          checkpointManager.updateIndexEntry(checkpointID, checkpoint);
-        }
-      }
-    }
-
-    return newSessionID;
-  } catch (err) {
-    console.error('[AET] Create session for clear error:', err.message);
-    return oldSessionID;
-  }
-}
-
-async function sendStepPrompt(sessionID, agentId, checkpointID, stage, stepConfig) {
-  if (!checkpointManager || !checkpointID) return;
-
-  let promptText = `## Please continue executing this step:\n`;
-  promptText += `Step name:\n${stepConfig.name}\n`;
-  promptText += `Task:\n${stepConfig.description}`;
-
-  startSessionCheckpoint(sessionID);
-  try {
-    await pluginClient.session.prompt({
-      path: { id: sessionID },
-      body: {
-        agent: agentId,
-        noReply: false,
-        parts: [{ type: 'text', text: promptText }],
-      },
-    });
-  } catch (err) {
-    console.error('[AET] Send step prompt error:', err.message);
-  }
-}
-
-async function sendStepPromptWithNewSession(oldSessionID, agentId, checkpointID, stage, stepConfig) {
-  if (!pluginClient || !pluginDirectory) return;
-
-  let promptText = `## Please continue executing this step:\n`;
-  promptText += `Step name:\n${stepConfig.name}\n`;
-  promptText += `Task:\n${stepConfig.description}`;
-
-  const newSessionID = await createSessionForClearIfNeeded(oldSessionID, agentId, checkpointID, stage);
-  if (newSessionID === oldSessionID) return;
-
-  startSessionCheckpoint(newSessionID);
-  try {
-    await pluginClient.session.prompt({
-      path: { id: newSessionID },
-      body: {
-        agent: agentId,
-        noReply: false,
-        parts: [{ type: 'text', text: promptText }],
-      },
-    });
-  } catch (err) {
-    console.error('[AET] Send step prompt with new session error:', err.message);
-  }
-}
-
-async function settleIdleRun(sessionID, expectedCheckpointID, stage, workflowRunID) {
-  await new Promise(resolve => setTimeout(resolve, IDLE_SETTLE_MS));
-
-  const currentSessionCheckpoint = getCurrentSessionCheckpoint(sessionID);
-  if (!currentSessionCheckpoint || currentSessionCheckpoint.checkpointID !== expectedCheckpointID || currentSessionCheckpoint.state !== SessionCheckpointState.PENDING_IDLE) {
-    return;
-  }
-
-  if (await shouldSkipAfterHook(sessionID, expectedCheckpointID)) {
-    closeSessionCheckpoint(sessionID);
-    return;
-  }
-
-  currentSessionCheckpoint.state = SessionCheckpointState.COMPLETED;
-  closeSessionCheckpoint(sessionID);
-  await triggerAfterHook(sessionID, stage, workflowRunID);
-}
-
-async function settleStepIdleRun(sessionID, expectedCheckpointID, agentId, agentConfig, workflowRunID, stage) {
-  await new Promise(resolve => setTimeout(resolve, IDLE_SETTLE_MS));
-
-  const currentSessionCheckpoint = getCurrentSessionCheckpoint(sessionID);
-  if (!currentSessionCheckpoint || currentSessionCheckpoint.checkpointID !== expectedCheckpointID || currentSessionCheckpoint.state !== SessionCheckpointState.PENDING_IDLE) {
-    return;
-  }
-
-  if (await shouldSkipAfterHook(sessionID, expectedCheckpointID)) {
-    closeSessionCheckpoint(sessionID);
-    return;
-  }
-
-  currentSessionCheckpoint.state = SessionCheckpointState.COMPLETED;
-  closeSessionCheckpoint(sessionID);
-  await triggerStepAfterHook(sessionID, agentId, agentConfig, workflowRunID, stage);
-}
-
-function resolveSessionAgent(sessionID, fallbackAgent = null) {
-  if (!checkpointManager || !sessionID) {
-    return fallbackAgent;
-  }
-  const agentId = checkpointManager.findAgentBySessionID(sessionID);
-  return agentId || fallbackAgent;
-}
-
-// ============================================
-// Stage Handover
-// ============================================
-
-async function executeStageHandover(stage, context, checkpointID, promptForAgent = null, fromSessionId = null) {
-  // promptForAgent: 发送给 agent 的 prompt（resume 时用 resumePrompt）
-  // context: 保存到 execution 的 context（保持原始值，不应被 resumePrompt 覆盖）
-  // 如果没有 promptForAgent，用 context 作为 prompt
-  const actualPrompt = promptForAgent || context || `Please continue working on ${stage.agent_id}.`;
-
-  if (!pluginClient || !pluginDirectory) {
-    return;
-  }
-
-  try {
-    const createResult = await pluginClient.session.create({
-      body: { title: `${stage.agent_id} - ${stage.agent_id.toUpperCase().replace('-AGENT', '')} Stage` },
-      query: { directory: pluginDirectory },
-    });
-    const newSessionID = createResult.data?.id;
-
-    if (newSessionID) {
-      if (!rootSessionID) {
-        rootSessionID = newSessionID;
-      }
-
-      try {
-        await pluginClient.tui.publish({
-          body: {
-            type: 'tui.session.select',
-            properties: { sessionID: newSessionID },
-          },
-        });
-      } catch (tuiErr) {
-        // Ignore TUI errors
-      }
-
-      // 在 CheckpointManager 中记录 execution（resume 和非 resume 都创建新 execution）
-      const stageName = stage.stage_id || stage.agent_id;
-
-      // 一次性读取 checkpoint：后续 startExecution / initSteps / 恢复 全部在这个对象上进行，
-      // 末尾只 saveCheckpoint 一次。避免中途反复 getCheckpoint（每次都从磁盘读出新副本），
-      // 否则在某个副本上做的修改会被随后保存的另一份副本覆盖（last-write-wins）。
-      const checkpoint = checkpointManager.getCheckpoint(checkpointID);
-
-      // 获取当前阶段的 execution（用于 resume 同阶段的情况）
-      const currentStageExecution = checkpointManager.getCurrentExecution(checkpoint, checkpoint.workflow.currentStage);
-      const currentStageSteps = currentStageExecution?.steps || null;
-      const currentStageCurrentStep = currentStageExecution?.currentStep || null;
-
-      // 上传跨 Session 协作关系到 agent-insight 平台（仅当 enabled 时）
-      // 在 newSession 创建后、startExecutionOn 之前执行：
-      //   fromAgent = currentAgentId（追踪的当前 agent，不依赖 checkpoint）
-      //   toAgent = stage.agent_id（即将切换到的 agent）
-      //   上传后切换 currentAgentId 为新 agent
-      if (agentInsightClient?.enabled) {
-        if (!collaborationId) {
-          collaborationId = generateCollaborationId();
-        }
-        const eventId = generateEventId();
-        const fromSession = fromSessionId || 'root';
-        const fromAgent = currentAgentId || 'Build';
-        const toAgent = stage.agent_id;
-        const desc = `${fromAgent} → ${toAgent}: ${stageName} 阶段启动`;
-        await agentInsightClient.uploadEvent({
-          collaborationId,
-          eventId,
-          fromSessionId: fromSession,
-          toSessionId: newSessionID,
-          description: desc,
-          observedAt: new Date().toISOString(),
-        });
-        currentAgentId = toAgent;
-      }
-
-      // 获取目标阶段的 execution（用于 resume 目标阶段的情况）
-      const targetStageExecution = checkpointManager.getCurrentExecution(checkpoint, stageName);
-      const targetStageSteps = targetStageExecution?.steps || null;
-      const targetStageCurrentStep = targetStageExecution?.currentStep || null;
-
-      // 确定 context：优先用传入的 context（agent_handover 传递），其次用目标阶段的 context
-      const executionContext = context || targetStageExecution?.context || currentStageExecution?.context;
-
-      // 确定 steps：如果是同一个阶段（resume），用当前阶段的 steps；如果是新阶段，用目标阶段的 steps（如果有）
-      const isSameStage = checkpoint.workflow.currentStage === stageName;
-      const previousSteps = isSameStage ? currentStageSteps : targetStageSteps;
-      const previousCurrentStep = isSameStage ? currentStageCurrentStep : targetStageCurrentStep;
-
-      // 创建新 execution（在同一对象上操作，不落盘）；newExecution 即写入 records 的那个对象引用
-      const newExecution = checkpointManager.startExecutionOn(checkpoint, stageName, newSessionID, stage.agent_id, executionContext);
-
-      // 初始化 steps（同一对象，不落盘）
-      const agentConfig = configManager.getAgentConfig(stage.agent_id);
-      if (agentConfig?.workflow && agentConfig.workflow.length > 0) {
-        // 根据配置初始化所有 steps
-        checkpointManager.initStepsOn(checkpoint, stageName, agentConfig.workflow, null);
-
-        // Resume 时，恢复之前的 steps 状态（直接修改 newExecution，它就在 checkpoint 对象里）
-        if (newExecution && previousSteps && Object.keys(previousSteps).length > 0) {
-          // 合并之前的 steps 状态（保留 completed/pending 状态和 context）
-          for (const [stepId, stepState] of Object.entries(previousSteps)) {
-            if (newExecution.steps[stepId]) {
-              newExecution.steps[stepId] = {
-                ...newExecution.steps[stepId],
-                ...stepState,
-              };
-            }
-          }
-          // 设置 currentStep 回到真正的断点
-          newExecution.currentStep = previousCurrentStep;
-          // 重置当前 step 的 status 为 pending，让 chat.message hook 能正确注入
-          if (previousCurrentStep && newExecution.steps[previousCurrentStep]) {
-            newExecution.steps[previousCurrentStep] = {
-              ...newExecution.steps[previousCurrentStep],
-              status: 'pending',
-              startedAt: null,
-            };
-          }
-        }
-      }
-
-      // 整个恢复段结束后，一次性落盘 + 更新索引
-      checkpointManager.saveCheckpoint(checkpoint);
-      checkpointManager.updateIndexEntry(checkpointID, checkpoint);
-
-      // 检查 stage.before hook
-      // Automation short-circuit: when automation mode is active, stage-level
-      // `before: 'confirm'` is downgraded to non-blocking — skip the
-      // confirm prompt and fall through to the "directly execute" path
-      // (line 705+). This mirrors triggerAfterHook / triggerStepAfterHook
-      // / advanceToNextStep confirm short-circuits; without it, automation
-      // mode would still call session.prompt with the confirm question,
-      // blocking the agent.
-      const beforeHook = stage.before || 'auto';
-      if (beforeHook !== 'auto' && !isAutomationMode(checkpointID)) {
-        const hookConfig = workflowEngine.getHookConfig(beforeHook);
-        if (hookConfig && hookConfig.options && hookConfig.options.length > 0) {
-          const description = hookConfig.description || 'Please confirm';
-          const optionsText = hookConfig.options.map(opt => `- ${opt.label}`).join('\n');
-          const template = hookConfig.promptTemplate || 'Question: "{description}"\n{options}';
-          let userPrompt = template.replace('{description}', description).replace('{options}', optionsText);
-          if (context) {
-            userPrompt += `\n\nTask context:\n${context}`;
-          }
-          userPrompt += '\n\nIf user approves, please call agent_handover to begin this stage.';
-
-          startSessionCheckpoint(newSessionID);
-          await pluginClient.session.prompt({
-            path: { id: newSessionID },
-            body: {
-              agent: stage.agent_id,
-              noReply: false,
-              parts: [{ type: 'text', text: userPrompt }],
-            },
-          });
-          return;
-        }
-      }
-
-      // 直接执行，发送 prompt 给 agent
-      startSessionCheckpoint(newSessionID);
-      await pluginClient.session.prompt({
-        path: { id: newSessionID },
-        body: {
-          agent: stage.agent_id,
-          noReply: false,
-          parts: [{ type: 'text', text: actualPrompt }],
-        },
-      });
-    }
-  } catch (e) {
-    console.error('[AET] executeStageHandover error:', e.message);
-  }
-}
 
 // ============================================
 // 命令直入 + Checkpoint 复用（/design、/implement）
 // ============================================
 
 // 命令名（去掉命名空间后的最后一段）-> agent。
-// 命令通过 frontmatter `agent:` 直接切到该 primary agent，这里登记需要「就地接入 checkpoint」的命令。
 const CHECKPOINT_COMMAND_AGENTS = {
   design: 'aet-design',
   implement: 'aet-implement',
 };
 
-// command.execute.before 把命令会话记到这里，chat.message 首条消息时消费
-const pendingCheckpointCmd = new Map(); // sessionID -> { command, agentId, arguments }
-
-// command.execute.before 把「该命令映射到 automation scenario」标记记到这里，
-// experimental.chat.system.transform 消费。用于在 workflow_start 之前（即
-// currentCheckpointID 还没设置时）就注入 directive，覆盖 agent 的早期用户交互点
-// （如 Router 的 resume detection / Design 的 proactive checkpoint comparison）。
-const pendingAutomationDirective = new Map(); // sessionID -> boolean
-
-// Fallback: experimental.chat.system.transform 不一定在 input.sessionID 中传 sessionID
-// （OpenCode plugin SDK 没有文档化保证）。如果 input.sessionID 不可用，使用最近一次
-// command.execute.before 设置的 sessionID 作为 fallback。假设单 OpenCode 进程内会话
-// 串行执行（与现有 currentCheckpointID 模块变量的假设一致）。
-let lastAutomationSessionID = null;
-
 // 兼容 `aet:design` / `aet/design` / `aet-design` / `design` 等命名空间形式。
-// 安装脚本（install.sh）会把命令文件链接成 `aet-<name>.md`，因此实际命令名带 `aet-` 前缀，
-// 这里去掉命名空间分隔符和 `aet-` 前缀后再查表。
 function resolveCommandAgent(command) {
   if (!command) return null;
   const name = String(command).split(/[:/]/).pop();
@@ -811,474 +126,883 @@ function resolveCommandAgent(command) {
   return null;
 }
 
+// V2 的 event.prompt.text 是 JSON 编码后的字符串（实测形如 "\"/design 冒烟\""），
+// 且 event.prompt.parts 不存在。直接对它做正则匹配或拼接都会失效，
+// 因此统一先解码，写回时按原编码还原。
+function decodePromptText(raw) {
+  if (typeof raw !== 'string') return { text: '', encoded: false };
+  const trimmed = raw.trim();
+  if (trimmed.startsWith('"') || trimmed.startsWith('[')) {
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (typeof parsed === 'string') return { text: parsed, encoded: true };
+      if (Array.isArray(parsed)) {
+        const joined = parsed
+          .map(part => {
+            if (typeof part === 'string') return part;
+            if (part && typeof part === 'object') return part.text || part.content || '';
+            return '';
+          })
+          .filter(Boolean)
+          .join('\n');
+        return { text: joined, encoded: true };
+      }
+    } catch { /* 不是 JSON，按原文处理 */ }
+  }
+  return { text: raw, encoded: false };
+}
+
+function encodePromptText(text, encoded) {
+  return encoded ? JSON.stringify(text) : text;
+}
+
+function appendPromptText(event, addition) {
+  if (!event?.prompt) return;
+  const { text, encoded } = decodePromptText(event.prompt.text);
+  event.prompt.text = encodePromptText(text + addition, encoded);
+}
+
+// 从用户输入文本中解析斜杠命令（/design、/implement、/aet-design 等），
+// 返回匹配到的 agentId，未匹配返回 null。
+function resolveSlashCommandAgent(promptText) {
+  if (!promptText || typeof promptText !== 'string') return null;
+  const m = promptText.match(/^\s*\/(aet:)?([a-zA-Z0-9_-]+)/);
+  if (!m) return null;
+  // m[1] 是可选的 aet: 命名空间，m[2] 是命令名
+  const cmd = m[2];
+  // 直接匹配 design/implement
+  if (CHECKPOINT_COMMAND_AGENTS[cmd]) return CHECKPOINT_COMMAND_AGENTS[cmd];
+  // 匹配 aet-design 等
+  if (cmd.startsWith('aet-')) {
+    const stripped = cmd.slice(4);
+    if (CHECKPOINT_COMMAND_AGENTS[stripped]) return CHECKPOINT_COMMAND_AGENTS[stripped];
+  }
+  return null;
+}
+
 function asText(v) {
   return typeof v === 'string' ? v : JSON.stringify(v, null, 2);
 }
 
-function appendText(output, text) {
-  if (output?.parts && Array.isArray(output.parts)) {
-    for (const part of output.parts) {
-      if (part.type === 'text') {
-        part.text += text;
-        return true;
-      }
+// ============================================
+// Agent Materialization (D-006)
+// 物化 AET agent 定义到 ~/.config/opencode/agents/<id>.md
+// ============================================
+
+const AET_AGENT_PREFIX = 'aet-';
+
+function getV2AgentsDir() {
+  return path.join(os.homedir(), '.config', 'opencode', 'agents');
+}
+
+// V1 permission 对象 -> V2 permissions 数组 [{action, resource, effect}]
+// 宽规则（allow）在前、例外（deny）在后（last-match-wins）。
+// agent_handover 的 allow→deny 改写在此阶段完成，并维护 agentHandoverAgents Set。
+function buildV2Permissions(v1Permission, agentId, agentHandoverAgents) {
+  const base = { question: 'allow', ...(v1Permission || {}) };
+
+  // agent_handover allow→deny 改写
+  if (base.agent_handover === 'allow') {
+    agentHandoverAgents.add(agentId);
+    base.agent_handover = 'deny';
+  }
+
+  const allowRules = [];
+  const denyRules = [];
+  const askRules = [];
+  for (const [action, effect] of Object.entries(base)) {
+    if (effect === 'allow') {
+      allowRules.push({ action, resource: '*', effect: 'allow' });
+    } else if (effect === 'deny') {
+      denyRules.push({ action, resource: '*', effect: 'deny' });
+    } else if (effect === 'ask') {
+      askRules.push({ action, resource: '*', effect: 'ask' });
     }
   }
-  return false;
+  // allow → ask → deny（last-match-wins：deny 最后）
+  return [...allowRules, ...askRules, ...denyRules];
 }
 
-// 从描述里抽取稳定任务标识（key:xxx / issue 链接 / #编号），用于精确匹配可恢复 checkpoint
-// 无历史时：就地为命令切入的 agent 创建并绑定一个 checkpoint（绑定当前 session，不新建 session）
-function bootstrapAgentCheckpoint(sessionID, agentId, description) {
-  const agentConfig = configManager.getAgentConfig(agentId);
-  if (!agentConfig?.workflow || agentConfig.workflow.length === 0) return null;
-  const checkpointID = checkpointManager.createCheckpoint(agentId, description || `Direct ${agentId} session`);
-  checkpointManager.startExecution(checkpointID, agentId, sessionID, agentId, description || null);
-  checkpointManager.initSteps(checkpointID, agentId, agentConfig.workflow, null);
-  currentCheckpointID = checkpointID;
-  return checkpointID;
-}
+// 生成 agent .md 文件内容（frontmatter + body）
+function formatAgentMarkdown(agentId, agentImpl, agentHandoverAgents) {
+  const permissions = buildV2Permissions(agentImpl.permission, agentId, agentHandoverAgents);
 
-// 列出「该 agent 自己历史执行过的、可恢复的」checkpoint
-// 只保留 workflow.name === agentId（即该 agent 单独跑出来的记录），排除其它 scenario workflow 与已完成项
-function listAgentResumableCheckpoints(agentId) {
-  return checkpointManager.getResumableCheckpoints()
-    .map(e => checkpointManager.getCheckpoint(e.checkpointID))
-    .filter(cp => cp && cp.workflow.name === agentId && cp.workflow.status !== 'completed')
-    .sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
-}
-
-// 有历史时注入：本次任务 + 该 agent 全部可恢复历史记录，让模型自己判断、并最终找用户确认（仅在 candidates 非空时调用）
-function buildCommandEntryPrompt(agentId, desc, candidates) {
-  let p = `\n\n## 本次任务\n${desc || '(无描述)'}\n\n`;
-  const list = candidates.map((cp, i) => {
-    const ex = checkpointManager.getCurrentExecution(cp, cp.workflow.currentStage);
-    return `${i + 1}. checkpointID=${cp.workflow.checkpointID}\n   当前步骤: ${ex?.currentStep || '—'}\n   更新于: ${cp.updatedAt}\n   描述: ${cp.workflow.description || '(无)'}`;
-  }).join('\n');
-  p += `## 该 agent 可恢复的历史任务（共 ${candidates.length} 个）\n${list}\n\n`
-    + `请按以下步骤处理，在用户确认之前不要开始执行任何步骤：\n`
-    + `1. 对照「本次任务」，判断它是否是上述某条任务的延续。\n`
-    + `2. 用 question 工具向用户确认：是恢复其中某一条（指出编号/描述），还是作为新任务开始。\n`
-    + `3. 根据用户选择执行（均在当前会话内继续，不会另开会话）：\n`
-    + `   - 恢复：调用 checkpoint_resume({ checkpointID: "用户确认的ID" })，从其当前步骤继续；\n`
-    + `   - 新任务：调用 workflow_start({ name: "${agentId}", context: "本次任务描述" })，从第一步开始。`;
-  return p;
-}
-
-// 取出「当前 step 任务（+ 上一步 context）」文本，并把该 step 置 in_progress（幂等：仅 pending 时返回一次）。
-// 返回的文本既可注入用户消息（首条消息场景），也可作为工具返回值交给模型（就地恢复/新建场景）。
-function takeCurrentStepText(checkpointID) {
-  const checkpoint = checkpointManager.getCheckpoint(checkpointID);
-  if (!checkpoint) return null;
-  const currentStage = checkpoint.workflow?.currentStage;
-  const execution = checkpointManager.getCurrentExecution(checkpoint, currentStage);
-  if (!execution) return null;
-  const agentConfig = configManager.getAgentConfig(execution.agentId);
-
-  // Agent 没有 workflow：返回 execution.context
-  if (!agentConfig?.workflow || agentConfig.workflow.length === 0) {
-    return execution.context ? `## Context from previous stage:\n${asText(execution.context)}` : null;
-  }
-
-  const currentStepId = execution.currentStep;
-  const currentStepState = currentStepId ? execution.steps[currentStepId] : null;
-  if (!currentStepState || currentStepState.status !== 'pending') return null; // 幂等
-  const stepConfig = agentConfig.workflow.find(s => (s.step_id || s.name) === currentStepId);
-  if (!stepConfig) return null;
-
-  let text = `## Please continue executing this step:\nStep name:\n${stepConfig.name}\nTask:\n${stepConfig.description}`;
-  if (currentStepState.context) {
-    text += `\n\n## Context from previous steps:\n${asText(currentStepState.context)}`;
-  }
-
-  execution.steps[currentStepId] = {
-    ...currentStepState,
-    status: 'in_progress',
-    startedAt: new Date().toISOString(),
+  const frontmatter = {
+    description: agentImpl.description || '',
+    mode: agentImpl.mode || 'primary',
   };
-  checkpoint.history.push({
-    ts: new Date().toISOString(),
-    event: 'step_started',
-    stage: currentStage,
-    executionId: execution.executionId,
-    step: currentStepId,
-  });
-  checkpointManager.saveCheckpoint(checkpoint);
-  return text;
+;
+  if (agentImpl.model) frontmatter.model = agentImpl.model;
+  if (agentImpl.hidden !== undefined) frontmatter.hidden = agentImpl.hidden;
+  if (agentImpl.color) frontmatter.color = agentImpl.color;
+  if (agentImpl.steps !== undefined) frontmatter.steps = agentImpl.steps;
+  if (permissions.length > 0) frontmatter.permissions = permissions;
+
+  const frontmatterYaml = yamlStringify(frontmatter);
+  const body = agentImpl.prompt || '';
+  return `---\n${frontmatterYaml}---\n\n${body}\n`;
 }
 
-// 把当前 step 任务追加到用户消息上（首条消息注入场景）
-function injectCurrentStep(checkpointID, output) {
-  const text = takeCurrentStepText(checkpointID);
-  if (text) appendText(output, `\n\n${text}`);
-}
-
-// 就地恢复一个 checkpoint 到「真正的断点 step」并绑定到当前 session（一次读、一次写）。
-// 恢复后 currentStep 为 pending，由 takeCurrentStepText 取用。
-function resumeAgentCheckpointInPlace(sessionID, checkpointID) {
-  ensureCheckpointRunning(checkpointID);
-  const cp = checkpointManager.getCheckpoint(checkpointID);
-  if (!cp) return null;
-  const stage = cp.workflow.currentStage;
-  const prev = checkpointManager.getCurrentExecution(cp, stage);
-  const prevSteps = prev?.steps || null;
-  const prevStep = prev?.currentStep || null;
-  const agentId = prev?.agentId || stage;
-  const ctx = prev?.context || cp.workflow.description || null;
-
-  const exec = checkpointManager.startExecutionOn(cp, stage, sessionID, agentId, ctx);
-  const agentCfg = configManager.getAgentConfig(agentId);
-  if (agentCfg?.workflow && agentCfg.workflow.length > 0) {
-    checkpointManager.initStepsOn(cp, stage, agentCfg.workflow, null);
-    if (exec && prevSteps && Object.keys(prevSteps).length > 0) {
-      for (const [id, st] of Object.entries(prevSteps)) {
-        if (exec.steps[id]) exec.steps[id] = { ...exec.steps[id], ...st };
+// 极简 YAML 序列化（仅用于 agent frontmatter，值类型受限）
+function yamlStringify(obj, indent = 0) {
+  const pad = '  '.repeat(indent);
+  let out = '';
+  for (const [key, value] of Object.entries(obj)) {
+    if (value === undefined || value === null) continue;
+    if (Array.isArray(value)) {
+      if (value.length === 0) continue;
+      out += `${pad}${key}:\n`;
+      for (const item of value) {
+        if (item !== null && typeof item === 'object') {
+          out += yamlBlockMap(item, pad);
+        } else {
+          out += `${pad}- ${yamlScalar(item)}\n`;
+        }
       }
-      exec.currentStep = prevStep;
-      if (prevStep && exec.steps[prevStep]) {
-        exec.steps[prevStep] = { ...exec.steps[prevStep], status: 'pending', startedAt: null };
-      }
+    } else if (typeof value === 'object') {
+      out += `${pad}${key}:\n`;
+      out += yamlStringify(value, indent + 1);
+    } else {
+      out += `${pad}${key}: ${yamlScalar(value)}\n`;
     }
   }
-  checkpointManager.saveCheckpoint(cp);
-  checkpointManager.updateIndexEntry(checkpointID, cp);
-  currentCheckpointID = checkpointID;
-  return checkpointID;
+  return out;
+}
+
+// 对象数组元素以块映射形式输出（`- key: value` + 后续同缩进键）。
+// 行内映射 `{a: 1, b: 2}` 不是合法 YAML，会导致 frontmatter 整体解析失败。
+function yamlBlockMap(obj, pad) {
+  const entries = Object.entries(obj);
+  if (entries.length === 0) return `${pad}- {}\n`;
+  const [firstKey, firstValue] = entries[0];
+  let out = `${pad}- ${firstKey}: ${yamlScalar(firstValue)}\n`;
+  for (const [k, v] of entries.slice(1)) {
+    out += `${pad}  ${k}: ${yamlScalar(v)}\n`;
+  }
+  return out;
+}
+
+function yamlScalar(v) {
+  if (typeof v === 'boolean') return v ? 'true' : 'false';
+  if (typeof v === 'number') return String(v);
+  if (typeof v === 'string') {
+    // 简单字符串直接输出，含特殊字符则加引号
+    if (/^[\w\-./]+$/.test(v)) return v;
+    return JSON.stringify(v);
+  }
+  return JSON.stringify(v);
+}
+
+// 物化 AET agent 定义到 ~/.config/opencode/agents/<id>.md（幂等）
+// 只管理 aet- 前缀的 agent 文件，不触碰用户自有 agent。
+async function materializeAgents(configManager, agentHandoverAgents) {
+  configManager.reloadConfig(undefined);
+
+  // 加载 agent 实现定义（prompt/description/permission/mode）
+  let agentImpls = await loadAgentDefinitions(getAgentsDir());
+  if (Object.keys(agentImpls).length === 0) {
+    const projectAgentsDir = getProjectAgentsDir(process.cwd());
+    agentImpls = await loadAgentDefinitions(projectAgentsDir);
+    if (Object.keys(agentImpls).length > 0) {
+      console.error(`[AET] Loaded ${Object.keys(agentImpls).length} agents from project directory`);
+    }
+  }
+
+  const allAgentConfigs = configManager.getAllAgents();
+  if (Object.keys(allAgentConfigs).length === 0) {
+    console.warn('[AET] No agent configs found in workflow template. Agents will not be materialized.');
+    return;
+  }
+
+  const agentsDir = getV2AgentsDir();
+  fs.mkdirSync(agentsDir, { recursive: true });
+
+  for (const [agentId, agentConfig] of Object.entries(allAgentConfigs)) {
+    if (typeof agentConfig !== 'object' || agentConfig === null || !agentConfig.name) {
+      continue;
+    }
+    // 仅管理 aet- 前缀的 agent（避免触碰用户自有 agent）
+    if (!agentId.startsWith(AET_AGENT_PREFIX)) {
+      continue;
+    }
+
+    const agentImplName = agentConfig.name;
+    const agentImpl = agentImpls[agentImplName];
+    if (!agentImpl) {
+      console.warn(`[AET] Agent "${agentImplName}" definition not found in agents directory. Skipping.`);
+      continue;
+    }
+
+    const filePath = path.join(agentsDir, `${agentId}.md`);
+    const content = formatAgentMarkdown(agentId, agentImpl, agentHandoverAgents);
+
+    try {
+      let existing = null;
+      if (fs.existsSync(filePath)) {
+        existing = fs.readFileSync(filePath, 'utf-8');
+      }
+      if (existing === content) {
+        // 幂等：内容相同，跳过
+        continue;
+      }
+      fs.writeFileSync(filePath, content, 'utf-8');
+      if (existing !== null) {
+        console.error(`[AET] agent ${agentId} 已更新`);
+      }
+    } catch (err) {
+      console.error(`[AET] agent ${agentId} materialize error:`, err.message);
+    }
+  }
 }
 
 // ============================================
-// AET Plugin Export
+// V2 Plugin Entry
 // ============================================
 
-export const aetPlugin = async ({ client, directory }) => {
-  pluginClient = client;
-  pluginDirectory = directory;
+export default Plugin.define({
+  id: 'aet',
+  async setup(ctx) {
+    // ── Setup closure state ──
+    const directory = ctx.location.directory;
+    const session = ctx.session;
 
-  // 初始化 CheckpointManager
-  checkpointManager = new CheckpointManager(directory);
-  // 初始化 WorkflowEngine
-  workflowEngine = new WorkflowEngine(configManager, checkpointManager);
-  // 初始化 TraceLogger（拦截 globalThis.fetch）
-  traceLogger = new TraceLogger(configManager, () => ({
-    checkpointID: currentCheckpointID,
-    checkpointManager,
-  }));
-  traceLogger.install();
+    const checkpointManager = new CheckpointManager(directory);
+    const workflowEngine = new WorkflowEngine(configManager, checkpointManager);
+    const traceLogger = new TraceLogger(configManager, () => ({
+      checkpointID: currentCheckpointID,
+      checkpointManager,
+    }));
+    traceLogger.install();
 
-  // 初始化 AgentInsightClient
-  agentInsightClient = new AgentInsightClient(configManager.getAgentInsightConfig());
+    const agentInsightClient = new AgentInsightClient(configManager.getAgentInsightConfig?.() ?? configManager.getAgentInsightConfig());
 
-  return {
-    config: async (config) => {
-      configManager.reloadConfig(pluginDirectory);
+    let currentCheckpointID = null;
+    let collaborationId = null;
+    let currentAgentId = null;
+    let lastAutomationSessionID = null;
 
-      // Load agent definitions from global install dir, with project fallback
-      let agents = await loadAgentDefinitions(getAgentsDir());
-      if (Object.keys(agents).length === 0) {
-        const projectAgentsDir = getProjectAgentsDir(pluginDirectory);
-        agents = await loadAgentDefinitions(projectAgentsDir);
-        if (Object.keys(agents).length > 0) {
-          console.error(`[AET] Loaded ${Object.keys(agents).length} agents from project directory`);
-        }
+    // 斜杠命令 + session 生命周期合并状态（D-003）
+    const pendingCheckpointCmd = new Map();   // sessionID -> { command, agentId, arguments }
+    const pendingAutomationDirective = new Map(); // sessionID -> boolean
+
+    // agent_handover 权限追踪（allow→deny 改写的 agent 集合）
+    const agentHandoverAgents = new Set();
+
+    // session checkpoint 生命周期状态
+    const sessionCheckpoints = new Map();
+    let sessionCheckpointCounter = 0;
+
+    // ── 物化 AET agents（D-006）──
+    try {
+      await materializeAgents(configManager, agentHandoverAgents);
+    } catch (err) {
+      console.error('[AET] agent materialization error:', err.message);
+    }
+
+    // ============================================
+    // Session Checkpoint 状态机辅助函数
+    // ============================================
+
+    function startSessionCheckpoint(sessionID) {
+      const checkpointID = ++sessionCheckpointCounter;
+      sessionCheckpoints.set(sessionID, {
+        checkpointID,
+        state: SessionCheckpointState.RUNNING,
+        startedAt: Date.now(),
+      });
+      return checkpointID;
+    }
+
+    function getCurrentSessionCheckpoint(sessionID) {
+      return sessionCheckpoints.get(sessionID);
+    }
+
+    function markSessionCheckpointInterrupted(sessionID) {
+      const sc = sessionCheckpoints.get(sessionID);
+      if (sc && (sc.state === SessionCheckpointState.RUNNING || sc.state === SessionCheckpointState.PENDING_IDLE)) {
+        sc.state = SessionCheckpointState.INTERRUPTED;
       }
+    }
 
-      const mappedAgents = {};
-      agentHandoverAgents.clear();
+    function closeSessionCheckpoint(sessionID) {
+      sessionCheckpoints.delete(sessionID);
+    }
 
-      const allAgentConfigs = configManager.getAllAgents();
-      if (Object.keys(allAgentConfigs).length === 0) {
-        console.warn('[AET] No agent configs found in workflow template. Agents will not be registered.');
-      }
+    function isAutomationMode(checkpointID) {
+      if (!checkpointID || !checkpointManager) return false;
+      const cp = checkpointManager.getCheckpoint(checkpointID);
+      return cp?.workflow?.automation === true;
+    }
 
-      for (const [agentId, agentConfig] of Object.entries(allAgentConfigs)) {
-        if (typeof agentConfig !== 'object' || agentConfig === null || !agentConfig.name) {
-          continue;
-        }
+    // 确保 workflow 状态为 in_progress（用于中断后恢复）
+    function ensureCheckpointRunning(checkpointID) {
+      if (!checkpointID || !checkpointManager) return;
+      const checkpoint = checkpointManager.getCheckpoint(checkpointID);
+      if (checkpoint && checkpoint.workflow.status === 'interrupted') {
+        checkpoint.workflow.status = 'in_progress';
+        checkpoint.interruptedAt = null;
 
-        const agentImplName = agentConfig.name;
-        const agentImpl = agents[agentImplName];
+        const currentStage = checkpoint.workflow.currentStage;
+        if (currentStage && checkpoint.executions[currentStage]) {
+          const execution = checkpointManager.getCurrentExecution(checkpoint, currentStage);
+          if (execution && execution.status === 'interrupted') {
+            execution.status = 'in_progress';
+            execution.completedAt = null;
+            execution.result = null;
 
-        if (!agentImpl) {
-          console.warn(`[AET] Agent "${agentImplName}" definition not found in agents directory. Skipping.`);
-          continue;
-        }
-
-        let prompt = agentImpl.prompt;
-
-        const finalPermissions = {
-          question: 'allow',
-          ...(agentImpl.permission || {}),
-        };
-
-        if (finalPermissions.agent_handover === 'allow') {
-          agentHandoverAgents.add(agentId);
-          finalPermissions.agent_handover = 'deny';
-        }
-
-        mappedAgents[agentId] = {
-          name: agentId,
-          description: agentImpl.description,
-          mode: agentImpl.mode || 'primary',
-          prompt,
-          permission: finalPermissions,
-          ...(agentImpl.hidden !== undefined && { hidden: agentImpl.hidden }),
-          ...(agentImpl.color && { color: agentImpl.color }),
-        };
-      }
-
-      config.agent = {
-        ...(config.agent || {}),
-        ...mappedAgents,
-      };
-    },
-
-    "command.execute.before": async (input) => {
-      // 标记「需要就地接入 checkpoint」的命令（/design、/implement），由 chat.message 首条消息消费
-      const agentId = resolveCommandAgent(input?.command);
-      if (agentId && input?.sessionID) {
-        pendingCheckpointCmd.set(input.sessionID, {
-          command: input.command,
-          agentId,
-          arguments: input.arguments || '',
-        });
-        // Pre-check: does this command's agentId map to an automation-mode
-        // scenario? If yes, flag the session so experimental.chat.system.transform
-        // injects the directive BEFORE workflow_start (covers agent's early
-        // user-interaction points like Router's resume detection / Design's
-        // proactive checkpoint comparison that happen before any checkpoint exists).
-        //
-        // ALWAYS clear previous flag first — without this, switching from an
-        // automation-mode command (e.g. /aet-design) to a non-automation command
-        // (e.g. /aet-bugfix) in the same session would leave Signal 2 stuck at
-        // true, incorrectly injecting directive for the non-automation command.
-        try {
-          const scenarios = configManager?.getScenarios?.() || {};
-          const mapsToAutomation = Object.values(scenarios).some(sc =>
-            sc && sc.automation === true &&
-            Array.isArray(sc.workflow) &&
-            sc.workflow.length > 0 &&
-            (sc.workflow[0]?.agent_id === agentId || sc.workflow[0]?.stage_id === agentId)
-          );
-          pendingAutomationDirective.delete(input.sessionID);
-          if (mapsToAutomation) {
-            pendingAutomationDirective.set(input.sessionID, true);
-            lastAutomationSessionID = input.sessionID;
-          }
-        } catch { /* configManager not ready — skip */ }
-      }
-    },
-
-    "chat.message": async (input, output) => {
-      if (input?.sessionID) {
-        const sessionID = input.sessionID;
-        const sessionAgent = input.agent || null;
-
-        // 命令直入（/design、/implement）：最优先处理，避免被「上一个未清理的 currentCheckpointID」劫持。
-        // 不在插件里替模型做决策——把该 agent 的全部可恢复历史记录注入 prompt，由模型自己判断、并最终找用户确认，
-        // 然后由模型调用 checkpoint_resume / workflow_start（均在当前会话内就地继续）。
-        if (checkpointManager && pendingCheckpointCmd.has(sessionID)) {
-          const pending = pendingCheckpointCmd.get(sessionID);
-          pendingCheckpointCmd.delete(sessionID);
-          const agentId = pending.agentId;
-          const agentConfig = configManager.getAgentConfig(agentId);
-          const alreadyBound = checkpointManager.findCheckpointBySessionID(sessionID);
-          if (!alreadyBound && agentConfig?.workflow && agentConfig.workflow.length > 0) {
-            // 把消息钉到命令指定的 agent（覆盖任何残留的 workflow agent）
-            if (output?.message) output.message.agent = agentId;
-            try {
-              const desc = (pending.arguments || '').trim();
-              const candidates = listAgentResumableCheckpoints(agentId);
-              if (candidates.length === 0) {
-                // 无历史：插件直接就地建 checkpoint 并发第一步（确定性，不依赖模型再调工具）
-                closeSessionCheckpoint(sessionID);
-                startSessionCheckpoint(sessionID);
-                const cid = bootstrapAgentCheckpoint(sessionID, agentId, desc);
-                if (cid) injectCurrentStep(cid, output);
-              } else {
-                // 有历史：列出候选，让模型判断 + 找用户确认，再由模型调 checkpoint_resume / workflow_start
-                appendText(output, buildCommandEntryPrompt(agentId, desc, candidates));
+            if (execution.currentStep && execution.steps[execution.currentStep]) {
+              const stepState = execution.steps[execution.currentStep];
+              if (stepState.status === 'interrupted') {
+                stepState.status = 'pending';
+                stepState.completedAt = null;
               }
-            } catch (e) {
-              console.error('[AET] command checkpoint entry error:', e.message);
             }
-            return;
           }
         }
 
-        // 获取 workflow 当前阶段的 agent，有就设置，没有就不设置
-        let workflowAgent = null;
-        if (checkpointManager && currentCheckpointID) {
-          const checkpoint = checkpointManager.getCheckpoint(currentCheckpointID);
-          if (checkpoint && checkpoint.workflow.status === 'in_progress') {
-            const currentStage = checkpoint.workflow.currentStage;
-            const execution = checkpointManager.getCurrentExecution(checkpoint, currentStage);
-            workflowAgent = execution?.agentId;
+        checkpoint.history.push({
+          ts: new Date().toISOString(),
+          event: 'workflow_resumed',
+        });
+        checkpointManager.saveCheckpoint(checkpoint);
+
+        const index = checkpointManager.loadIndex();
+        index.active = index.active.filter(e => e.checkpointID !== checkpointID);
+        index.interrupted = index.interrupted.filter(e => e.checkpointID !== checkpointID);
+        index.active.push({
+          checkpointID,
+          workflow: checkpoint.workflow.name,
+          description: checkpoint.workflow.description,
+          stage: checkpoint.workflow.currentStage,
+          step: checkpointManager.getCurrentStepId(checkpoint),
+          startedAt: checkpoint.startedAt,
+          updatedAt: checkpoint.updatedAt,
+        });
+        checkpointManager.saveIndex(index);
+      }
+    }
+
+    function resolveSessionAgent(sessionID, fallbackAgent = null) {
+      if (!checkpointManager || !sessionID) {
+        return fallbackAgent;
+      }
+      const agentId = checkpointManager.findAgentBySessionID(sessionID);
+      return agentId || fallbackAgent;
+    }
+
+    // 无历史时：就地为命令切入的 agent 创建并绑定一个 checkpoint
+    function bootstrapAgentCheckpoint(sessionID, agentId, description) {
+      const agentConfig = configManager.getAgentConfig(agentId);
+      if (!agentConfig?.workflow || agentConfig.workflow.length === 0) return null;
+      const checkpointID = checkpointManager.createCheckpoint(agentId, description || `Direct ${agentId} session`);
+      checkpointManager.startExecution(checkpointID, agentId, sessionID, agentId, description || null);
+      checkpointManager.initSteps(checkpointID, agentId, agentConfig.workflow, null);
+      currentCheckpointID = checkpointID;
+      return checkpointID;
+    }
+
+    // 列出「该 agent 自己历史执行过的、可恢复的」checkpoint
+    function listAgentResumableCheckpoints(agentId) {
+      return checkpointManager.getResumableCheckpoints()
+        .map(e => checkpointManager.getCheckpoint(e.checkpointID))
+        .filter(cp => cp && cp.workflow.name === agentId && cp.workflow.status !== 'completed')
+        .sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
+    }
+
+    // 有历史时注入：本次任务 + 该 agent 全部可恢复历史记录
+    function buildCommandEntryPrompt(agentId, desc, candidates) {
+      let p = `\n\n## 本次任务\n${desc || '(无描述)'}\n\n`;
+      const list = candidates.map((cp, i) => {
+        const ex = checkpointManager.getCurrentExecution(cp, cp.workflow.currentStage);
+        return `${i + 1}. checkpointID=${cp.workflow.checkpointID}\n   当前步骤: ${ex?.currentStep || '—'}\n   更新于: ${cp.updatedAt}\n   描述: ${cp.workflow.description || '(无)'}`;
+      }).join('\n');
+      p += `## 该 agent 可恢复的历史任务（共 ${candidates.length} 个）\n${list}\n\n`
+        + `请按以下步骤处理，在用户确认之前不要开始执行任何步骤：\n`
+        + `1. 对照「本次任务」，判断它是否是上述某条任务的延续。\n`
+        + `2. 用 question 工具向用户确认：是恢复其中某一条（指出编号/描述），还是作为新任务开始。\n`
+        + `3. 根据用户选择执行（均在当前会话内继续，不会另开会话）：\n`
+        + `   - 恢复：调用 checkpoint_resume({ checkpointID: "用户确认的ID" })，从其当前步骤继续；\n`
+        + `   - 新任务：调用 workflow_start({ name: "${agentId}", context: "本次任务描述" })，从第一步开始。`;
+      return p;
+    }
+
+    // 取出「当前 step 任务（+ 上一步 context）」文本，并把该 step 置 in_progress（幂等）。
+    function takeCurrentStepText(checkpointID) {
+      const checkpoint = checkpointManager.getCheckpoint(checkpointID);
+      if (!checkpoint) return null;
+      const currentStage = checkpoint.workflow?.currentStage;
+      const execution = checkpointManager.getCurrentExecution(checkpoint, currentStage);
+      if (!execution) return null;
+      const agentConfig = configManager.getAgentConfig(execution.agentId);
+
+      if (!agentConfig?.workflow || agentConfig.workflow.length === 0) {
+        return execution.context ? `## Context from previous stage:\n${asText(execution.context)}` : null;
+      }
+
+      const currentStepId = execution.currentStep;
+      const currentStepState = currentStepId ? execution.steps[currentStepId] : null;
+      if (!currentStepState || currentStepState.status !== 'pending') return null;
+      const stepConfig = agentConfig.workflow.find(s => (s.step_id || s.name) === currentStepId);
+      if (!stepConfig) return null;
+
+      let text = `## Please continue executing this step:\nStep name:\n${stepConfig.name}\nTask:\n${stepConfig.description}`;
+      if (currentStepState.context) {
+        text += `\n\n## Context from previous steps:\n${asText(currentStepState.context)}`;
+      }
+
+      execution.steps[currentStepId] = {
+        ...currentStepState,
+        status: 'in_progress',
+        startedAt: new Date().toISOString(),
+      };
+      checkpoint.history.push({
+        ts: new Date().toISOString(),
+        event: 'step_started',
+        stage: currentStage,
+        executionId: execution.executionId,
+        step: currentStepId,
+      });
+      checkpointManager.saveCheckpoint(checkpoint);
+      return text;
+    }
+
+    // 就地恢复一个 checkpoint 到「真正的断点 step」并绑定到当前 session
+    function resumeAgentCheckpointInPlace(sessionID, checkpointID) {
+      ensureCheckpointRunning(checkpointID);
+      const cp = checkpointManager.getCheckpoint(checkpointID);
+      if (!cp) return null;
+      const stage = cp.workflow.currentStage;
+      const prev = checkpointManager.getCurrentExecution(cp, stage);
+      const prevSteps = prev?.steps || null;
+      const prevStep = prev?.currentStep || null;
+      const agentId = prev?.agentId || stage;
+      const ctx_ = prev?.context || cp.workflow.description || null;
+
+      const exec = checkpointManager.startExecutionOn(cp, stage, sessionID, agentId, ctx_);
+      const agentCfg = configManager.getAgentConfig(agentId);
+      if (agentCfg?.workflow && agentCfg.workflow.length > 0) {
+        checkpointManager.initStepsOn(cp, stage, agentCfg.workflow, null);
+        if (exec && prevSteps && Object.keys(prevSteps).length > 0) {
+          for (const [id, st] of Object.entries(prevSteps)) {
+            if (exec.steps[id]) exec.steps[id] = { ...exec.steps[id], ...st };
           }
-        }
-
-        if (workflowAgent && output?.message) {
-          output.message.agent = workflowAgent;
-        }
-
-        // 正常处理消息
-        closeSessionCheckpoint(sessionID);
-        startSessionCheckpoint(sessionID);
-
-        // 检查是否从中断恢复
-        let targetCheckpointID = currentCheckpointID;
-        if (!targetCheckpointID && checkpointManager) {
-          targetCheckpointID = checkpointManager.findCheckpointBySessionID(sessionID);
-          if (targetCheckpointID) {
-            currentCheckpointID = targetCheckpointID;
+          exec.currentStep = prevStep;
+          if (prevStep && exec.steps[prevStep]) {
+            exec.steps[prevStep] = { ...exec.steps[prevStep], status: 'pending', startedAt: null };
           }
-        }
-        if (targetCheckpointID) {
-          ensureCheckpointRunning(targetCheckpointID);
-        }
-
-        // 使用路由后的 agent
-        const finalAgent = output?.message?.agent || sessionAgent;
-
-        // 追踪当前 agent，供跨 session 上传时获取 fromAgent
-        if (finalAgent) {
-          currentAgentId = finalAgent;
-        }
-
-        try {
-          const msgs = await pluginClient.session.messages({ path: { id: sessionID } });
-          const msgCount = msgs.data?.length || 0;
-
-          // 如果是第一条消息且有 active checkpoint，注入当前 step 信息（含上一步 context）
-          if (msgCount <= 1 && finalAgent && targetCheckpointID) {
-            injectCurrentStep(targetCheckpointID, output);
-          }
-        } catch (err) {
-          console.error('[AET] chat.message error:', err.message);
         }
       }
-    },
+      checkpointManager.saveCheckpoint(cp);
+      checkpointManager.updateIndexEntry(checkpointID, cp);
+      currentCheckpointID = checkpointID;
+      return checkpointID;
+    }
 
-    event: async ({ event }) => {
-      if (event.type === 'message.updated') {
-        const { sessionID, info } = event.properties;
-        if (info?.role === 'assistant' && info?.error?.name === 'MessageAbortedError') {
-          markSessionCheckpointInterrupted(sessionID);
-          // 同时标记 workflow checkpoint 为中断
-          if (currentCheckpointID && checkpointManager) {
-            checkpointManager.interruptCheckpoint(currentCheckpointID, 'User aborted execution');
+    // ============================================
+    // Stage / Step Handover（使用 ctx.session）
+    // ============================================
+
+    async function createSessionForClearIfNeeded(oldSessionID, agentId, checkpointID, stage, updateCheckpoint = true) {
+      try {
+        const createResult = await session.create({
+          title: `${agentId} - ${stage} Stage (context cleared)`,
+        });
+        const newSessionID = createResult?.id;
+        if (!newSessionID) {
+          console.error('[AET] Failed to create new session for clear=true');
+          return oldSessionID;
+        }
+
+        // 上传协作事件到 agent-insight 平台
+        if (agentInsightClient?.enabled) {
+          if (!collaborationId) {
+            collaborationId = generateCollaborationId();
+          }
+          const fromAgent = currentAgentId || agentId;
+          const toAgent = agentId;
+          await agentInsightClient.uploadEvent({
+            collaborationId,
+            eventId: generateEventId(),
+            fromSessionId: oldSessionID,
+            toSessionId: newSessionID,
+            description: `${fromAgent} → ${toAgent}: ${stage} 阶段清上下文重建 session`,
+            observedAt: new Date().toISOString(),
+          });
+        }
+
+        if (updateCheckpoint) {
+          const checkpoint = checkpointManager.getCheckpoint(checkpointID);
+          if (checkpoint) {
+            const execution = checkpointManager.getCurrentExecution(checkpoint, stage);
+            if (execution) {
+              execution.sessionID = newSessionID;
+              checkpointManager.saveCheckpoint(checkpoint);
+              checkpointManager.updateIndexEntry(checkpointID, checkpoint);
+            }
+          }
+        }
+
+        return newSessionID;
+      } catch (err) {
+        console.error('[AET] Create session for clear error:', err.message);
+        return oldSessionID;
+      }
+    }
+
+    async function sendStepPrompt(sessionID, agentId, checkpointID, stage, stepConfig) {
+      if (!checkpointManager || !checkpointID) return;
+
+      let promptText = `## Please continue executing this step:\n`;
+      promptText += `Step name:\n${stepConfig.name}\n`;
+      promptText += `Task:\n${stepConfig.description}`;
+
+      startSessionCheckpoint(sessionID);
+      try {
+        await session.prompt({ sessionID, text: promptText });
+      } catch (err) {
+        console.error('[AET] Send step prompt error:', err.message);
+      }
+    }
+
+    async function sendStepPromptWithNewSession(oldSessionID, agentId, checkpointID, stage, stepConfig) {
+      let promptText = `## Please continue executing this step:\n`;
+      promptText += `Step name:\n${stepConfig.name}\n`;
+      promptText += `Task:\n${stepConfig.description}`;
+
+      const newSessionID = await createSessionForClearIfNeeded(oldSessionID, agentId, checkpointID, stage);
+      if (newSessionID === oldSessionID) return;
+
+      startSessionCheckpoint(newSessionID);
+      try {
+        await session.prompt({ sessionID: newSessionID, text: promptText });
+      } catch (err) {
+        console.error('[AET] Send step prompt with new session error:', err.message);
+      }
+    }
+
+    async function triggerAfterHook(sessionID, stage, checkpointID) {
+      if (!stage) {
+        return;
+      }
+
+      const afterHook = stage.after || 'auto';
+
+      if (afterHook === 'auto') {
+        const workflowName = checkpointManager.getCheckpoint(checkpointID)?.workflow.name;
+        const stages = workflowEngine.getScenarioWorkflow(workflowName);
+        const currentIdx = stages.findIndex(s => (s.stage_id || s.agent_id) === (stage.stage_id || stage.agent_id));
+        const nextStage = stages[currentIdx + 1];
+        if (nextStage) {
+          await executeStageHandover(nextStage, null, checkpointID, null, sessionID);
+        } else {
+          checkpointManager.completeCheckpoint(checkpointID);
+        }
+        return;
+      }
+
+      // Automation short-circuit
+      if (afterHook !== 'auto' && isAutomationMode(checkpointID)) {
+        const workflowName = checkpointManager.getCheckpoint(checkpointID)?.workflow.name;
+        const stages = workflowEngine.getScenarioWorkflow(workflowName);
+        const currentIdx = stages.findIndex(s => (s.stage_id || s.agent_id) === (stage.stage_id || stage.agent_id));
+        const nextStage = stages[currentIdx + 1];
+        if (nextStage) {
+          await executeStageHandover(nextStage, null, checkpointID, null, sessionID);
+        } else {
+          checkpointManager.completeCheckpoint(checkpointID);
+        }
+        return;
+      }
+
+      const hookConfig = workflowEngine.getHookConfig(afterHook);
+      if (hookConfig && hookConfig.options && hookConfig.options.length > 0) {
+        const description = hookConfig.description || 'Please confirm';
+        const optionsText = hookConfig.options.map(opt => `- ${opt.label}`).join('\n');
+        const template = hookConfig.promptTemplate || 'Question: "{description}"\n{options}';
+        let userPrompt = template.replace('{description}', description).replace('{options}', optionsText);
+        userPrompt += '\n\n**If user approves, please call agent_handover to advance to the next stage.**';
+        startSessionCheckpoint(sessionID);
+        try {
+          await session.prompt({ sessionID, text: userPrompt });
+        } catch (err) {
+          console.error('[AET] After hook error:', err.message);
+        }
+      }
+    }
+
+    async function triggerStepAfterHook(sessionID, agentId, agentConfig, checkpointID, stage) {
+      const currentStepInfo = checkpointManager.getCurrentStep(checkpointID, stage);
+      if (!currentStepInfo) {
+        return;
+      }
+
+      const stepConfig = agentConfig.workflow?.find(s => (s.step_id || s.name) === currentStepInfo.stepId);
+      if (!stepConfig) {
+        return;
+      }
+
+      const afterHook = stepConfig.after || 'auto';
+
+      if (afterHook === 'auto') {
+        await advanceToNextStep(sessionID, agentId, agentConfig, checkpointID, stage, null);
+        return;
+      }
+
+      if (afterHook !== 'auto' && isAutomationMode(checkpointID)) {
+        await advanceToNextStep(sessionID, agentId, agentConfig, checkpointID, stage, null);
+        return;
+      }
+
+      const hookConfig = workflowEngine.getHookConfig(afterHook);
+      if (hookConfig && hookConfig.options && hookConfig.options.length > 0) {
+        const description = hookConfig.description || 'Confirm before proceeding to next step';
+        const optionsText = hookConfig.options.map(opt => `- ${opt.label}`).join('\n');
+        const template = hookConfig.promptTemplate || 'Question: "{description}"\n{options}';
+        let userPrompt = template.replace('{description}', description).replace('{options}', optionsText);
+        userPrompt += `\n\nCurrent Step: **${stepConfig.name}**`;
+        userPrompt += '\n\n**If user approves, please call step_handover to advance to the next step.**';
+        startSessionCheckpoint(sessionID);
+        try {
+          await session.prompt({ sessionID, text: userPrompt });
+        } catch (err) {
+          console.error('[AET] Step after hook error:', err.message);
+        }
+      }
+    }
+
+    async function advanceToNextStep(sessionID, agentId, agentConfig, checkpointID, stage, context, targetStepId = null) {
+      if (!checkpointManager || !checkpointID) {
+        return;
+      }
+
+      const currentStepInfo = checkpointManager.getCurrentStep(checkpointID, stage);
+      if (!currentStepInfo) {
+        return;
+      }
+
+      const stepConfigs = agentConfig.workflow || [];
+      let nextStepConfig;
+      if (targetStepId) {
+        nextStepConfig = stepConfigs.find(s => (s.step_id || s.name) === targetStepId);
+      } else {
+        const currentIdx = stepConfigs.findIndex(s => (s.step_id || s.name) === currentStepInfo.stepId);
+        nextStepConfig = stepConfigs[currentIdx + 1];
+      }
+
+      if (!nextStepConfig) {
+        checkpointManager.completeAllSteps(checkpointID, stage);
+        return;
+      }
+
+      const nextStepId = nextStepConfig.step_id || nextStepConfig.name;
+      checkpointManager.advanceStep(checkpointID, stage, nextStepId, context);
+
+      const shouldClear = nextStepConfig.clear === true;
+
+      const beforeHook = nextStepConfig.before || 'auto';
+      if (beforeHook === 'auto' || isAutomationMode(checkpointID)) {
+        if (shouldClear) {
+          sendStepPromptWithNewSession(sessionID, agentId, checkpointID, stage, nextStepConfig);
+        } else {
+          sendStepPrompt(sessionID, agentId, checkpointID, stage, nextStepConfig);
+        }
+        return;
+      }
+
+      const hookConfig = workflowEngine.getHookConfig(beforeHook);
+      if (hookConfig && hookConfig.options && hookConfig.options.length > 0) {
+        const description = hookConfig.description || 'Confirm before starting next step';
+        const optionsText = hookConfig.options.map(opt => `- ${opt.label}`).join('\n');
+        const template = hookConfig.promptTemplate || 'Question: "{description}"\n{options}';
+        let userPrompt = template.replace('{description}', description).replace('{options}', optionsText);
+        userPrompt += `\n\n即将执行的 Step: **${nextStepConfig.name}**`;
+        userPrompt += '\n\n**If user approves, please call step_handover to continue.**';
+        if (shouldClear) {
+          const hookSessionID = await createSessionForClearIfNeeded(sessionID, agentId, checkpointID, stage, true);
+          startSessionCheckpoint(hookSessionID);
+          try {
+            await session.prompt({ sessionID: hookSessionID, text: userPrompt });
+          } catch (err) {
+            console.error('[AET] Step before hook error:', err.message);
+          }
+        } else {
+          startSessionCheckpoint(sessionID);
+          try {
+            await session.prompt({ sessionID, text: userPrompt });
+          } catch (err) {
+            console.error('[AET] Step before hook error:', err.message);
           }
         }
         return;
       }
 
-      else if (event.type === 'session.status') {
-        const { sessionID, status } = event.properties;
-        const sessionAgent = resolveSessionAgent(sessionID, null);
-        const sessionCheckpoint = getCurrentSessionCheckpoint(sessionID);
+      if (shouldClear) {
+        sendStepPromptWithNewSession(sessionID, agentId, checkpointID, stage, nextStepConfig);
+      } else {
+        sendStepPrompt(sessionID, agentId, checkpointID, stage, nextStepConfig);
+      }
+    }
 
-        if (status.type === 'idle') {
-          if (sessionCheckpoint?.state === SessionCheckpointState.INTERRUPTED) {
-            closeSessionCheckpoint(sessionID);
-            return;
+    async function executeStageHandover(stage, context, checkpointID, promptForAgent = null, fromSessionId = null) {
+      const actualPrompt = promptForAgent || context || `Please continue working on ${stage.agent_id}.`;
+
+      try {
+        const createResult = await session.create({
+          title: `${stage.agent_id} - ${stage.agent_id.toUpperCase().replace('-AGENT', '')} Stage`,
+          agent: stage.agent_id,
+        });
+        const newSessionID = createResult?.id;
+
+        if (newSessionID) {
+          // 在 CheckpointManager 中记录 execution
+          const stageName = stage.stage_id || stage.agent_id;
+
+          const checkpoint = checkpointManager.getCheckpoint(checkpointID);
+
+          const currentStageExecution = checkpointManager.getCurrentExecution(checkpoint, checkpoint.workflow.currentStage);
+          const currentStageSteps = currentStageExecution?.steps || null;
+          const currentStageCurrentStep = currentStageExecution?.currentStep || null;
+
+          // 上传跨 Session 协作关系到 agent-insight 平台
+          if (agentInsightClient?.enabled) {
+            if (!collaborationId) {
+              collaborationId = generateCollaborationId();
+            }
+            const eventId = generateEventId();
+            const fromSession = fromSessionId || 'root';
+            const fromAgent = currentAgentId || 'Build';
+            const toAgent = stage.agent_id;
+            const desc = `${fromAgent} → ${toAgent}: ${stageName} 阶段启动`;
+            await agentInsightClient.uploadEvent({
+              collaborationId,
+              eventId,
+              fromSessionId: fromSession,
+              toSessionId: newSessionID,
+              description: desc,
+              observedAt: new Date().toISOString(),
+            });
+            currentAgentId = toAgent;
           }
 
-          // 检查 workflow 是否被中断（文件持久化状态，跨进程有效）
-          if (currentCheckpointID && checkpointManager) {
-            const checkpoint = checkpointManager.getCheckpoint(currentCheckpointID);
-            if (checkpoint?.workflow?.status === 'interrupted') {
-              closeSessionCheckpoint(sessionID);
-              return;
-            }
-            // 检查当前 execution 是否被中断
-            const execution = checkpointManager.getCurrentExecution(checkpoint, checkpoint.workflow.currentStage);
-            if (execution?.status === 'interrupted') {
-              closeSessionCheckpoint(sessionID);
-              return;
-            }
-          }
+          const targetStageExecution = checkpointManager.getCurrentExecution(checkpoint, stageName);
+          const targetStageSteps = targetStageExecution?.steps || null;
+          const targetStageCurrentStep = targetStageExecution?.currentStep || null;
 
-          // 检查是否在 workflow 中执行
-          if (currentCheckpointID && checkpointManager) {
-            const checkpoint = checkpointManager.getCheckpoint(currentCheckpointID);
-            if (checkpoint && checkpoint.workflow.currentStage) {
-              const execution = checkpointManager.getCurrentExecution(checkpoint, checkpoint.workflow.currentStage);
-              if (execution && execution.sessionID === sessionID) {
-                const agentConfig = configManager.getAgentConfig(sessionAgent);
-                const hasSteps = agentConfig?.workflow && agentConfig.workflow.length > 0;
-                const currentStepInfo = checkpointManager.getCurrentStep(currentCheckpointID, checkpoint.workflow.currentStage);
+          const executionContext = context || targetStageExecution?.context || currentStageExecution?.context;
 
-                // 检查是否还有更多步骤
-                const hasMoreSteps = currentStepInfo && agentConfig.workflow.findIndex(s => (s.step_id || s.name) === currentStepInfo.stepId) < agentConfig.workflow.length - 1;
+          const isSameStage = checkpoint.workflow.currentStage === stageName;
+          const previousSteps = isSameStage ? currentStageSteps : targetStageSteps;
+          const previousCurrentStep = isSameStage ? currentStageCurrentStep : targetStageCurrentStep;
 
-                if (sessionCheckpoint?.state === SessionCheckpointState.RUNNING) {
-                  sessionCheckpoint.state = SessionCheckpointState.PENDING_IDLE;
-                  const expectedCheckpointID = sessionCheckpoint.checkpointID;
-                  if (hasSteps && hasMoreSteps) {
-                    void settleStepIdleRun(sessionID, expectedCheckpointID, sessionAgent, agentConfig, currentCheckpointID, checkpoint.workflow.currentStage);
-                  } else {
-                    // 阶段完成
-                    checkpointManager.completeExecution(currentCheckpointID, checkpoint.workflow.currentStage, 'Stage completed');
-                    // 获取完整的 stage 配置
-                    const stages = workflowEngine.getScenarioWorkflow(checkpoint.workflow.name);
-                    const fullStageConfig = stages.find(s => (s.stage_id || s.agent_id) === checkpoint.workflow.currentStage);
-                    void settleIdleRun(sessionID, expectedCheckpointID, fullStageConfig || { agent_id: sessionAgent, stage_id: checkpoint.workflow.currentStage }, currentCheckpointID);
-                  }
-                  return;
+          const newExecution = checkpointManager.startExecutionOn(checkpoint, stageName, newSessionID, stage.agent_id, executionContext);
+
+          const agentConfig = configManager.getAgentConfig(stage.agent_id);
+          if (agentConfig?.workflow && agentConfig.workflow.length > 0) {
+            checkpointManager.initStepsOn(checkpoint, stageName, agentConfig.workflow, null);
+
+            if (newExecution && previousSteps && Object.keys(previousSteps).length > 0) {
+              for (const [stepId, stepState] of Object.entries(previousSteps)) {
+                if (newExecution.steps[stepId]) {
+                  newExecution.steps[stepId] = {
+                    ...newExecution.steps[stepId],
+                    ...stepState,
+                  };
                 }
-
-                if (sessionCheckpoint?.state === SessionCheckpointState.PENDING_IDLE) {
-                  const expectedCheckpointID = sessionCheckpoint.checkpointID;
-                  if (await shouldSkipAfterHook(sessionID, expectedCheckpointID)) {
-                    closeSessionCheckpoint(sessionID);
-                    return;
-                  }
-                  sessionCheckpoint.state = SessionCheckpointState.COMPLETED;
-                  closeSessionCheckpoint(sessionID);
-                  if (hasSteps && hasMoreSteps) {
-                    await triggerStepAfterHook(sessionID, sessionAgent, agentConfig, currentCheckpointID, checkpoint.workflow.currentStage);
-                  } else {
-                    // 获取完整的 stage 配置
-                    const stages = workflowEngine.getScenarioWorkflow(checkpoint.workflow.name);
-                    const fullStageConfig = stages.find(s => (s.stage_id || s.agent_id) === checkpoint.workflow.currentStage);
-                    const currentIdx = stages.findIndex(s => (s.stage_id || s.agent_id) === checkpoint.workflow.currentStage);
-                    const nextStage = stages[currentIdx + 1];
-                    if (!nextStage) {
-                      // 最后阶段，直接完成 workflow 并归档
-                      checkpointManager.completeCheckpoint(currentCheckpointID);
-                      currentCheckpointID = null;
-                      collaborationId = null;
-                    } else {
-                      await triggerAfterHook(sessionID, fullStageConfig || { agent_id: sessionAgent, stage_id: checkpoint.workflow.currentStage }, currentCheckpointID);
-                    }
-                  }
-                }
-                return;
+              }
+              newExecution.currentStep = previousCurrentStep;
+              if (previousCurrentStep && newExecution.steps[previousCurrentStep]) {
+                newExecution.steps[previousCurrentStep] = {
+                  ...newExecution.steps[previousCurrentStep],
+                  status: 'pending',
+                  startedAt: null,
+                };
               }
             }
           }
 
-          // 不在 workflow 中，单独 agent 执行
-          const agentConfig = configManager.getAgentConfig(sessionAgent);
-          if (agentConfig?.workflow && agentConfig.workflow.length > 0) {
-            // TODO: 处理单独 agent 的 step workflow
+          checkpointManager.saveCheckpoint(checkpoint);
+          checkpointManager.updateIndexEntry(checkpointID, checkpoint);
+
+          // 检查 stage.before hook
+          const beforeHook = stage.before || 'auto';
+          if (beforeHook !== 'auto' && !isAutomationMode(checkpointID)) {
+            const hookConfig = workflowEngine.getHookConfig(beforeHook);
+            if (hookConfig && hookConfig.options && hookConfig.options.length > 0) {
+              const description = hookConfig.description || 'Please confirm';
+              const optionsText = hookConfig.options.map(opt => `- ${opt.label}`).join('\n');
+              const template = hookConfig.promptTemplate || 'Question: "{description}"\n{options}';
+              let userPrompt = template.replace('{description}', description).replace('{options}', optionsText);
+              if (context) {
+                userPrompt += `\n\nTask context:\n${context}`;
+              }
+              userPrompt += '\n\nIf user approves, please call agent_handover to begin this stage.';
+
+              startSessionCheckpoint(newSessionID);
+              await session.prompt({ sessionID: newSessionID, text: userPrompt });
+              return;
+            }
           }
 
-          closeSessionCheckpoint(sessionID);
+          // 直接执行
+          startSessionCheckpoint(newSessionID);
+          await session.prompt({ sessionID: newSessionID, text: actualPrompt });
         }
-        else if (status.type === 'busy') {
-          if (sessionCheckpoint?.state === SessionCheckpointState.PENDING_IDLE) {
-            sessionCheckpoint.state = SessionCheckpointState.RUNNING;
-          }
-        }
+      } catch (e) {
+        console.error('[AET] executeStageHandover error:', e.message);
       }
-    },
+    }
 
-    // Workflow and status tools
-    tool: {
-      workflow_list: tool({
+    async function settleIdleRun(sessionID, expectedCheckpointID, stage, workflowRunID) {
+      await new Promise(resolve => setTimeout(resolve, IDLE_SETTLE_MS));
+
+      const currentSessionCheckpoint = getCurrentSessionCheckpoint(sessionID);
+      if (!currentSessionCheckpoint || currentSessionCheckpoint.checkpointID !== expectedCheckpointID || currentSessionCheckpoint.state !== SessionCheckpointState.PENDING_IDLE) {
+        return;
+      }
+
+      if (currentSessionCheckpoint.state === SessionCheckpointState.INTERRUPTED) {
+        closeSessionCheckpoint(sessionID);
+        return;
+      }
+
+      currentSessionCheckpoint.state = SessionCheckpointState.COMPLETED;
+      closeSessionCheckpoint(sessionID);
+      await triggerAfterHook(sessionID, stage, workflowRunID);
+    }
+
+    async function settleStepIdleRun(sessionID, expectedCheckpointID, agentId, agentConfig, workflowRunID, stage) {
+      await new Promise(resolve => setTimeout(resolve, IDLE_SETTLE_MS));
+
+      const currentSessionCheckpoint = getCurrentSessionCheckpoint(sessionID);
+      if (!currentSessionCheckpoint || currentSessionCheckpoint.checkpointID !== expectedCheckpointID || currentSessionCheckpoint.state !== SessionCheckpointState.PENDING_IDLE) {
+        return;
+      }
+
+      if (currentSessionCheckpoint.state === SessionCheckpointState.INTERRUPTED) {
+        closeSessionCheckpoint(sessionID);
+        return;
+      }
+
+      currentSessionCheckpoint.state = SessionCheckpointState.COMPLETED;
+      closeSessionCheckpoint(sessionID);
+      await triggerStepAfterHook(sessionID, agentId, agentConfig, workflowRunID, stage);
+    }
+
+    // ============================================
+    // T006: 9 Tools via ctx.tool.transform
+    // ============================================
+    await ctx.tool.transform(editor => {
+      // 1. workflow_list
+      editor.add({
+        name: 'workflow_list',
         description: 'List all available scenarios',
-        args: {},
-        async execute(args, context) {
+        input: {
+          type: 'object',
+          properties: {},
+          required: [],
+          additionalProperties: false,
+        },
+        async execute(input) {
           const scenarios = configManager.getScenarios();
 
           let lines = [
@@ -1300,25 +1024,35 @@ export const aetPlugin = async ({ client, directory }) => {
           lines.push('Use workflow_start({ name: "..." }) to start a capability scenario');
           lines.push('');
 
-          return lines.join('\n');
+          return { content: lines.join('\n') };
         },
-      }),
+      });
 
-      checkpoint_list_active: tool({
+      // 2. checkpoint_list_active
+      editor.add({
+        name: 'checkpoint_list_active',
         description: '查询当前正在执行和可恢复的任务状态。可选 scope 过滤："scenario"（仅 workflow_start 起的多阶段场景）、"agent"（仅单 agent 直入任务）、"all"（默认，全部）。',
-        args: {
-          scope: tool.schema.enum(['all', 'scenario', 'agent']).optional().describe('过滤范围："scenario" / "agent" / "all"（默认）'),
+        input: {
+          type: 'object',
+          properties: {
+            scope: {
+              type: 'string',
+              enum: ['all', 'scenario', 'agent'],
+              description: '过滤范围："scenario" / "agent" / "all"（默认）',
+            },
+          },
+          required: [],
+          additionalProperties: false,
         },
-        async execute(args, context) {
+        async execute(input) {
           if (!checkpointManager) {
-            return JSON.stringify({ error: 'CheckpointManager not initialized' }, null, 2);
+            return { content: JSON.stringify({ error: 'CheckpointManager not initialized' }, null, 2) };
           }
           const index = checkpointManager.loadIndex();
-          const scope = args.scope || 'all';
+          const scope = input.scope || 'all';
           if (scope === 'all') {
-            return JSON.stringify(index, null, 2);
+            return { content: JSON.stringify(index, null, 2) };
           }
-          // workflow.name 是 scenario 名 → 场景类；否则（= agentId）→ 单 agent 直入任务
           const isScenario = (name) => !!workflowEngine.getScenarioConfig(name);
           const keep = (e) => scope === 'scenario' ? isScenario(e.workflow) : !isScenario(e.workflow);
           const filtered = {
@@ -1327,43 +1061,54 @@ export const aetPlugin = async ({ client, directory }) => {
             interrupted: (index.interrupted || []).filter(keep),
             recentCompleted: (index.recentCompleted || []).filter(keep),
           };
-          return JSON.stringify(filtered, null, 2);
+          return { content: JSON.stringify(filtered, null, 2) };
         },
-      }),
+      });
 
-      workflow_start: tool({
+      // 3. workflow_start
+      editor.add({
+        name: 'workflow_start',
         description: 'Start a capability scenario OR a single agent\'s task. `name` can be a scenario (e.g. "feature") or an agent with steps (e.g. "aet-design"). If the current session agent equals the target agent, it runs IN THE CURRENT session (and returns the first step to execute); otherwise a new session is created. Example: workflow_start({ name: "feature", context: "..." }) or workflow_start({ name: "aet-design", context: "..." })',
-        args: {
-          name: tool.schema.string().min(1).describe('Required. Scenario name, or an agent id that has steps.'),
-          context: tool.schema.any().describe('Required. Task/context for the (first) stage agent. String or object (objects are serialized). Can include newlines.'),
+        input: {
+          type: 'object',
+          properties: {
+            name: {
+              type: 'string',
+              minLength: 1,
+              description: 'Required. Scenario name, or an agent id that has steps.',
+            },
+            context: {
+              // D-005: V1 any() → 空 schema（接受任意类型）
+              description: 'Required. Task/context for the (first) stage agent. String or object (objects are serialized). Can include newlines.',
+            },
+          },
+          required: ['name'],
+          additionalProperties: false,
         },
-        async execute(args, context) {
-          const { name } = args;
-          // context 可能是字符串或对象（对象序列化为字符串）
-          const rawDesc = args.context;
+        async execute(input, toolContext) {
+          const { name } = input;
+          const rawDesc = input.context;
           const desc = typeof rawDesc === 'string' ? rawDesc : (rawDesc != null ? JSON.stringify(rawDesc) : '');
           if (!name || name.trim().length === 0) {
-            return JSON.stringify({ success: false, error: 'name is required' }, null, 2);
+            return { content: JSON.stringify({ success: false, error: 'name is required' }, null, 2) };
           }
           if (!desc || desc.trim().length === 0) {
-            return JSON.stringify({ success: false, error: 'context is required' }, null, 2);
+            return { content: JSON.stringify({ success: false, error: 'context is required' }, null, 2) };
           }
 
-          // name 解析为 scenario 或单 agent
           const scenario = workflowEngine.getScenarioConfig(name);
           const isScenario = !!scenario;
           const agentCfg = isScenario ? null : configManager.getAgentConfig(name);
           if (!isScenario && (!agentCfg?.workflow || agentCfg.workflow.length === 0)) {
-            return JSON.stringify({ success: false, error: `"${name}" is not a scenario, nor an agent with steps` }, null, 2);
+            return { content: JSON.stringify({ success: false, error: `"${name}" is not a scenario, nor an agent with steps` }, null, 2) };
           }
 
-          // 目标首阶段及其 agent
           let firstStage = null;
           let targetAgent;
           if (isScenario) {
             const stages = workflowEngine.getScenarioWorkflow(name);
             if (!stages || stages.length === 0) {
-              return JSON.stringify({ success: false, error: 'Scenario has no stages' }, null, 2);
+              return { content: JSON.stringify({ success: false, error: 'Scenario has no stages' }, null, 2) };
             }
             firstStage = stages[0];
             targetAgent = firstStage.agent_id;
@@ -1371,24 +1116,17 @@ export const aetPlugin = async ({ client, directory }) => {
             targetAgent = name;
           }
 
-          const sessionID = context?.sessionID;
-          // 单 agent 且当前会话 agent 与目标一致 → 就地复用当前会话；否则新建 session
-          const inPlace = !isScenario && sessionID && context?.agent === targetAgent;
+          const sessionID = toolContext?.sessionID;
+          const inPlace = !isScenario && sessionID && toolContext?.agent === targetAgent;
 
           if (inPlace) {
             const checkpointID = bootstrapAgentCheckpoint(sessionID, targetAgent, desc);
             startSessionCheckpoint(sessionID);
             const instruction = takeCurrentStepText(checkpointID);
-            return JSON.stringify({ success: true, mode: 'in-place', checkpointID, agentId: targetAgent, instruction }, null, 2);
+            return { content: JSON.stringify({ success: true, mode: 'in-place', checkpointID, agentId: targetAgent, instruction }, null, 2) };
           }
 
-          // 新建 session：scenario 起首阶段，或单 agent（调用方 agent 与目标不一致）
           const checkpointID = checkpointManager.createCheckpoint(name, desc);
-          // Persist `automation` flag on checkpoint at creation time. Per
-          // revised design (spec §2.4): config changes require restart to
-          // take effect, so reading automation once at workflow_start is
-          // sufficient — no need to query workflow.json on every hook
-          // trigger. The flag travels with the checkpoint through resume.
           if (scenario?.automation === true) {
             const initCp = checkpointManager.getCheckpoint(checkpointID);
             if (initCp) {
@@ -1398,25 +1136,31 @@ export const aetPlugin = async ({ client, directory }) => {
           }
           currentCheckpointID = checkpointID;
           const stageToStart = isScenario ? firstStage : { agent_id: targetAgent, stage_id: targetAgent };
-          await executeStageHandover(stageToStart, desc, checkpointID, null, context?.sessionID);
-          return JSON.stringify({ success: true, mode: 'new-session', checkpointID, stage: stageToStart.stage_id || stageToStart.agent_id }, null, 2);
+          await executeStageHandover(stageToStart, desc, checkpointID, null, toolContext?.sessionID);
+          return { content: JSON.stringify({ success: true, mode: 'new-session', checkpointID, stage: stageToStart.stage_id || stageToStart.agent_id }, null, 2) };
         },
-      }),
+      });
 
-      checkpoint_resume: tool({
+      // 4. checkpoint_resume
+      editor.add({
+        name: 'checkpoint_resume',
         description: '恢复指定的 workflow checkpoint',
-        args: {
-          checkpointID: tool.schema.string().optional().describe('要恢复的 checkpoint ID'),
-          stage: tool.schema.string().optional().describe('恢复到指定阶段（可选）'),
-          step: tool.schema.string().optional().describe('恢复到指定步骤（可选）'),
+        input: {
+          type: 'object',
+          properties: {
+            checkpointID: { type: 'string', description: '要恢复的 checkpoint ID' },
+            stage: { type: 'string', description: '恢复到指定阶段（可选）' },
+            step: { type: 'string', description: '恢复到指定步骤（可选）' },
+          },
+          required: [],
+          additionalProperties: false,
         },
-        async execute(args, context) {
+        async execute(input, toolContext) {
           if (!checkpointManager) {
-            return JSON.stringify({ success: false, error: 'CheckpointManager not initialized' }, null, 2);
+            return { content: JSON.stringify({ success: false, error: 'CheckpointManager not initialized' }, null, 2) };
           }
 
-          // 如果没有指定 checkpointID，尝试从 interrupted 列表中找最新的
-          let targetCheckpointID = args.checkpointID;
+          let targetCheckpointID = input.checkpointID;
           if (!targetCheckpointID) {
             const index = checkpointManager.loadIndex();
             if (index.interrupted.length > 0) {
@@ -1427,46 +1171,44 @@ export const aetPlugin = async ({ client, directory }) => {
           }
 
           if (!targetCheckpointID) {
-            return JSON.stringify({ success: false, error: 'No checkpoint to resume' }, null, 2);
+            return { content: JSON.stringify({ success: false, error: 'No checkpoint to resume' }, null, 2) };
           }
 
           const checkpoint = checkpointManager.getCheckpoint(targetCheckpointID);
           if (!checkpoint) {
-            return JSON.stringify({ success: false, error: `Checkpoint ${targetCheckpointID} not found` }, null, 2);
+            return { content: JSON.stringify({ success: false, error: `Checkpoint ${targetCheckpointID} not found` }, null, 2) };
           }
 
           if (checkpoint.workflow.status === 'completed') {
-            return JSON.stringify({ success: false, error: 'Checkpoint already completed' }, null, 2);
+            return { content: JSON.stringify({ success: false, error: 'Checkpoint already completed' }, null, 2) };
           }
 
-          const targetStage = args.stage || checkpoint.workflow.currentStage;
+          const targetStage = input.stage || checkpoint.workflow.currentStage;
           const execution = checkpointManager.getCurrentExecution(checkpoint, targetStage);
           const targetAgent = execution?.agentId || targetStage;
 
-          // 当前会话 agent 与 checkpoint 目标 agent 一致 → 就地恢复，复用当前 session（命令直入场景）
-          if (context?.sessionID && context?.agent && context.agent === targetAgent) {
-            resumeAgentCheckpointInPlace(context.sessionID, targetCheckpointID);
-            startSessionCheckpoint(context.sessionID);
+          if (toolContext?.sessionID && toolContext?.agent && toolContext.agent === targetAgent) {
+            resumeAgentCheckpointInPlace(toolContext.sessionID, targetCheckpointID);
+            startSessionCheckpoint(toolContext.sessionID);
             const instruction = takeCurrentStepText(targetCheckpointID);
             const cp = checkpointManager.getCheckpoint(targetCheckpointID);
             const ex = checkpointManager.getCurrentExecution(cp, cp.workflow.currentStage);
-            return JSON.stringify({
+            return { content: JSON.stringify({
               success: true,
               mode: 'in-place',
               checkpointID: targetCheckpointID,
               stage: cp.workflow.currentStage,
               step: ex?.currentStep || null,
               instruction,
-            }, null, 2);
+            }, null, 2) };
           }
 
-          // 否则新建 session 恢复（router 等：当前会话 agent 与目标不一致）
           currentCheckpointID = targetCheckpointID;
           checkpointManager.updateCheckpoint(targetCheckpointID, {
             interruptedAt: null,
             workflow: { status: 'in_progress' },
           });
-          const resumePrompt = checkpointManager.getResumePrompt(targetCheckpointID, args.stage, args.step);
+          const resumePrompt = checkpointManager.getResumePrompt(targetCheckpointID, input.stage, input.step);
           const originalContext = execution?.context;
 
           if (execution) {
@@ -1475,66 +1217,77 @@ export const aetPlugin = async ({ client, directory }) => {
               originalContext,
               targetCheckpointID,
               resumePrompt,
-              context?.sessionID
+              toolContext?.sessionID
             );
           } else {
             const stages = workflowEngine.getScenarioWorkflow(checkpoint.workflow.name);
             const stageConfig = stages.find(s => (s.stage_id || s.agent_id) === targetStage);
             if (stageConfig) {
-              await executeStageHandover(stageConfig, originalContext, targetCheckpointID, resumePrompt, context?.sessionID);
+              await executeStageHandover(stageConfig, originalContext, targetCheckpointID, resumePrompt, toolContext?.sessionID);
             }
           }
 
-          return JSON.stringify({
+          return { content: JSON.stringify({
             success: true,
             mode: 'new-session',
             checkpointID: targetCheckpointID,
             stage: targetStage,
-            step: args.step || checkpointManager.getCurrentStepId(checkpoint),
-          }, null, 2);
+            step: input.step || checkpointManager.getCurrentStepId(checkpoint),
+          }, null, 2) };
         },
-      }),
+      });
 
-      agent_handover: tool({
+      // 5. agent_handover
+      editor.add({
+        name: 'agent_handover',
         description: 'Advance to the next agent stage, or jump to a specific stage. Example: agent_handover({ context: "Summary: completed design.\nNext: implement the feature based on design." }) or agent_handover({ context: "...", stage: "aet-implement" })',
-        args: {
-          context: tool.schema.string().min(1).describe('Required. Summary of current stage + task for next stage.'),
-          stage: tool.schema.string().optional().describe('Optional. Target stage_id/agent_id to jump to (instead of the immediate next stage). Defaults to the next stage.'),
+        input: {
+          type: 'object',
+          properties: {
+            context: {
+              type: 'string',
+              minLength: 1,
+              description: 'Required. Summary of current stage + task for next stage.',
+            },
+            stage: {
+              type: 'string',
+              description: 'Optional. Target stage_id/agent_id to jump to (instead of the immediate next stage). Defaults to the next stage.',
+            },
+          },
+          required: ['context'],
+          additionalProperties: false,
         },
-        async execute(args, context) {
-          const { context: ctx } = args;
-          if (!ctx || ctx.trim().length === 0) {
-            return JSON.stringify({
+        async execute(input, toolContext) {
+          const ctx_ = input.context;
+          if (!ctx_ || ctx_.trim().length === 0) {
+            return { content: JSON.stringify({
               success: false,
               error: 'context is required. Please provide: 1) Summary of current stage work. 2) Task for next stage.'
-            }, null, 2);
+            }, null, 2) };
           }
 
           if (!currentCheckpointID || !checkpointManager) {
-            return JSON.stringify({ success: false, error: 'No active workflow' }, null, 2);
+            return { content: JSON.stringify({ success: false, error: 'No active workflow' }, null, 2) };
           }
 
-          // 如果是从中断恢复，清除中断状态
           ensureCheckpointRunning(currentCheckpointID);
 
           const checkpoint = checkpointManager.getCheckpoint(currentCheckpointID);
           if (!checkpoint) {
-            return JSON.stringify({ success: false, error: 'No active checkpoint' }, null, 2);
+            return { content: JSON.stringify({ success: false, error: 'No active checkpoint' }, null, 2) };
           }
 
-          // 标记当前阶段完成
           if (checkpoint.workflow.currentStage) {
-            checkpointManager.completeExecution(currentCheckpointID, checkpoint.workflow.currentStage, ctx);
+            checkpointManager.completeExecution(currentCheckpointID, checkpoint.workflow.currentStage, ctx_);
           }
 
-          // 确定目标阶段：指定 stage 则跳转，否则取下一阶段
           const stages = workflowEngine.getScenarioWorkflow(checkpoint.workflow.name);
           let nextStage;
-          if (args.stage) {
-            nextStage = stages.find(s => (s.stage_id || s.agent_id) === args.stage);
+          if (input.stage) {
+            nextStage = stages.find(s => (s.stage_id || s.agent_id) === input.stage);
             if (!nextStage) {
               const avail = stages.map(s => s.stage_id || s.agent_id).join(', ') || '(none)';
-              return JSON.stringify({ success: false, error: `stage "${args.stage}" not found. Available: ${avail}` }, null, 2);
+              return { content: JSON.stringify({ success: false, error: `stage "${input.stage}" not found. Available: ${avail}` }, null, 2) };
             }
           } else {
             const currentIdx = stages.findIndex(s => (s.stage_id || s.agent_id) === checkpoint.workflow.currentStage);
@@ -1542,103 +1295,125 @@ export const aetPlugin = async ({ client, directory }) => {
           }
 
           if (!nextStage) {
-            // Workflow 完成
             checkpointManager.completeCheckpoint(currentCheckpointID);
             currentCheckpointID = null;
             collaborationId = null;
-            return JSON.stringify({ success: true, done: true, message: 'Workflow completed' }, null, 2);
+            return { content: JSON.stringify({ success: true, done: true, message: 'Workflow completed' }, null, 2) };
           }
 
-          await executeStageHandover(nextStage, ctx, currentCheckpointID, null, context?.sessionID);
+          await executeStageHandover(nextStage, ctx_, currentCheckpointID, null, toolContext?.sessionID);
 
-          return JSON.stringify({ success: true, stage: nextStage.stage_id || nextStage.agent_id }, null, 2);
+          return { content: JSON.stringify({ success: true, stage: nextStage.stage_id || nextStage.agent_id }, null, 2) };
         },
-      }),
+      });
 
-      step_handover: tool({
+      // 6. step_handover
+      editor.add({
+        name: 'step_handover',
         description: 'Hand over to the next step within the current agent, or jump to a specific step. Examples: step_handover({ context: "Completed analysis." }) | step_handover({ context: "...", step: "development_plan" }) | step_handover({ context: "Skipped optional step." })\n\n⚠️ WARNING: The `end` parameter TERMINATES THE ENTIRE WORKFLOW — all remaining steps and stages are permanently skipped, the checkpoint is archived, and the workflow cannot be resumed. ONLY use `end=true` when the user has EXPLICITLY and CLEARLY requested to abort/terminate the whole workflow. NEVER use it just to finish a step or mark a step as complete — use `step_handover({ context: "..." })` without `end` for that.',
-        args: {
-          context: tool.schema.string().min(1).describe('Required. Summary of current step work to pass to the next step, or final summary when ending early.'),
-          step: tool.schema.string().optional().describe('Optional. Target step_id to jump to (forward to skip steps, or backward to redo). Defaults to the next step. Ignored when end=true.'),
-          end: tool.schema.boolean().optional().describe('⚠️ DANGER — DO NOT use unless the user explicitly requests to terminate the ENTIRE workflow. This ends ALL remaining steps/stages permanently (skipped & archived, no resume). For completing a single step, just omit this parameter. Confusing "finish a step" with "end the workflow" is the #1 misuse of this parameter.'),
+        input: {
+          type: 'object',
+          properties: {
+            context: {
+              type: 'string',
+              minLength: 1,
+              description: 'Required. Summary of current step work to pass to the next step, or final summary when ending early.',
+            },
+            step: {
+              type: 'string',
+              description: 'Optional. Target step_id to jump to (forward to skip steps, or backward to redo). Defaults to the next step. Ignored when end=true.',
+            },
+            end: {
+              type: 'boolean',
+              description: '⚠️ DANGER — DO NOT use unless the user explicitly requests to terminate the ENTIRE workflow. This ends ALL remaining steps/stages permanently (skipped & archived, no resume). For completing a single step, just omit this parameter. Confusing "finish a step" with "end the workflow" is the #1 misuse of this parameter.',
+            },
+          },
+          required: ['context'],
+          additionalProperties: false,
         },
-        async execute(args, context) {
-          const { context: ctx, end } = args;
-          if (!ctx || ctx.trim().length === 0) {
-            return JSON.stringify({
+        async execute(input, toolContext) {
+          const ctx_ = input.context;
+          const end = input.end;
+          if (!ctx_ || ctx_.trim().length === 0) {
+            return { content: JSON.stringify({
               success: false,
               error: 'context is required. Please provide a summary of the current step work.'
-            }, null, 2);
+            }, null, 2) };
           }
 
           if (!currentCheckpointID || !checkpointManager) {
-            return JSON.stringify({ success: false, error: 'No active workflow' }, null, 2);
+            return { content: JSON.stringify({ success: false, error: 'No active workflow' }, null, 2) };
           }
 
-          // 如果是从中断恢复，清除中断状态
           ensureCheckpointRunning(currentCheckpointID);
 
-          const sessionID = context.sessionID;
+          const sessionID = toolContext.sessionID;
           const sessionAgent = resolveSessionAgent(sessionID, null);
 
           const checkpoint = checkpointManager.getCheckpoint(currentCheckpointID);
           if (!checkpoint || !checkpoint.workflow.currentStage) {
-            return JSON.stringify({ success: false, error: 'No active stage' }, null, 2);
+            return { content: JSON.stringify({ success: false, error: 'No active stage' }, null, 2) };
           }
 
           const agentConfig = configManager.getAgentConfig(sessionAgent);
           if (!agentConfig?.workflow || agentConfig.workflow.length === 0) {
-            return JSON.stringify({ success: false, error: 'Current agent has no steps configured' }, null, 2);
+            return { content: JSON.stringify({ success: false, error: 'Current agent has no steps configured' }, null, 2) };
           }
 
           let handoverContext = {};
           try {
-            handoverContext = JSON.parse(ctx);
+            handoverContext = JSON.parse(ctx_);
           } catch {
-            handoverContext = { summary: ctx };
+            handoverContext = { summary: ctx_ };
           }
 
-          // 提前结束工作流
           if (end) {
-            checkpointManager.completeExecution(currentCheckpointID, checkpoint.workflow.currentStage, ctx);
+            checkpointManager.completeExecution(currentCheckpointID, checkpoint.workflow.currentStage, ctx_);
             checkpointManager.skipRemainingSteps(currentCheckpointID, checkpoint.workflow.currentStage);
             checkpointManager.completeCheckpoint(currentCheckpointID);
             currentCheckpointID = null;
-            return JSON.stringify({
+            return { content: JSON.stringify({
               success: true,
               done: true,
               endedEarly: true,
               message: 'Workflow ended early. Remaining steps skipped and checkpoint archived.',
-            }, null, 2);
+            }, null, 2) };
           }
 
-          // 校验跳转目标 step 存在
-          if (args.step) {
-            const exists = agentConfig.workflow.some(s => (s.step_id || s.name) === args.step);
+          if (input.step) {
+            const exists = agentConfig.workflow.some(s => (s.step_id || s.name) === input.step);
             if (!exists) {
               const avail = agentConfig.workflow.map(s => s.step_id || s.name).join(', ');
-              return JSON.stringify({ success: false, error: `step "${args.step}" not found. Available: ${avail}` }, null, 2);
+              return { content: JSON.stringify({ success: false, error: `step "${input.step}" not found. Available: ${avail}` }, null, 2) };
             }
           }
 
-          await advanceToNextStep(sessionID, sessionAgent, agentConfig, currentCheckpointID, checkpoint.workflow.currentStage, handoverContext, args.step || null);
+          await advanceToNextStep(sessionID, sessionAgent, agentConfig, currentCheckpointID, checkpoint.workflow.currentStage, handoverContext, input.step || null);
 
           const currentStepInfo = checkpointManager.getCurrentStep(currentCheckpointID, checkpoint.workflow.currentStage);
           if (!currentStepInfo) {
-            return JSON.stringify({
+            return { content: JSON.stringify({
               success: true,
               done: true,
               message: 'All steps completed'
-            }, null, 2);
+            }, null, 2) };
           }
 
-          return JSON.stringify({ success: true }, null, 2);
+          return { content: JSON.stringify({ success: true }, null, 2) };
         },
-      }),
-      trace_enable: tool({
+      });
+
+      // 7. trace_enable
+      editor.add({
+        name: 'trace_enable',
         description: 'Enable LLM request/response trace logging. Sets trace.enabled=true in ~/.aet/config.json. All future LLM calls will be recorded to ~/.aet/log/trace/',
-        args: {},
-        async execute(args, context) {
+        input: {
+          type: 'object',
+          properties: {},
+          required: [],
+          additionalProperties: false,
+        },
+        async execute(input) {
           const globalConfigPath = path.join(os.homedir(), '.aet', 'config.json');
           try {
             let config = {};
@@ -1649,26 +1424,33 @@ export const aetPlugin = async ({ client, directory }) => {
             config.trace.enabled = true;
             fs.mkdirSync(path.dirname(globalConfigPath), { recursive: true });
             fs.writeFileSync(globalConfigPath, JSON.stringify(config, null, 2));
-            // Invalidate cached global config so next check picks up the change
             configManager.invalidateGlobalConfig();
-            return JSON.stringify({
+            return { content: JSON.stringify({
               success: true,
               enabled: true,
               traceDir: TRACE_DIR,
               message: 'Trace logging enabled. LLM calls will be recorded to ~/.aet/log/trace/',
-            }, null, 2);
+            }, null, 2) };
           } catch (err) {
-            return JSON.stringify({
+            return { content: JSON.stringify({
               success: false,
               error: `Failed to update global config: ${err.message}`,
-            }, null, 2);
+            }, null, 2) };
           }
         },
-      }),
-      trace_disable: tool({
+      });
+
+      // 8. trace_disable
+      editor.add({
+        name: 'trace_disable',
         description: 'Disable LLM request/response trace logging. Sets trace.enabled=false in ~/.aet/config.json. No new LLM calls will be recorded.',
-        args: {},
-        async execute(args, context) {
+        input: {
+          type: 'object',
+          properties: {},
+          required: [],
+          additionalProperties: false,
+        },
+        async execute(input) {
           const globalConfigPath = path.join(os.homedir(), '.aet', 'config.json');
           try {
             let config = {};
@@ -1679,25 +1461,32 @@ export const aetPlugin = async ({ client, directory }) => {
             config.trace.enabled = false;
             fs.mkdirSync(path.dirname(globalConfigPath), { recursive: true });
             fs.writeFileSync(globalConfigPath, JSON.stringify(config, null, 2));
-            // Invalidate cached global config so next check picks up the change
             configManager.invalidateGlobalConfig();
-            return JSON.stringify({
+            return { content: JSON.stringify({
               success: true,
               enabled: false,
               message: 'Trace logging disabled. No new LLM calls will be recorded.',
-            }, null, 2);
+            }, null, 2) };
           } catch (err) {
-            return JSON.stringify({
+            return { content: JSON.stringify({
               success: false,
               error: `Failed to update global config: ${err.message}`,
-            }, null, 2);
+            }, null, 2) };
           }
         },
-      }),
-      trace_status: tool({
+      });
+
+      // 9. trace_status
+      editor.add({
+        name: 'trace_status',
         description: 'Check the current trace logging status. Shows whether trace is enabled/disabled and the trace directory location.',
-        args: {},
-        async execute(args, context) {
+        input: {
+          type: 'object',
+          properties: {},
+          required: [],
+          additionalProperties: false,
+        },
+        async execute(input) {
           const enabled = configManager.isTraceEnabled();
           const globalConfig = configManager.getGlobalConfig();
           const traceDirExists = fs.existsSync(TRACE_DIR);
@@ -1708,33 +1497,151 @@ export const aetPlugin = async ({ client, directory }) => {
               sessionCount = entries.filter(e => e.startsWith('ses_') && fs.statSync(path.join(TRACE_DIR, e)).isDirectory()).length;
             } catch { /* ignore */ }
           }
-          return JSON.stringify({
+          return { content: JSON.stringify({
             enabled,
             traceDir: TRACE_DIR,
             traceDirExists,
             recordedSessions: sessionCount,
             globalConfigTrace: globalConfig?.trace || null,
-          }, null, 2);
+          }, null, 2) };
         },
-      }),
-    },
+      });
 
-    "experimental.chat.system.transform": async (input, output) => {
+      return editor;
+    });
+
+    // ============================================
+    // T007: prompt hook（合并斜杠命令路由与 session 生命周期，D-003）
+    // ============================================
+    await ctx.session.hook("prompt", async (event) => {
+      const sessionID = event?.sessionID;
+      if (!sessionID) return;
+
+      const promptText = decodePromptText(event?.prompt?.text).text;
+
+      // ── Phase A: 斜杠命令解析与路由 ──
+      const slashAgentId = resolveSlashCommandAgent(promptText);
+      if (slashAgentId) {
+        pendingCheckpointCmd.set(sessionID, {
+          command: promptText.match(/^\s*\/\S+/)?.[0] || promptText,
+          agentId: slashAgentId,
+          arguments: promptText.replace(/^\s*\/\S+\s*/, '').trim(),
+        });
+
+        // 自动化信号预检：该命令的 agentId 是否映射到 automation scenario
+        try {
+          const scenarios = configManager?.getScenarios?.() || {};
+          const mapsToAutomation = Object.values(scenarios).some(sc =>
+            sc && sc.automation === true &&
+            Array.isArray(sc.workflow) &&
+            sc.workflow.length > 0 &&
+            (sc.workflow[0]?.agent_id === slashAgentId || sc.workflow[0]?.stage_id === slashAgentId)
+          );
+          pendingAutomationDirective.delete(sessionID);
+          if (mapsToAutomation) {
+            pendingAutomationDirective.set(sessionID, true);
+            lastAutomationSessionID = sessionID;
+          }
+        } catch { /* configManager not ready — skip */ }
+      }
+
+      // ── Phase B: session checkpoint 生命周期 + first-message step 注入 ──
+      // 命令直入（/design、/implement）：最优先处理
+      if (checkpointManager && pendingCheckpointCmd.has(sessionID)) {
+        const pending = pendingCheckpointCmd.get(sessionID);
+        pendingCheckpointCmd.delete(sessionID);
+        const agentId = pending.agentId;
+        const agentConfig = configManager.getAgentConfig(agentId);
+        const alreadyBound = checkpointManager.findCheckpointBySessionID(sessionID);
+        if (!alreadyBound && agentConfig?.workflow && agentConfig.workflow.length > 0) {
+          // 切换会话 agent 到命令指定的 agent（替代 V1 的 message.agent 赋值）
+          try {
+            await ctx.session.switchAgent({ sessionID, agent: agentId });
+          } catch (err) {
+            console.error('[AET] switchAgent error:', err.message);
+          }
+          try {
+            const desc = (pending.arguments || '').trim();
+            const candidates = listAgentResumableCheckpoints(agentId);
+            if (candidates.length === 0) {
+              // 无历史：插件直接就地建 checkpoint 并发第一步
+              closeSessionCheckpoint(sessionID);
+              startSessionCheckpoint(sessionID);
+              const cid = bootstrapAgentCheckpoint(sessionID, agentId, desc);
+              if (cid) {
+                const stepText = takeCurrentStepText(cid);
+                if (stepText) appendPromptText(event, `\n\n${stepText}`);
+              }
+            } else {
+              // 有历史：列出候选，让模型判断 + 找用户确认
+              appendPromptText(event, buildCommandEntryPrompt(agentId, desc, candidates));
+            }
+          } catch (e) {
+            console.error('[AET] command checkpoint entry error:', e.message);
+          }
+          return;
+        }
+      }
+
+      // 获取 workflow 当前阶段的 agent，有就 switchAgent，没有就不动
+      let workflowAgent = null;
+      if (checkpointManager && currentCheckpointID) {
+        const checkpoint = checkpointManager.getCheckpoint(currentCheckpointID);
+        if (checkpoint && checkpoint.workflow.status === 'in_progress') {
+          const currentStage = checkpoint.workflow.currentStage;
+          const execution = checkpointManager.getCurrentExecution(checkpoint, currentStage);
+          workflowAgent = execution?.agentId;
+        }
+      }
+
+      if (workflowAgent) {
+        try {
+          await ctx.session.switchAgent({ sessionID, agent: workflowAgent });
+        } catch (err) {
+          console.error('[AET] switchAgent workflow error:', err.message);
+        }
+      }
+
+      // 正常处理消息
+      closeSessionCheckpoint(sessionID);
+      startSessionCheckpoint(sessionID);
+
+      // 检查是否从中断恢复
+      let targetCheckpointID = currentCheckpointID;
+      if (!targetCheckpointID && checkpointManager) {
+        targetCheckpointID = checkpointManager.findCheckpointBySessionID(sessionID);
+        if (targetCheckpointID) {
+          currentCheckpointID = targetCheckpointID;
+        }
+      }
+      if (targetCheckpointID) {
+        ensureCheckpointRunning(targetCheckpointID);
+      }
+
+      // 追踪当前 agent
+      const finalAgent = workflowAgent || resolveSessionAgent(sessionID, null);
+      if (finalAgent) {
+        currentAgentId = finalAgent;
+      }
+
+      // 如果是第一条消息且有 active checkpoint，注入当前 step 信息
+      try {
+        const msgs = await ctx.session.context({ sessionID });
+        const msgCount = msgs?.length || 0;
+        if (msgCount <= 1 && finalAgent && targetCheckpointID) {
+          const stepText = takeCurrentStepText(targetCheckpointID);
+          if (stepText) appendPromptText(event, `\n\n${stepText}`);
+        }
+      } catch (err) {
+        console.error('[AET] prompt hook context error:', err.message);
+      }
+    });
+
+    // ============================================
+    // T007: context hook（系统提示注入）
+    // ============================================
+    await ctx.session.hook("context", (event) => {
       // Automation mode directive injection — INDEPENDENT of project-analysis
-      // channel. Must always run when an automation-mode checkpoint is active,
-      // regardless of whether project-analysis is enabled / present. Otherwise
-      // projects that disable project-analysis would never get the directive
-      // and the agent in automation mode would still call the question tool,
-      // blocking the workflow.
-      //
-      // Two signals:
-      //   1. Active checkpoint with workflow.automation === true (set at
-      //      workflow_start time by Option A persistence).
-      //   2. pendingAutomationDirective map — set by command.execute.before
-      //      when user invokes a command whose agentId is the first agent
-      //      of an automation-mode scenario. Covers the pre-workflow_start
-      //      window where agent does proactive checkpoint comparison / resume
-      //      detection and would otherwise ask user for confirmation.
       {
         let injectDirective = false;
         // Signal 1: active automation checkpoint
@@ -1743,15 +1650,12 @@ export const aetPlugin = async ({ client, directory }) => {
           injectDirective = true;
         }
         // Signal 2: pending command maps to automation scenario
-        // experimental.chat.system.transform fires per chat; input.sessionID
-        // is the current chat session. Fallback to lastAutomationSessionID
-        // (set by command.execute.before) if input.sessionID is unavailable.
-        const directiveSessionID = input?.sessionID || lastAutomationSessionID;
+        const directiveSessionID = event?.sessionID || lastAutomationSessionID;
         if (!injectDirective && directiveSessionID && pendingAutomationDirective.get(directiveSessionID)) {
           injectDirective = true;
         }
         if (injectDirective) {
-          output.system.push(
+          pushText(event.system,
             `<aet-run-mode>automation</aet-run-mode>
 <aet-run-mode-directive>
 本会话处于自动化模式。禁止调用 question 工具向用户提问。
@@ -1764,23 +1668,160 @@ export const aetPlugin = async ({ client, directory }) => {
         }
       }
 
-      // Project-analysis injection (orthogonal to automation mode —
-      // gated by its own enable flag and folder presence).
+      // Project-analysis injection（与 automation 正交，受独立开关控制）
       const config = configManager.config;
       const enabled = config.projectAnalysis?.enabled !== false;
       if (!enabled) {
         return;
       }
-      const hasProjectAnalysis = detectProjectAnalysisFolder(pluginDirectory);
+      const hasProjectAnalysis = detectProjectAnalysisFolder(directory);
       if (!hasProjectAnalysis) {
         return;
       }
-      const projectAnalysisContent = formatProjectAnalysis(pluginDirectory);
+      const projectAnalysisContent = formatProjectAnalysis(directory);
       if (!projectAnalysisContent) {
         return;
       }
-      output.system.push(projectAnalysisContent);
-    },
-  };
-};
+      pushText(event.system, projectAnalysisContent);
+    });
 
+    // ============================================
+    // event hook → ctx.event.subscribe（D-004）
+    // AbortController 用于在 cleanup 时中止 async-iterator 订阅。
+    // ============================================
+    const abortController = new AbortController();
+    (async () => {
+      for await (const event of ctx.event.subscribe({ signal: abortController.signal })) {
+        try {
+          // V1 message.updated + MessageAbortedError → V2 session.execution.interrupted
+          if (event.type === 'session.execution.interrupted') {
+            const sessionID = event.data?.sessionID;
+            if (sessionID) {
+              markSessionCheckpointInterrupted(sessionID);
+              if (currentCheckpointID && checkpointManager) {
+                checkpointManager.interruptCheckpoint(currentCheckpointID, 'User aborted execution');
+              }
+            }
+            continue;
+          }
+
+          // session.status: idle / busy 推进
+          if (event.type === 'session.status') {
+            const sessionID = event.data?.sessionID;
+            const status = event.data?.status;
+            if (!sessionID || !status) continue;
+
+            const sessionAgent = resolveSessionAgent(sessionID, null);
+            const sessionCheckpoint = getCurrentSessionCheckpoint(sessionID);
+
+            if (status.type === 'idle') {
+              if (sessionCheckpoint?.state === SessionCheckpointState.INTERRUPTED) {
+                closeSessionCheckpoint(sessionID);
+                continue;
+              }
+
+              if (currentCheckpointID && checkpointManager) {
+                const checkpoint = checkpointManager.getCheckpoint(currentCheckpointID);
+                if (checkpoint?.workflow?.status === 'interrupted') {
+                  closeSessionCheckpoint(sessionID);
+                  continue;
+                }
+                const execution = checkpointManager.getCurrentExecution(checkpoint, checkpoint.workflow.currentStage);
+                if (execution?.status === 'interrupted') {
+                  closeSessionCheckpoint(sessionID);
+                  continue;
+                }
+              }
+
+              if (currentCheckpointID && checkpointManager) {
+                const checkpoint = checkpointManager.getCheckpoint(currentCheckpointID);
+                if (checkpoint && checkpoint.workflow.currentStage) {
+                  const execution = checkpointManager.getCurrentExecution(checkpoint, checkpoint.workflow.currentStage);
+                  if (execution && execution.sessionID === sessionID) {
+                    const agentConfig = configManager.getAgentConfig(sessionAgent);
+                    const hasSteps = agentConfig?.workflow && agentConfig.workflow.length > 0;
+                    const currentStepInfo = checkpointManager.getCurrentStep(currentCheckpointID, checkpoint.workflow.currentStage);
+
+                    const hasMoreSteps = currentStepInfo && agentConfig.workflow.findIndex(s => (s.step_id || s.name) === currentStepInfo.stepId) < agentConfig.workflow.length - 1;
+
+                    if (sessionCheckpoint?.state === SessionCheckpointState.RUNNING) {
+                      sessionCheckpoint.state = SessionCheckpointState.PENDING_IDLE;
+                      const expectedCheckpointID = sessionCheckpoint.checkpointID;
+                      if (hasSteps && hasMoreSteps) {
+                        void settleStepIdleRun(sessionID, expectedCheckpointID, sessionAgent, agentConfig, currentCheckpointID, checkpoint.workflow.currentStage);
+                      } else {
+                        checkpointManager.completeExecution(currentCheckpointID, checkpoint.workflow.currentStage, 'Stage completed');
+                        const stages = workflowEngine.getScenarioWorkflow(checkpoint.workflow.name);
+                        const fullStageConfig = stages.find(s => (s.stage_id || s.agent_id) === checkpoint.workflow.currentStage);
+                        void settleIdleRun(sessionID, expectedCheckpointID, fullStageConfig || { agent_id: sessionAgent, stage_id: checkpoint.workflow.currentStage }, currentCheckpointID);
+                      }
+                      continue;
+                    }
+
+                    if (sessionCheckpoint?.state === SessionCheckpointState.PENDING_IDLE) {
+                      const expectedCheckpointID = sessionCheckpoint.checkpointID;
+                      if (sessionCheckpoint.state === SessionCheckpointState.INTERRUPTED) {
+                        closeSessionCheckpoint(sessionID);
+                        continue;
+                      }
+                      sessionCheckpoint.state = SessionCheckpointState.COMPLETED;
+                      closeSessionCheckpoint(sessionID);
+                      if (hasSteps && hasMoreSteps) {
+                        await triggerStepAfterHook(sessionID, sessionAgent, agentConfig, currentCheckpointID, checkpoint.workflow.currentStage);
+                      } else {
+                        const stages = workflowEngine.getScenarioWorkflow(checkpoint.workflow.name);
+                        const fullStageConfig = stages.find(s => (s.stage_id || s.agent_id) === checkpoint.workflow.currentStage);
+                        const currentIdx = stages.findIndex(s => (s.stage_id || s.agent_id) === checkpoint.workflow.currentStage);
+                        const nextStage = stages[currentIdx + 1];
+                        if (!nextStage) {
+                          checkpointManager.completeCheckpoint(currentCheckpointID);
+                          currentCheckpointID = null;
+                          collaborationId = null;
+                        } else {
+                          await triggerAfterHook(sessionID, fullStageConfig || { agent_id: sessionAgent, stage_id: checkpoint.workflow.currentStage }, currentCheckpointID);
+                        }
+                      }
+                    }
+                    continue;
+                  }
+                }
+              }
+
+              // 不在 workflow 中，单独 agent 执行
+              const agentConfig = configManager.getAgentConfig(sessionAgent);
+              if (agentConfig?.workflow && agentConfig.workflow.length > 0) {
+                // TODO: 处理单独 agent 的 step workflow
+              }
+
+              closeSessionCheckpoint(sessionID);
+            } else if (status.type === 'busy') {
+              if (sessionCheckpoint?.state === SessionCheckpointState.PENDING_IDLE) {
+                sessionCheckpoint.state = SessionCheckpointState.RUNNING;
+              }
+            }
+          }
+        } catch (err) {
+          console.error('[AET] event handler error:', err?.message || err);
+        }
+      }
+    })().catch(err => console.error('[AET] event subscribe error:', err));
+
+    // ============================================
+    // cleanup
+    // ============================================
+    return () => {
+      abortController.abort();
+      try { traceLogger.uninstall?.(); } catch { /* ignore */ }
+    };
+  },
+});
+
+// ============================================
+// Helpers
+// ============================================
+
+// 向 event.system 数组推送文本（V2 契约：必须为 {type:'text', text} 对象）
+function pushText(systemArr, text) {
+  if (!Array.isArray(systemArr)) return;
+  systemArr.push({ type: 'text', text });
+}

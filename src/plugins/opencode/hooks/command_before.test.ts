@@ -11,11 +11,30 @@ vi.mock('../json_to_op.js', () => ({ applyResult }));
 
 import { registerCommandBeforeHook } from './command_before.js';
 
-function makeCtx(): { ctx: PluginContext; hook: (input: unknown, output: unknown) => Promise<void>; log: ReturnType<typeof vi.fn> } {
-  const log = vi.fn(async () => {});
-  const ctx = { client: { app: { log } } } as unknown as PluginContext;
-  const hook = registerCommandBeforeHook(ctx);
-  return { ctx, hook, log };
+interface CapturedPromptHook {
+  (event: { sessionID: string; prompt: { text: string } }): Promise<void>;
+}
+
+function makeCtx(): {
+  ctx: PluginContext;
+  hook: CapturedPromptHook;
+  sessionHook: ReturnType<typeof vi.fn>;
+} {
+  const sessionHook = vi.fn(async (name: string, cb: CapturedPromptHook) => {
+    capturedHook = cb;
+    return { dispose: vi.fn() };
+  });
+  let capturedHook: CapturedPromptHook = vi.fn() as unknown as CapturedPromptHook;
+  const ctx = { session: { hook: sessionHook } } as unknown as PluginContext;
+  // registerCommandBeforeHook awaits ctx.session.hook and captures the callback;
+  // we expose it via a closure so tests can invoke it with a payload.
+  return {
+    ctx,
+    sessionHook,
+    get hook() {
+      return capturedHook;
+    },
+  } as unknown as { ctx: PluginContext; hook: CapturedPromptHook; sessionHook: ReturnType<typeof vi.fn> };
 }
 
 function okResult(): CommandResult {
@@ -27,31 +46,65 @@ function okResult(): CommandResult {
   };
 }
 
-describe('command.execute.before', () => {
-  beforeEach(() => {
+describe('V2 ctx.session.hook("prompt") — slash command routing', () => {
+  beforeEach(async () => {
     vi.clearAllMocks();
   });
 
-  it('runs command-init for a registered command and applies events in-hook', async () => {
-    const { ctx, hook } = makeCtx();
+  it('runs command-init for a slash command and applies events (mutates event.prompt.text)', async () => {
+    const { ctx, sessionHook } = makeCtx();
     runAetSafe.mockResolvedValue(okResult());
-    const output = { parts: [] as unknown[] };
-    await hook({ command: 'design', sessionID: 's', arguments: '' }, output);
+    applyResult.mockImplementation(async (_ctx: unknown, _r: unknown, _mode: string, output: { parts: { type: string; text: string }[] }) => {
+      output.parts.push({ type: 'text', text: '## banner\nstep-1 task' });
+    });
+    await registerCommandBeforeHook(ctx);
+
+    expect(sessionHook).toHaveBeenCalledWith('prompt', expect.any(Function));
+    const cb = sessionHook.mock.calls[0][1] as CapturedPromptHook;
+    const event = { sessionID: 's', prompt: { text: '/design' } };
+    await cb(event);
 
     expect(runAetSafe).toHaveBeenCalledWith(
       ['workflow', 'command-init', '--name', 'design', '--session-id', 's'],
       { cwd: expect.any(String) },
     );
-    expect(applyResult).toHaveBeenCalledWith(ctx, expect.objectContaining({ ok: true }), 'in-hook', {
-      parts: output.parts,
-    });
+    // applyResult was called with ctx, the result, 'in-hook', and a parts array.
+    // (The mock impl pushes to the parts array by reference, so we check the
+    // call shape with expect.objectContaining rather than a literal empty array.)
+    expect(applyResult).toHaveBeenCalledWith(ctx, expect.objectContaining({ ok: true }), 'in-hook', expect.objectContaining({ parts: expect.any(Array) }));
+    // event.prompt.text was replaced with the assembled agent-visible text.
+    expect(event.prompt.text).toBe('## banner\nstep-1 task');
   });
 
-  it('forwards the user arguments as --argument when present (string)', async () => {
-    const { hook } = makeCtx();
+  it('decodes the JSON-encoded prompt text V2 sends and re-encodes the result', async () => {
+    const { ctx, sessionHook } = makeCtx();
     runAetSafe.mockResolvedValue(okResult());
-    const output = { parts: [] as unknown[] };
-    await hook({ command: 'design', sessionID: 's', arguments: '做一个登录功能' }, output);
+    applyResult.mockImplementation(async (_ctx: unknown, _r: unknown, _mode: string, output: { parts: { type: string; text: string }[] }) => {
+      output.parts.push({ type: 'text', text: '## banner\nstep-1 task' });
+    });
+    await registerCommandBeforeHook(ctx);
+
+    const cb = sessionHook.mock.calls[0][1] as CapturedPromptHook;
+    const event = { sessionID: 's', prompt: { text: JSON.stringify('/design') } };
+    await cb(event);
+
+    // The slash command is recognized despite the JSON quoting.
+    expect(runAetSafe).toHaveBeenCalledWith(
+      ['workflow', 'command-init', '--name', 'design', '--session-id', 's'],
+      { cwd: expect.any(String) },
+    );
+    // The written-back text keeps the original JSON encoding.
+    expect(event.prompt.text).toBe(JSON.stringify('## banner\nstep-1 task'));
+  });
+
+  it('forwards the user arguments as --argument when present', async () => {
+    const { ctx, sessionHook } = makeCtx();
+    runAetSafe.mockResolvedValue(okResult());
+    applyResult.mockImplementation(async () => {});
+    await registerCommandBeforeHook(ctx);
+    const cb = sessionHook.mock.calls[0][1] as CapturedPromptHook;
+    const event = { sessionID: 's', prompt: { text: '/design 做一个登录功能' } };
+    await cb(event);
 
     expect(runAetSafe).toHaveBeenCalledWith(
       ['workflow', 'command-init', '--name', 'design', '--argument', '做一个登录功能', '--session-id', 's'],
@@ -59,23 +112,14 @@ describe('command.execute.before', () => {
     );
   });
 
-  it('forwards the user arguments as --argument when present (string[])', async () => {
-    const { hook } = makeCtx();
-    runAetSafe.mockResolvedValue(okResult());
-    const output = { parts: [] as unknown[] };
-    await hook({ command: 'design', sessionID: 's', arguments: ['做一个', '登录功能'] }, output);
-
-    expect(runAetSafe).toHaveBeenCalledWith(
-      ['workflow', 'command-init', '--name', 'design', '--argument', '做一个 登录功能', '--session-id', 's'],
-      { cwd: expect.any(String) },
-    );
-  });
-
   it('omits --argument when arguments is whitespace-only', async () => {
-    const { hook } = makeCtx();
+    const { ctx, sessionHook } = makeCtx();
     runAetSafe.mockResolvedValue(okResult());
-    const output = { parts: [] as unknown[] };
-    await hook({ command: 'design', sessionID: 's', arguments: '   ' }, output);
+    applyResult.mockImplementation(async () => {});
+    await registerCommandBeforeHook(ctx);
+    const cb = sessionHook.mock.calls[0][1] as CapturedPromptHook;
+    const event = { sessionID: 's', prompt: { text: '/design   ' } };
+    await cb(event);
 
     expect(runAetSafe).toHaveBeenCalledWith(
       ['workflow', 'command-init', '--name', 'design', '--session-id', 's'],
@@ -83,46 +127,58 @@ describe('command.execute.before', () => {
     );
   });
 
-  it('passes through (no injection) on UNKNOWN_WORKFLOW', async () => {
-    const { hook } = makeCtx();
+  it('passes through (no prompt mutation) on UNKNOWN_WORKFLOW', async () => {
+    const { ctx, sessionHook } = makeCtx();
     runAetSafe.mockResolvedValue({
       ok: false,
       prompt: 'ERROR: UNKNOWN_WORKFLOW — no such workflow',
       events: [],
       error: { code: 'UNKNOWN_WORKFLOW', message: 'no such workflow' },
     });
-    const output = { parts: [] as unknown[] };
-    await hook({ command: 'aet-unknown', sessionID: 's', arguments: '' }, output);
+    await registerCommandBeforeHook(ctx);
+    const cb = sessionHook.mock.calls[0][1] as CapturedPromptHook;
+    const event = { sessionID: 's', prompt: { text: '/aet-unknown' } };
+    await cb(event);
 
     expect(applyResult).not.toHaveBeenCalled();
-    expect(output.parts).toEqual([]);
+    // prompt.text left unchanged (pass-through to native command execute).
+    expect(event.prompt.text).toBe('/aet-unknown');
   });
 
   it('passes /init through (no bootstrap injection, native command expansion)', async () => {
-    const { hook } = makeCtx();
+    const { ctx, sessionHook } = makeCtx();
     runAetSafe.mockResolvedValue({
       ok: false,
       prompt: 'ERROR: UNKNOWN_WORKFLOW — no such workflow',
       events: [],
       error: { code: 'UNKNOWN_WORKFLOW', message: 'no such workflow' },
     });
-    const output = { parts: [] as unknown[] };
-    await hook({ command: 'init', sessionID: 's', arguments: '' }, output);
+    await registerCommandBeforeHook(ctx);
+    const cb = sessionHook.mock.calls[0][1] as CapturedPromptHook;
+    const event = { sessionID: 's', prompt: { text: '/init' } };
+    await cb(event);
 
-    // /init passes through to native command rendering (init.md → aet-install
-    // skill); no bootstrap text is injected by the hook.
     expect(runAetSafe).toHaveBeenCalledWith(
       ['workflow', 'command-init', '--name', 'init', '--session-id', 's'],
       { cwd: expect.any(String) },
     );
     expect(applyResult).not.toHaveBeenCalled();
-    expect(output.parts).toEqual([]);
+    expect(event.prompt.text).toBe('/init');
   });
 
-  it('bails on a malformed payload without spawning', async () => {
-    const { hook, log } = makeCtx();
-    await hook({ command: '', sessionID: 's' }, { parts: [] });
+  it('bails on a non-slash prompt without spawning', async () => {
+    const { ctx, sessionHook } = makeCtx();
+    await registerCommandBeforeHook(ctx);
+    const cb = sessionHook.mock.calls[0][1] as CapturedPromptHook;
+    await cb({ sessionID: 's', prompt: { text: 'just a question' } });
     expect(runAetSafe).not.toHaveBeenCalled();
-    expect(log).toHaveBeenCalled();
+  });
+
+  it('bails on an empty prompt text without spawning', async () => {
+    const { ctx, sessionHook } = makeCtx();
+    await registerCommandBeforeHook(ctx);
+    const cb = sessionHook.mock.calls[0][1] as CapturedPromptHook;
+    await cb({ sessionID: 's', prompt: { text: '' } });
+    expect(runAetSafe).not.toHaveBeenCalled();
   });
 });

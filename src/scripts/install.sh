@@ -23,7 +23,7 @@
 #      - claude:   claude plugin marketplace add ./dist/plugins/claude-code + claude plugin install aet@aet
 #      - codeagent: codeagent plugin marketplace add ./dist/plugins/codeagent3 + codeagent plugin install aet@aet
 #                   （CLI 检测 codeagent / codeagentcli / ~/codeagentcli，找不到则交互问）
-#      - opencode: 把 <repo>/dist/plugins/opencode 加进 ~/.config/opencode/opencode.json
+#      - opencode: 把 <repo>/.opencode/plugins/aet.js 链接到 ~/.config/opencode/plugins/aet.js
 #      - codex:    codex plugin marketplace add ./dist/plugins/codex + codex plugin install aet
 #      - omp:      omp marketplace add ./dist/plugins/omp + omp install aet@aet
 #
@@ -46,7 +46,7 @@ OPENCODE_CONFIG="$OPENCODE_CONFIG_DIR/opencode.json"
 PLUGINS=(
   "claude|Claude Code|claude plugin marketplace add ./dist/plugins/claude-code + install aet@aet"
   "codeagent|CodeAgent3|codeagent plugin marketplace add ./dist/plugins/codeagent3 + install aet@aet"
-  "opencode|OpenCode|写入 ~/.config/opencode/opencode.json 的 plugin 数组"
+  "opencode|OpenCode|建立 ~/.config/opencode/plugins/aet.js 符号链接（V2 目录自动发现）"
   "codex|Codex|codex plugin marketplace add ./dist/plugins/codex"
   "omp|omp (Oh My Pi)|omp marketplace add ./dist/plugins/omp + omp install aet@aet"
 )
@@ -321,18 +321,16 @@ install_configs() {
 # ======================================================================
 # Step 4: 插件安装
 # ======================================================================
-# opencode JSON 合并：把 $2（绝对路径）加入 $1（json 文件）的 plugin 数组
-# 文件不存在则新建; 路径已存在则跳过。用 node 保证 JSON 正确性。
-opencode_add_plugin() {
-    local cfg="$1" plugin_path="$2"
-    # 用 node 保证 JSON 正确性。成功时把绝对路径打到 stdout（由调用方
-    # $(...) 捕获进 added）；失败时（如现有 opencode.json 是 jsonc 含
-    # 注释/尾随逗号或损坏）把干净的诊断打到 stderr 并以非零退出，让
-    # 调用方的 `|| return 1` 触发——避免 JSON.parse 抛出的原始栈跟踪
-    # 在命令替换中丢失，用户看不到 opencode 安装失败的原因。
+# opencode V2 配置迁移：把 V1 的 `plugin` 数组改名为 V2 的 `plugins`，
+# 并剔除 V2 无法解析的本地路径条目——V2 只把 plugins 里的字符串当包规格
+# （npm/git）处理，本地绝对路径会被拼成 "<path>@latest" 然后报
+# "Plugin entrypoint not found"。V2 的本地插件靠目录自动发现，见
+# install_opencode。用 node 保证 JSON 正确性。
+opencode_migrate_config() {
+    local cfg="$1"
     node -e '
         const fs = require("fs");
-        const [cfg, pluginPath] = process.argv.slice(1);
+        const [cfg] = process.argv.slice(1);
         let obj = {};
         if (fs.existsSync(cfg)) {
             const raw = fs.readFileSync(cfg, "utf8");
@@ -341,18 +339,28 @@ opencode_add_plugin() {
             } catch (e) {
                 console.error("opencode.json 解析失败: " + e.message);
                 console.error("  路径: " + cfg);
-                console.error("  若文件是 jsonc（含注释/尾随逗号），请手动把以下路径加入 plugin 数组:");
-                console.error("  " + pluginPath);
                 process.exit(1);
             }
         }
-        if (!Array.isArray(obj.plugin)) obj.plugin = [];
-        const abs = require("path").resolve(pluginPath);
-        if (!obj.plugin.includes(abs)) obj.plugin.push(abs);
+        let changed = false;
+        if (Array.isArray(obj.plugin)) {
+            if (!Array.isArray(obj.plugins)) obj.plugins = [];
+            for (const entry of obj.plugin) {
+                if (typeof entry === "string" && !obj.plugins.includes(entry)) obj.plugins.push(entry);
+            }
+            delete obj.plugin;
+            changed = true;
+        }
+        if (Array.isArray(obj.plugins)) {
+            const before = obj.plugins.length;
+            obj.plugins = obj.plugins.filter((entry) => typeof entry !== "string" || !entry.startsWith("/"));
+            if (obj.plugins.length !== before) changed = true;
+        }
+        if (!changed) { console.log(""); process.exit(0); }
         fs.mkdirSync(require("path").dirname(cfg), { recursive: true });
         fs.writeFileSync(cfg, JSON.stringify(obj, null, 2) + "\n");
-        console.log(abs);
-    ' "$cfg" "$plugin_path"
+        console.log("已迁移 opencode.json: plugin → plugins");
+    ' "$cfg"
 }
 
 install_claude() {
@@ -411,19 +419,50 @@ install_codeagent() {
 
 install_opencode() {
     command -v opencode >/dev/null 2>&1 || { log_warn "未检测到 opencode CLI，跳过"; return 1; }
-    local target="$REPO_ROOT/dist/plugins/opencode"
-    if [ ! -d "$target" ]; then
-        log_warn "插件目录缺失: ${target}（先确保 dist 已构建）"
+
+    # 版本检测：AET 插件仅支持 opencode V2+(V2 是破坏性重写,V1 的 server()
+    # factory 入口与 V2 的 Plugin.define({setup}) 入口不兼容)。V1 host 加载
+    # V2 plugin 会 silent skip 或报 "Plugin must export server function",
+    # 导致用户装了但用不了(/design 不触发 workflow)。检测到 V1 时明确拒绝,
+    # 引导用户升级或保留旧版 AET。
+    local ver_raw ver_major
+    ver_raw="$(opencode --version 2>/dev/null | head -1)" || ver_raw=""
+    # 提取版本号首个数字段(兼容 "opencode v2.2.5" / "opencode 1.18.32" / "v2.2.5" 等格式)
+    ver_major="$(printf '%s' "$ver_raw" | grep -oE '[0-9]+' | head -1)"
+    if [ -z "$ver_major" ]; then
+        log_warn "无法解析 opencode 版本(\"$ver_raw\"),假设为 V2 继续安装"
+        log_warn "若安装后 /design 等斜杠命令不触发 workflow,请检查 opencode 版本(需 V2+)"
+    elif [ "$ver_major" -lt 2 ]; then
+        log_warn "检测到 opencode V$ver_major(\"$ver_raw\"),AET 插件仅支持 opencode V2+"
+        log_warn "V2 是破坏性重写,V1 的 server() factory 入口与 V2 的 Plugin.define 不兼容"
+        log_warn "请执行: opencode upgrade"
+        log_warn "或保留旧版 AET(不再维护,不支持 V2 特性)"
         return 1
     fi
+
+    # V2 的本地插件靠目录自动发现：~/.config/opencode/plugins/*.js 会被加载。
+    # 配置文件里的 plugins 数组只接受包规格（npm/git），写本地路径会被当成
+    # npm 包拼 "@latest" 后报 "Plugin entrypoint not found"。因此 V2 的安装
+    # 动作是建立符号链接，而不是往配置里写路径。
+    local plugin_src="$REPO_ROOT/.opencode/plugins/aet.js"
+    if [ ! -f "$plugin_src" ]; then
+        log_warn "部署版插件缺失: ${plugin_src}"
+        return 1
+    fi
+    mkdir -p "$OPENCODE_CONFIG_DIR/plugins"
+    ln -sfn "$plugin_src" "$OPENCODE_CONFIG_DIR/plugins/aet.js"
+    log_ok "已建立插件符号链接: $OPENCODE_CONFIG_DIR/plugins/aet.js -> $plugin_src"
+
     if [ ! -f "$OPENCODE_CONFIG" ] && [ -f "$OPENCODE_CONFIG_DIR/opencode.jsonc" ]; then
         log_warn "存在 $OPENCODE_CONFIG_DIR/opencode.jsonc 但无 opencode.json"
-        log_warn "请手动把 \"$target\" 加进 opencode.jsonc 的 plugin 数组"
-        return 1
+        log_warn "请手动把 opencode.jsonc 里的 plugin 数组改名为 plugins"
+        return 0
     fi
-    local added
-    added="$(opencode_add_plugin "$OPENCODE_CONFIG" "$target")" || return 1
-    log_ok "已把插件目录写入 opencode.json: $added"
+    local migrated
+    migrated="$(opencode_migrate_config "$OPENCODE_CONFIG")" || return 1
+    [ -n "$migrated" ] && log_ok "$migrated"
+    log_info "opencode 还需要 agent/skill 资产，执行: aet plugin init --agent opencode -g"
+    return 0
 }
 
 install_codex() {
@@ -479,7 +518,7 @@ summary() {
     printf '  · aet CLI:    npm unlink -g aet-cli\n'
     printf '  · claude:     claude plugin uninstall aet@aet\n'
     printf '  · codeagent:  codeagent plugin uninstall aet@aet\n'
-    printf '  · opencode:   从 opencode.json 的 plugin 数组移除该路径\n'
+    printf '  · opencode:   删除 ~/.config/opencode/plugins/aet.js 符号链接\n'
     printf '  · codex:      codex plugin uninstall aet\n'
     printf '  · omp:        omp uninstall aet\n'
     printf '\n'

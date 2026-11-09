@@ -4,8 +4,8 @@
  * OpenCode plugin (op_plugin) tunable constants per 新方案.md §1.2 / §2.3.
  *
  * The plugin's only runtime touchpoint with the AET Core is the `aet` CLI
- * binary (Layer 3). All host API calls go through OpenCode's Plugin API
- * (ctx.client / output mutation).
+ * binary (Layer 3). All host API calls go through OpenCode's V2 Plugin API
+ * (ctx domain methods + event mutation).
  *
  * The CLI binary is resolved at call time (see cli.ts `resolveAetBin`) so
  * env overrides (AET_BIN) take effect per spawn.

@@ -74,9 +74,10 @@ export const PLUGINS_NOTE = `AET plugins (Layer 2):
                         tool.execute.before/after (passive), event,
                         experimental.chat.system.transform
                  build: dist/plugins/opencode/ (self-contained package,
-                        package.json main → bin/aet_handler.js)
-                 install: plugin: ["<abs-path>/dist/plugins/opencode"] in opencode.json,
-                          or cp -r dist/plugins/opencode ~/.config/opencode/plugin/aet
+                        package.json exports["."] → index.js at package root)
+                 install: cp -r dist/plugins/opencode ~/.config/opencode/plugins/aet
+                          (V2 discovers local plugins from ~/.config/opencode/plugins/;
+                           the opencode.json "plugins" array only accepts package specs)
 
   claude-code  CC Hooks config + shell handler — partial capability
                  hooks: UserPromptSubmit, PreToolUse, PostToolUse, SessionStart
