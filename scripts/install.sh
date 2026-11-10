@@ -266,6 +266,112 @@ opencode_create_commands_symlinks() {
     fi
 }
 
+# 物化 AET agents 到 ~/.config/opencode/agents/<name>.md
+# 独立于插件 runtime —— 不依赖 ~/.aet/config.json 或 workflow template
+# 复刻 aet.js 的 formatAgentMarkdown / buildV2Permissions 逻辑(D-006)
+opencode_materialize_agents() {
+    local aet_dir="$HOME/.config/opencode/aet"
+    local agents_target_dir="$HOME/.config/opencode/agents"
+
+    log_info "物化 AET agents..."
+
+    mkdir -p "$agents_target_dir" || log_error "无法创建 agents 目录: $agents_target_dir"
+
+    # 幂等:清理旧 aet-*.md(只动 aet- 前缀,不碰用户自有 agent)
+    rm -f "$agents_target_dir"/aet-*.md 2>/dev/null
+
+    AET_AGENTS_SRC="$aet_dir/agents" \
+    AET_AGENTS_TARGET="$agents_target_dir" \
+    node --input-type=module <<'NODE_EOF'
+import { readdirSync, existsSync, writeFileSync } from 'fs';
+import { join } from 'path';
+import { pathToFileURL } from 'url';
+
+const srcDir = process.env.AET_AGENTS_SRC;
+const targetDir = process.env.AET_AGENTS_TARGET;
+
+// 加载 agents/*/index.js(模块仅 import fs/path/url,无副作用,安全)
+const agents = [];
+for (const e of readdirSync(srcDir, { withFileTypes: true })) {
+  if (!e.isDirectory()) continue;
+  const idx = join(srcDir, e.name, 'index.js');
+  if (!existsSync(idx)) continue;
+  const mod = await import(pathToFileURL(idx).href);
+  const def = Object.values(mod)[0];
+  if (def?.name) agents.push(def);
+}
+
+// V1 permission 对象 → V2 permissions 数组(allow→ask→deny,last-match-wins)
+function buildV2Permissions(p) {
+  const base = { question: 'allow', ...(p || {}) };
+  if (base.agent_handover === 'allow') base.agent_handover = 'deny'; // 与 aet.js 一致
+  const allow = [], ask = [], deny = [];
+  for (const [action, effect] of Object.entries(base)) {
+    const rule = { action, resource: '*', effect };
+    if (effect === 'allow') allow.push(rule);
+    else if (effect === 'ask') ask.push(rule);
+    else if (effect === 'deny') deny.push(rule);
+  }
+  return [...allow, ...ask, ...deny];
+}
+
+// 极简 YAML 序列化(仅 frontmatter,值类型受限)
+function scalar(v) {
+  if (typeof v === 'boolean') return v ? 'true' : 'false';
+  if (typeof v === 'number') return String(v);
+  if (typeof v === 'string') return /^[\w\-./]+$/.test(v) ? v : JSON.stringify(v);
+  return JSON.stringify(v);
+}
+function blockMap(obj, pad) {
+  const es = Object.entries(obj);
+  if (!es.length) return `${pad}- {}\n`;
+  let out = `${pad}- ${es[0][0]}: ${scalar(es[0][1])}\n`;
+  for (const [k, v] of es.slice(1)) out += `${pad}  ${k}: ${scalar(v)}\n`;
+  return out;
+}
+function stringify(obj, indent = 0) {
+  const pad = '  '.repeat(indent);
+  let out = '';
+  for (const [k, v] of Object.entries(obj)) {
+    if (v == null) continue;
+    if (Array.isArray(v)) {
+      if (!v.length) continue;
+      out += `${pad}${k}:\n`;
+      for (const it of v) out += (it && typeof it === 'object') ? blockMap(it, pad) : `${pad}- ${scalar(it)}\n`;
+    } else if (typeof v === 'object') {
+      out += `${pad}${k}:\n` + stringify(v, indent + 1);
+    } else {
+      out += `${pad}${k}: ${scalar(v)}\n`;
+    }
+  }
+  return out;
+}
+function formatMarkdown(def) {
+  const fm = { description: def.description || '', mode: def.mode || 'primary' };
+  if (def.model) fm.model = def.model;
+  if (def.hidden !== undefined) fm.hidden = def.hidden;
+  if (def.color) fm.color = def.color;
+  if (def.steps !== undefined) fm.steps = def.steps;
+  const perms = buildV2Permissions(def.permission);
+  if (perms.length) fm.permissions = perms;
+  return `---\n${stringify(fm)}---\n\n${def.prompt || ''}\n`;
+}
+
+let n = 0;
+for (const def of agents) {
+  if (!def.name.startsWith('aet-')) continue; // 只管 aet- 前缀
+  writeFileSync(join(targetDir, `${def.name}.md`), formatMarkdown(def));
+  n++;
+}
+console.log(`[AET install] materialized ${n} agents`);
+NODE_EOF
+
+    if [ ! -f "$agents_target_dir/aet-design.md" ]; then
+        log_error "agent 物化失败: aet-design.md 未生成"
+    fi
+    log_success "AET agents 物化完成"
+}
+
 # 全局配置初始化
 init_global_config() {
     log_info "检查全局配置..."
@@ -375,6 +481,11 @@ opencode_verify_installation() {
     # 检查至少有一个commands符号链接
     if [ ! -L "$HOME/.config/opencode/commands/aet-init.md" ]; then
         log_error "commands符号链接不存在"
+    fi
+
+    # 检查 agents 已物化
+    if [ ! -f "$HOME/.config/opencode/agents/aet-design.md" ]; then
+        log_error "agents 物化验证失败: aet-design.md 不存在"
     fi
     
     log_success "安装验证通过"
@@ -705,6 +816,7 @@ opencode_main() {
     fi
     opencode_create_directories
     opencode_create_commands_symlinks
+    opencode_materialize_agents
     opencode_verify_installation
 
     # 安装知识图谱工具
