@@ -31,7 +31,7 @@ AET 通过多智能体编排、断点恢复和可配置工作流解决上述问�
 
 ### Q3. AET 中的 Agent 和 Skill 有什么区别？
 
-- **Agent（智能体）** — 专门负责开发流程特定阶段的 AI 助手。AET 预置 8 个 Agent：Router、PRD、Design、Implement、Test、Bugfix、Doc、Release，每个 Agent 有独立的系统提示词，针对其阶段优化。
+- **Agent（智能体）** — 专门负责开发流程特定阶段的 AI 助手。AET 预置 8 个 Agent：Router、Design、Implement、Test、Bugfix、Doc、Release、General，每个 Agent 有独立的系统提示词，针对其阶段优化。
 - **Skill（技能）** — AET 的核心功能单元，分三个层级：
   - 命令 Skill — 用户入口，通过斜杠命令触发（如 `/aet-init`、`/aet-auto`、`/aet-bugfix`）
   - 编排 Skill — 协调子流程，组合多个 Skill（如 `aet-operating-pr`、`aet-reviewing-code`）
@@ -240,7 +240,7 @@ ls -la ~/.config/opencode/commands/aet-*.md
 3. 链接 9 个命令文件到 `~/.xiaoo/commands/`
 4. 链接 12 个工具文件到 `~/.xiaoo/tools/`
 5. 链接 3 个 xiaoO 专用 JS 文件
-6. 链接 42 个 Skills 到 `~/.xiaoo/skills/`
+6. 链接 Skills 到 `~/.xiaoo/skills/`
 7. 配置项目目录（输入项目根目录绝对路径）
 8. 初始化全局配置（`~/.aet/config.json`）
 9. 启动 xiaoO daemon

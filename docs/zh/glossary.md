@@ -6,7 +6,7 @@
 
 | 术语 | 说明 |
 | :--- | :--- |
-| **Agent（智能体）** | 专门负责开发流程特定阶段的 AI 助手。AET 预置 8 个 Agent：Router、PRD、Design、Implement、Test、Bugfix、Doc、Release。 |
+| **Agent（智能体）** | 专门负责开发流程特定阶段的 AI 助手。AET 预置 8 个 Agent：Router、Design、Implement、Test、Bugfix、Doc、Release、General。 |
 | **Skill（技能）** | AET 的核心功能单元，分为命令 Skill（用户入口）、编排 Skill（协调子流程）、原子 Skill（单一职责）三个层级。 |
 | **Scenario（场景）** | 不同类型的开发流程，如 feature（功能开发）、bugfix（Bug修复）、release（版本发布）。 |
 | **Workflow（工作流）** | Agent 之间的协作流程定义。由多个 Agent 顺序执行，每个 Agent 前后可配置 Hook。 |
