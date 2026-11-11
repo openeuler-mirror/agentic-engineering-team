@@ -252,7 +252,7 @@ AET 在项目中创建以下目录结构：
 │   ├── doc/                     # Aet-Doc
 │   ├── release/                 # Aet-Release
 │   └── general/                 # Aet-General
-├── skills/                      # 42 个 Skill 定义
+├── skills/                      # Skill 定义
 ├── commands/                    # 9 个命令定义
 ├── docs/                        # 项目文档
 ├── scripts/                     # 安装和配置脚本

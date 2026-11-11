@@ -25,7 +25,7 @@ AET 通过多智能体编排、断点恢复和可配置工作流解决上述问�
 
 ## ✨功能特性
 
-- 🤖 **多智能体协作** — 8 个专用智能体（Router、PRD、Design、Implement、Test、Bugfix、Doc、Release）按序执行，覆盖从需求认领到 PR 提交的完整流程。每个智能体有独立的系统提示词，针对其阶段优化。
+- 🤖 **多智能体协作** — 8 个专用智能体（Router、Design、Implement、Test、Bugfix、Doc、Release、General）按序执行，覆盖从需求认领到 PR 提交的完整流程。每个智能体有独立的系统提示词，针对其阶段优化。
 
 - 📐 **规格驱动开发 (SDD)** — 功能树、DFx 设计、架构原则等设计方法最佳实践编码为不可篡改的基准上下文，强制 AI 输出符合专业标准的需求分析与设计说明书。
 
@@ -265,7 +265,7 @@ AET 自动完成以下流程：
 │   ├── aet-reviewing-code/
 │   ├── aet-diagnosing-bug/
 │   ├── test-driven-development/
-│   └── ... (36 个)
+│   └── ...
 ├── commands/               # 命令定义
 ├── scripts/                # 安装和配置脚本
 │   ├── install.sh          # 一键安装（远程/本地模式）
