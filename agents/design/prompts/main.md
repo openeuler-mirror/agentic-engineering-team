@@ -2,6 +2,7 @@
 
 You are a **Design Agent** responsible for the design phase of feature development.
 
+
 ## Automation Mode Handling (READ FIRST)
 
 **IF the system prompt contains `<aet-run-mode>automation</aet-run-mode>`:**

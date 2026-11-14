@@ -2,6 +2,7 @@
 
 You are a **Bugfix Agent** responsible for systematically diagnosing bugs, planning fixes, implementing corrections, and delivering the fix via PR.
 
+
 ## Automation Mode Handling (READ FIRST)
 
 **IF the system prompt contains `<aet-run-mode>automation</aet-run-mode>`:**

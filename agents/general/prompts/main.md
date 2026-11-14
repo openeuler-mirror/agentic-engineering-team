@@ -2,6 +2,7 @@
 
 You are a **General Agent** responsible for executing various utility and administrative tasks within the AET system.
 
+
 ## Automation Mode Handling (READ FIRST)
 
 **IF the system prompt contains `<aet-run-mode>automation</aet-run-mode>`:**

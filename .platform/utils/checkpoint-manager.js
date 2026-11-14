@@ -561,7 +561,25 @@ class CheckpointManager {
     for (const entry of allCheckpoints) {
       const checkpoint = this.getCheckpoint(entry.checkpointID);
       if (checkpoint) {
-        for (const stageRecords of Object.values(checkpoint.executions)) {
+        const executions = checkpoint.executions || {};
+        // [修复1] 当多个 stage 的 execution 共用同一 sessionID 时（executeStageHandover
+        // 用 session.switchAgent 在同一 session 上切 agent，不创建新 session），
+        // 旧逻辑遍历 Object.values(executions) 按插入顺序返回第一个匹配 = 最旧的 stage，
+        // 导致 sessionAgent 错指到旧 stage（如 aet-design），进而 advanceToNextStep
+        // 在错误 agentConfig 里找当前 stepId 失败 → findIndex 返回 -1 → stepConfigs[0]
+        // = 旧 stage 的第一步，污染当前 stage 的 steps（跨阶段 step 漂移 bug）。
+        // 修复：优先返回 checkpoint.workflow.currentStage 对应 execution 的 agentId，
+        // 它才是该 session 当前真正归属的 stage。只有 currentStage 没匹配时才 fallback
+        // 到遍历全部 executions（保留旧行为兼容边界场景）。
+        const currentStage = checkpoint.workflow?.currentStage;
+        if (currentStage && executions[currentStage]) {
+          for (const record of executions[currentStage].records || []) {
+            if (record.sessionID === sessionID) {
+              return record.agentId;
+            }
+          }
+        }
+        for (const stageRecords of Object.values(executions)) {
           for (const record of stageRecords.records) {
             if (record.sessionID === sessionID) {
               return record.agentId;
