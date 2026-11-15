@@ -557,10 +557,17 @@ class CheckpointManager {
 
   findAgentBySessionID(sessionID) {
     const index = this.loadIndex();
-    const allCheckpoints = [...index.active, ...index.interrupted];
-    for (const entry of allCheckpoints) {
-      const checkpoint = this.getCheckpoint(entry.checkpointID);
-      if (checkpoint) {
+    // [修复4] 跨 checkpoint 优先级：旧逻辑按 [...active, ...interrupted] 顺序遍历、
+    // 第一个命中即返回。index.active 是 push 追加 = 最旧在前，同一 session 下存在多个
+    // active checkpoint 时（如同 session 先后跑过两个 workflow 且旧的未归档），
+    // 旧 checkpoint 会抢先命中 → 返回旧 stage 的 agentId → 跨阶段漂移。
+    // 改为：active 优先于 interrupted，组内取 updatedAt 最新的那个。
+    const scan = (entries) => {
+      let bestAgent = null;
+      let bestTs = -1;
+      for (const entry of entries) {
+        const checkpoint = this.getCheckpoint(entry.checkpointID);
+        if (!checkpoint) continue;
         const executions = checkpoint.executions || {};
         // [修复1] 当多个 stage 的 execution 共用同一 sessionID 时（executeStageHandover
         // 用 session.switchAgent 在同一 session 上切 agent，不创建新 session），
@@ -572,23 +579,38 @@ class CheckpointManager {
         // 它才是该 session 当前真正归属的 stage。只有 currentStage 没匹配时才 fallback
         // 到遍历全部 executions（保留旧行为兼容边界场景）。
         const currentStage = checkpoint.workflow?.currentStage;
+        let agentId = null;
         if (currentStage && executions[currentStage]) {
           for (const record of executions[currentStage].records || []) {
             if (record.sessionID === sessionID) {
-              return record.agentId;
+              agentId = record.agentId;
+              break;
             }
           }
         }
-        for (const stageRecords of Object.values(executions)) {
-          for (const record of stageRecords.records) {
-            if (record.sessionID === sessionID) {
-              return record.agentId;
+        if (!agentId) {
+          for (const stageRecords of Object.values(executions)) {
+            for (const record of stageRecords.records || []) {
+              if (record.sessionID === sessionID) {
+                agentId = record.agentId;
+                break;
+              }
             }
+            if (agentId) break;
+          }
+        }
+        if (agentId) {
+          const ts = entry.updatedAt ? new Date(entry.updatedAt).getTime() : 0;
+          if (ts > bestTs) {
+            bestTs = ts;
+            bestAgent = agentId;
           }
         }
       }
-    }
-    return null;
+      return bestAgent;
+    };
+    // active 优先于 interrupted：interrupted 是已被用户中断的历史 workflow
+    return scan(index.active) || scan(index.interrupted);
   }
 
   getResumableCheckpoints() {

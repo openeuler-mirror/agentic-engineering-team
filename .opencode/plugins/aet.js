@@ -534,10 +534,12 @@ export default Plugin.define({
         const active = index.active || [];
         if (active.length === 0) return null;
 
-        // Primary: find the checkpoint whose execution record is bound to
-        // the calling session. A checkpoint may have multiple execution
-        // records (one per stage); any match counts.
+        // Primary: 该 session 参与过的 workflow。多个命中时取 updatedAt 最新的 ——
+        // index.active 是 push 追加 = 最旧在前，「第一个命中即返回」会让旧 checkpoint
+        // 抢先命中 → 推进错误的 workflow。（恢复 V1 findLatestActiveAny 的排序语义）
         if (sessionID) {
+          let best = null;
+          let bestTs = -1;
           for (const e of active) {
             if (!e || !e.checkpointID) continue;
             const cp = checkpointManager.getCheckpoint(e.checkpointID);
@@ -547,16 +549,20 @@ export default Plugin.define({
               const records = ex?.records || [];
               for (const r of records) {
                 if (r?.sessionID === sessionID) {
-                  return e.checkpointID;
+                  const ts = e.updatedAt ? new Date(e.updatedAt).getTime() : 0;
+                  if (ts > bestTs) {
+                    bestTs = ts;
+                    best = e.checkpointID;
+                  }
+                  break;
                 }
               }
             }
           }
+          if (best) return best;
         }
 
-        // Fallback: latest updatedAt (only when no sessionID match).
-        // This is the V1 behavior; kept as a safety net for callers that
-        // don't pass a sessionID.
+        // Fallback: latest updatedAt（无 sessionID 命中时的兜底，与 Primary 同一口径）
         let best = null;
         let bestTs = -1;
         for (const e of active) {
@@ -574,6 +580,24 @@ export default Plugin.define({
         console.error('[AET] resolveActiveCheckpointID error:', err?.message || err);
         return null;
       }
+    }
+
+    // [修复5] 解析 checkpoint 当前 stage 所属的 agentId —— agentConfig 的权威来源。
+    //
+    // stage 取自 checkpoint.workflow.currentStage，agentId 就取该 stage 的 execution，
+    // 两者恒定同源。绝不能用「按 session 反查」代替：stage 间的 execution 可能属于
+    // 不同 session（switchAgent 失败兜底会 session.create 新 session），此时任何
+    // 按 session 匹配的口径都选不出正确的 agent。
+    //
+    // @param {string} checkpointID
+    // @returns {{stage: string|null, agentId: string|null}}
+    function resolveStageAgentId(checkpointID) {
+      if (!checkpointManager || !checkpointID) return { stage: null, agentId: null };
+      const checkpoint = checkpointManager.getCheckpoint(checkpointID);
+      const stage = checkpoint?.workflow?.currentStage || null;
+      if (!stage) return { stage: null, agentId: null };
+      const execution = checkpointManager.getCurrentExecution(checkpoint, stage);
+      return { stage, agentId: execution?.agentId || null };
     }
 
     // 有历史时注入：本次任务 + 该 agent 全部可恢复历史记录
@@ -1512,7 +1536,15 @@ export default Plugin.define({
               return { content: JSON.stringify({ success: false, error: 'No active stage' }, null, 2) };
             }
 
-            const agentConfig = configManager.getAgentConfig(sessionAgent);
+            // [修复5] agentConfig 必须与 stage 同源：stage 取自
+            // checkpoint.workflow.currentStage，agentId 就取该 stage 的 execution。
+            // 旧逻辑用 resolveSessionAgent(sessionID) 反查 agentId，来源与 stage 不同源，
+            // 可能命中旧 stage（如 aet-design）→ agentConfig.workflow 里找不到当前
+            // stepId → findIndex = -1 → 退化成 stepConfigs[0] = 别的 stage 的第一步
+            // （跨阶段漂移：开发完成后被拉回「需求分析」）。
+            // 取 currentStage 的 execution.agentId 后，两者恒定一致。
+            const stageAgentId = resolveStageAgentId(activeCheckpointID).agentId || sessionAgent;
+            const agentConfig = configManager.getAgentConfig(stageAgentId);
             if (!agentConfig?.workflow || agentConfig.workflow.length === 0) {
               return { content: JSON.stringify({ success: false, error: 'Current agent has no steps configured' }, null, 2) };
             }
@@ -1545,7 +1577,7 @@ export default Plugin.define({
               }
             }
 
-            await advanceToNextStep(sessionID, sessionAgent, agentConfig, activeCheckpointID, checkpoint.workflow.currentStage, handoverContext, input.step || null);
+            await advanceToNextStep(sessionID, stageAgentId, agentConfig, activeCheckpointID, checkpoint.workflow.currentStage, handoverContext, input.step || null);
 
             const currentStepInfo = checkpointManager.getCurrentStep(activeCheckpointID, checkpoint.workflow.currentStage);
             if (!currentStepInfo) {
@@ -1961,22 +1993,34 @@ export default Plugin.define({
               if (checkpoint && checkpoint.workflow.currentStage) {
                 const execution = checkpointManager.getCurrentExecution(checkpoint, checkpoint.workflow.currentStage);
                 if (execution && execution.sessionID === sessionID) {
-                  const agentConfig = configManager.getAgentConfig(sessionAgent);
+                  // [修复5] 与 step_handover 同源：agentConfig 取当前 stage 的 execution.agentId，
+                  // 而不是按 session 反查（来源不同源 → 可能拿到旧 stage 的 agent）。
+                  const stageAgentId = resolveStageAgentId(currentCheckpointID).agentId || execution.agentId || sessionAgent;
+                  const agentConfig = configManager.getAgentConfig(stageAgentId);
                   const hasSteps = agentConfig?.workflow && agentConfig.workflow.length > 0;
                   const currentStepInfo = checkpointManager.getCurrentStep(currentCheckpointID, checkpoint.workflow.currentStage);
 
-                  const hasMoreSteps = currentStepInfo && agentConfig.workflow.findIndex(s => (s.step_id || s.name) === currentStepInfo.stepId) < agentConfig.workflow.length - 1;
+                  // [修复6] hasMoreSteps 判定：findIndex 返回 -1 表示「当前 step 不在这个
+                  // agentConfig 的 workflow 里」（配置不匹配），不能当成「还有后续」。
+                  // 旧公式 `-1 < length - 1` 恒为 true → 明明是最后一个 step 也被判为
+                  // 还有后续 → 强行 advanceToNextStep → 跨阶段漂移；且 triggerStepAfterHook
+                  // 找不到 stepConfig 时静默 return，导致该 step 永远不被标记完成、
+                  // after hook 永不触发 → workflow 静默卡死。
+                  const stepIdx = currentStepInfo
+                    ? agentConfig.workflow.findIndex(s => (s.step_id || s.name) === currentStepInfo.stepId)
+                    : -1;
+                  const hasMoreSteps = stepIdx !== -1 && stepIdx < agentConfig.workflow.length - 1;
 
                   if (sessionCheckpoint?.state === SessionCheckpointState.RUNNING) {
                     sessionCheckpoint.state = SessionCheckpointState.PENDING_IDLE;
                     const expectedCheckpointID = sessionCheckpoint.checkpointID;
                     if (hasSteps && hasMoreSteps) {
-                      void settleStepIdleRun(sessionID, expectedCheckpointID, sessionAgent, agentConfig, currentCheckpointID, checkpoint.workflow.currentStage);
+                      void settleStepIdleRun(sessionID, expectedCheckpointID, stageAgentId, agentConfig, currentCheckpointID, checkpoint.workflow.currentStage);
                     } else {
                       checkpointManager.completeExecution(currentCheckpointID, checkpoint.workflow.currentStage, 'Stage completed');
                       const stages = workflowEngine.getScenarioWorkflow(checkpoint.workflow.name);
                       const fullStageConfig = stages.find(s => (s.stage_id || s.agent_id) === checkpoint.workflow.currentStage);
-                      void settleIdleRun(sessionID, expectedCheckpointID, fullStageConfig || { agent_id: sessionAgent, stage_id: checkpoint.workflow.currentStage }, currentCheckpointID);
+                      void settleIdleRun(sessionID, expectedCheckpointID, fullStageConfig || { agent_id: stageAgentId, stage_id: checkpoint.workflow.currentStage }, currentCheckpointID);
                     }
                     continue;
                   }
@@ -1990,7 +2034,7 @@ export default Plugin.define({
                     sessionCheckpoint.state = SessionCheckpointState.COMPLETED;
                     closeSessionCheckpoint(sessionID);
                     if (hasSteps && hasMoreSteps) {
-                      await triggerStepAfterHook(sessionID, sessionAgent, agentConfig, currentCheckpointID, checkpoint.workflow.currentStage);
+                      await triggerStepAfterHook(sessionID, stageAgentId, agentConfig, currentCheckpointID, checkpoint.workflow.currentStage);
                     } else {
                       const stages = workflowEngine.getScenarioWorkflow(checkpoint.workflow.name);
                       const fullStageConfig = stages.find(s => (s.stage_id || s.agent_id) === checkpoint.workflow.currentStage);
@@ -2001,7 +2045,7 @@ export default Plugin.define({
                         currentCheckpointID = null;
                         collaborationId = null;
                       } else {
-                        await triggerAfterHook(sessionID, fullStageConfig || { agent_id: sessionAgent, stage_id: checkpoint.workflow.currentStage }, currentCheckpointID);
+                        await triggerAfterHook(sessionID, fullStageConfig || { agent_id: stageAgentId, stage_id: checkpoint.workflow.currentStage }, currentCheckpointID);
                       }
                     }
                     continue;
