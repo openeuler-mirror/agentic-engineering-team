@@ -197,15 +197,16 @@ function getV2AgentsDir() {
 
 // V1 permission 对象 -> V2 permissions 数组 [{action, resource, effect}]
 // 宽规则（allow）在前、例外（deny）在后（last-match-wins）。
-// agent_handover 的 allow→deny 改写在此阶段完成，并维护 agentHandoverAgents Set。
+// Build V2 frontmatter `permissions` from the V1 `permission` map declared in
+// the agent definition. `agent_handover: allow` is kept as-is so the tool is
+// exposed in the Code Mode catalog — agents need it to advance stages.
+// (A prior version force-rewrote allow→deny here "to stop agents calling
+// agent_handover themselves", but that only succeeded in hiding the tool from
+// the catalog entirely, so agents could never advance stages and the workflow
+// dead-looped on the stage-level `confirm` prompt. The `agentHandoverAgents`
+// Set is retained for API compatibility but no longer populated.)
 function buildV2Permissions(v1Permission, agentId, agentHandoverAgents) {
   const base = { question: 'allow', ...(v1Permission || {}) };
-
-  // agent_handover allow→deny 改写
-  if (base.agent_handover === 'allow') {
-    agentHandoverAgents.add(agentId);
-    base.agent_handover = 'deny';
-  }
 
   const allowRules = [];
   const denyRules = [];
@@ -509,6 +510,96 @@ export default Plugin.define({
         .sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
     }
 
+    // ── Session-bound active-checkpoint resolution ──────────────────
+    // Resolve the active checkpoint for the CURRENT session by reading the
+    // on-disk index and finding the in-progress checkpoint whose execution
+    // record has a matching sessionID. This is exact — no "latest updatedAt
+    // wins" guessing — because the session is bound to the workflow at
+    // workflow_start / stage-handover time and stays bound across server
+    // restarts (the sessionID is persisted in the checkpoint file).
+    //
+    // Why not "latest active wins" (V1 findLatestActiveAny style): V1
+    // assumed one active workflow per project root. V2's index accumulates
+    // stale in_progress entries from interrupted/restarted workflows, so
+    // "latest" can pick a different workflow than the one the calling
+    // session belongs to. Session-bound lookup eliminates that ambiguity.
+    //
+    // Fallback: when sessionID is null (shouldn't happen for tool calls,
+    // but defensive), fall back to the latest-updated active entry — this
+    // preserves the old behavior for any non-tool caller.
+    function resolveActiveCheckpointID(sessionID) {
+      if (!checkpointManager) return null;
+      try {
+        const index = checkpointManager.loadIndex();
+        const active = index.active || [];
+        if (active.length === 0) return null;
+
+        // Primary: 该 session 参与过的 workflow。多个命中时取 updatedAt 最新的 ——
+        // index.active 是 push 追加 = 最旧在前，「第一个命中即返回」会让旧 checkpoint
+        // 抢先命中 → 推进错误的 workflow。（恢复 V1 findLatestActiveAny 的排序语义）
+        if (sessionID) {
+          let best = null;
+          let bestTs = -1;
+          for (const e of active) {
+            if (!e || !e.checkpointID) continue;
+            const cp = checkpointManager.getCheckpoint(e.checkpointID);
+            if (!cp || cp.workflow?.status === 'completed') continue;
+            const executions = cp.executions || {};
+            for (const ex of Object.values(executions)) {
+              const records = ex?.records || [];
+              for (const r of records) {
+                if (r?.sessionID === sessionID) {
+                  const ts = e.updatedAt ? new Date(e.updatedAt).getTime() : 0;
+                  if (ts > bestTs) {
+                    bestTs = ts;
+                    best = e.checkpointID;
+                  }
+                  break;
+                }
+              }
+            }
+          }
+          if (best) return best;
+        }
+
+        // Fallback: latest updatedAt（无 sessionID 命中时的兜底，与 Primary 同一口径）
+        let best = null;
+        let bestTs = -1;
+        for (const e of active) {
+          if (!e || !e.checkpointID) continue;
+          const cp = checkpointManager.getCheckpoint(e.checkpointID);
+          if (!cp || cp.workflow?.status === 'completed') continue;
+          const ts = e.updatedAt ? new Date(e.updatedAt).getTime() : 0;
+          if (ts > bestTs) {
+            bestTs = ts;
+            best = e.checkpointID;
+          }
+        }
+        return best;
+      } catch (err) {
+        console.error('[AET] resolveActiveCheckpointID error:', err?.message || err);
+        return null;
+      }
+    }
+
+    // [修复5] 解析 checkpoint 当前 stage 所属的 agentId —— agentConfig 的权威来源。
+    //
+    // stage 取自 checkpoint.workflow.currentStage，agentId 就取该 stage 的 execution，
+    // 两者恒定同源。绝不能用「按 session 反查」代替：stage 间的 execution 可能属于
+    // 不同 session（switchAgent 失败兜底会 session.create 新 session），此时任何
+    // 按 session 匹配的口径都选不出正确的 agent。
+    //
+    // @param {string} checkpointID
+    // @returns {{stage: string|null, agentId: string|null}}
+    function resolveStageAgentId(checkpointID) {
+      if (!checkpointManager || !checkpointID) return { stage: null, agentId: null };
+      const checkpoint = checkpointManager.getCheckpoint(checkpointID);
+      const stage = checkpoint?.workflow?.currentStage || null;
+      if (!stage) return { stage: null, agentId: null };
+      const execution = checkpointManager.getCurrentExecution(checkpoint, stage);
+      return { stage, agentId: execution?.agentId || null };
+    }
+
     // 有历史时注入：本次任务 + 该 agent 全部可恢复历史记录
     function buildCommandEntryPrompt(agentId, desc, candidates) {
       let p = `\n\n## 本次任务\n${desc || '(无描述)'}\n\n`;
@@ -527,6 +618,28 @@ export default Plugin.define({
     }
 
     // 取出「当前 step 任务（+ 上一步 context）」文本，并把该 step 置 in_progress（幂等）。
+    // 构造 step 任务体：任务描述 + 工作流全景 + 推进协议。
+    // 两处 prompt（takeCurrentStepText / sendStepPrompt）
+    // 与 executeStageHandover 的初始 prompt 共用，确保 agent 始终知道
+    // 自己在工作流中的位置，以及完成后必须调用 step_handover 推进。
+    function buildStepTaskBody(stepConfig, agentId) {
+      const agentConfig = configManager.getAgentConfig(agentId);
+      const workflow = agentConfig?.workflow || [];
+      let text = `## Please continue executing this step:\nStep name:\n${stepConfig.name}\nTask:\n${stepConfig.description}`;
+
+      if (workflow.length > 0) {
+        const currentId = stepConfig.step_id || stepConfig.name;
+        const idx = workflow.findIndex(s => (s.step_id || s.name) === currentId);
+        const stepList = workflow
+          .map((s, i) => `${i + 1}. ${s.step_id || s.name}${i === idx ? ' ← current step' : ''}`)
+          .join('\n');
+        text += `\n\n## Stage workflow (step ${idx + 1}/${workflow.length}):\n${stepList}`;
+      }
+
+      text += `\n\n## Step Completion Protocol (CRITICAL)\nWhen — and ONLY when — this step's deliverable is complete, you MUST call the \`step_handover\` tool to advance the workflow:\n\nstep_handover({ context: "Summary of what was accomplished in this step, key decisions, and handover notes for the next step" })\n\n- The workflow does NOT advance automatically. If you finish your output WITHOUT calling step_handover, the ENTIRE workflow stalls.\n- Do NOT call step_handover before this step's deliverable is actually complete.\n- NEVER pass end=true unless the user EXPLICITLY requested to abort the ENTIRE workflow.\n- After you call step_handover, the next step's instruction will be delivered to you automatically.`;
+      return text;
+    }
+
     function takeCurrentStepText(checkpointID) {
       const checkpoint = checkpointManager.getCheckpoint(checkpointID);
       if (!checkpoint) return null;
@@ -545,7 +658,7 @@ export default Plugin.define({
       const stepConfig = agentConfig.workflow.find(s => (s.step_id || s.name) === currentStepId);
       if (!stepConfig) return null;
 
-      let text = `## Please continue executing this step:\nStep name:\n${stepConfig.name}\nTask:\n${stepConfig.description}`;
+      let text = buildStepTaskBody(stepConfig, execution.agentId);
       if (currentStepState.context) {
         text += `\n\n## Context from previous steps:\n${asText(currentStepState.context)}`;
       }
@@ -602,81 +715,27 @@ export default Plugin.define({
     // Stage / Step Handover（使用 ctx.session）
     // ============================================
 
-    async function createSessionForClearIfNeeded(oldSessionID, agentId, checkpointID, stage, updateCheckpoint = true) {
-      try {
-        const createResult = await session.create({
-          title: `${agentId} - ${stage} Stage (context cleared)`,
-        });
-        const newSessionID = createResult?.id;
-        if (!newSessionID) {
-          console.error('[AET] Failed to create new session for clear=true');
-          return oldSessionID;
-        }
-
-        // 上传协作事件到 agent-insight 平台
-        if (agentInsightClient?.enabled) {
-          if (!collaborationId) {
-            collaborationId = generateCollaborationId();
-          }
-          const fromAgent = currentAgentId || agentId;
-          const toAgent = agentId;
-          await agentInsightClient.uploadEvent({
-            collaborationId,
-            eventId: generateEventId(),
-            fromSessionId: oldSessionID,
-            toSessionId: newSessionID,
-            description: `${fromAgent} → ${toAgent}: ${stage} 阶段清上下文重建 session`,
-            observedAt: new Date().toISOString(),
-          });
-        }
-
-        if (updateCheckpoint) {
-          const checkpoint = checkpointManager.getCheckpoint(checkpointID);
-          if (checkpoint) {
-            const execution = checkpointManager.getCurrentExecution(checkpoint, stage);
-            if (execution) {
-              execution.sessionID = newSessionID;
-              checkpointManager.saveCheckpoint(checkpoint);
-              checkpointManager.updateIndexEntry(checkpointID, checkpoint);
-            }
-          }
-        }
-
-        return newSessionID;
-      } catch (err) {
-        console.error('[AET] Create session for clear error:', err.message);
-        return oldSessionID;
-      }
-    }
-
+    // V1-style: step handover stays in the SAME session — no new session is
+    // created on `clear: true`. Context accumulates across steps (the agent
+    // is expected to follow the step prompt and ignore stale messages).
+    // Previously this created a new session per `clear: true` step, which
+    // orphaned the new session from the user's focused TUI — the agent's
+    // `question` tool calls inside the spawned session never rendered a
+    // popup in the user's TUI, blocking the workflow.
+    //
+    // This function is now a no-op for session creation; it only records
+    // the (same-session) transition for agent-insight and keeps the
+    // checkpoint's execution.sessionID bound to the existing session.
     async function sendStepPrompt(sessionID, agentId, checkpointID, stage, stepConfig) {
       if (!checkpointManager || !checkpointID) return;
 
-      let promptText = `## Please continue executing this step:\n`;
-      promptText += `Step name:\n${stepConfig.name}\n`;
-      promptText += `Task:\n${stepConfig.description}`;
+      const promptText = buildStepTaskBody(stepConfig, agentId);
 
       startSessionCheckpoint(sessionID);
       try {
         await session.prompt({ sessionID, text: promptText });
       } catch (err) {
         console.error('[AET] Send step prompt error:', err.message);
-      }
-    }
-
-    async function sendStepPromptWithNewSession(oldSessionID, agentId, checkpointID, stage, stepConfig) {
-      let promptText = `## Please continue executing this step:\n`;
-      promptText += `Step name:\n${stepConfig.name}\n`;
-      promptText += `Task:\n${stepConfig.description}`;
-
-      const newSessionID = await createSessionForClearIfNeeded(oldSessionID, agentId, checkpointID, stage);
-      if (newSessionID === oldSessionID) return;
-
-      startSessionCheckpoint(newSessionID);
-      try {
-        await session.prompt({ sessionID: newSessionID, text: promptText });
-      } catch (err) {
-        console.error('[AET] Send step prompt with new session error:', err.message);
       }
     }
 
@@ -786,6 +845,21 @@ export default Plugin.define({
         nextStepConfig = stepConfigs.find(s => (s.step_id || s.name) === targetStepId);
       } else {
         const currentIdx = stepConfigs.findIndex(s => (s.step_id || s.name) === currentStepInfo.stepId);
+        // [修复2] 防御：currentStep 不在当前 agentConfig.workflow 里 → agentConfig 与
+        // 当前 stage 不匹配（典型成因：resolveSessionAgent 拿到了 stale stage 的 agentId，
+        // 例如共享 session 时 findAgentBySessionID 返回旧 stage）。旧逻辑 currentIdx=-1 时
+        // nextStepConfig = stepConfigs[-1+1] = stepConfigs[0] = 旧 stage 的第一步，
+        // 会把跨阶段的 step（如 aet-design 的 requirements_analysis）错误地推进到当前 stage
+        // （aet-implement），污染 steps 并注入错误 step 文本。修复：bail out + 留错误日志，
+        // 不再静默错切。修复1已治本（不再拿错 agentConfig），这里是兜底防御。
+        if (currentIdx === -1) {
+          console.error(
+            `[AET] advanceToNextStep: currentStep "${currentStepInfo.stepId}" not in agentConfig.workflow` +
+            ` (agent=${agentId}, stage=${stage}, steps=[${stepConfigs.map(s => s.step_id || s.name).join(',')}])` +
+            ` — agentConfig/stage mismatch, refusing to advance to stepConfigs[0]`
+          );
+          return;
+        }
         nextStepConfig = stepConfigs[currentIdx + 1];
       }
 
@@ -797,15 +871,10 @@ export default Plugin.define({
       const nextStepId = nextStepConfig.step_id || nextStepConfig.name;
       checkpointManager.advanceStep(checkpointID, stage, nextStepId, context);
 
-      const shouldClear = nextStepConfig.clear === true;
-
+      // [clear-cleanup] shouldClear 配置移除：V1 遗留 no-op，统一走 sendStepPrompt（同 session）。
       const beforeHook = nextStepConfig.before || 'auto';
       if (beforeHook === 'auto' || isAutomationMode(checkpointID)) {
-        if (shouldClear) {
-          sendStepPromptWithNewSession(sessionID, agentId, checkpointID, stage, nextStepConfig);
-        } else {
-          sendStepPrompt(sessionID, agentId, checkpointID, stage, nextStepConfig);
-        }
+        sendStepPrompt(sessionID, agentId, checkpointID, stage, nextStepConfig);
         return;
       }
 
@@ -817,41 +886,91 @@ export default Plugin.define({
         let userPrompt = template.replace('{description}', description).replace('{options}', optionsText);
         userPrompt += `\n\n即将执行的 Step: **${nextStepConfig.name}**`;
         userPrompt += '\n\n**If user approves, please call step_handover to continue.**';
-        if (shouldClear) {
-          const hookSessionID = await createSessionForClearIfNeeded(sessionID, agentId, checkpointID, stage, true);
-          startSessionCheckpoint(hookSessionID);
-          try {
-            await session.prompt({ sessionID: hookSessionID, text: userPrompt });
-          } catch (err) {
-            console.error('[AET] Step before hook error:', err.message);
-          }
-        } else {
-          startSessionCheckpoint(sessionID);
-          try {
-            await session.prompt({ sessionID, text: userPrompt });
-          } catch (err) {
-            console.error('[AET] Step before hook error:', err.message);
-          }
+        // [clear-cleanup] shouldClear 分支移除：统一走 sendStepPrompt 同 session 路径。
+        startSessionCheckpoint(sessionID);
+        try {
+          await session.prompt({ sessionID, text: userPrompt });
+        } catch (err) {
+          console.error('[AET] Step before hook error:', err.message);
         }
         return;
       }
 
-      if (shouldClear) {
-        sendStepPromptWithNewSession(sessionID, agentId, checkpointID, stage, nextStepConfig);
-      } else {
-        sendStepPrompt(sessionID, agentId, checkpointID, stage, nextStepConfig);
-      }
+      // [clear-cleanup] shouldClear 已移除：clear 配置是 V1 遗留 no-op，
+      // createSessionForClearIfNeeded 不创建新 session，所有 step handover 统一走 sendStepPrompt（同 session）。
+      sendStepPrompt(sessionID, agentId, checkpointID, stage, nextStepConfig);
     }
 
     async function executeStageHandover(stage, context, checkpointID, promptForAgent = null, fromSessionId = null) {
       const actualPrompt = promptForAgent || context || `Please continue working on ${stage.agent_id}.`;
 
       try {
-        const createResult = await session.create({
-          title: `${stage.agent_id} - ${stage.agent_id.toUpperCase().replace('-AGENT', '')} Stage`,
-          agent: stage.agent_id,
-        });
-        const newSessionID = createResult?.id;
+        // V1-style: stage handover stays in the SAME session as the previous
+        // stage (when fromSessionId is provided). Previously this always
+        // created a new session, which orphaned the new session from the
+        // user's focused TUI — the agent's `question` tool calls inside the
+        // spawned session never rendered a popup, blocking the workflow.
+        //
+        // Now: switch the existing session's agent (V2 native
+        // `session.switchAgent`), then compact the context so the new
+        // agent starts from a summary of the previous stage's work instead
+        // of the full transcript. This mirrors V1's behavior (fresh agent
+        // prompt + summarized context) while keeping the workflow in the
+        // user's focused session.
+        //
+        // Fallback: when there is no fromSessionId (e.g. workflow_start
+        // for the very first stage with no prior session), create a new
+        // session as before.
+        let newSessionID = fromSessionId;
+        if (newSessionID) {
+          // Switch the existing session to the new stage's agent.
+          try {
+            await session.switchAgent({ sessionID: newSessionID, agent: stage.agent_id });
+          } catch (switchErr) {
+            console.error('[AET] switchAgent failed, falling back to new session:', switchErr?.message || switchErr);
+            const createResult = await session.create({
+              title: `${stage.agent_id} - ${stage.agent_id.toUpperCase().replace('-AGENT', '')} Stage`,
+              agent: stage.agent_id,
+            });
+            newSessionID = createResult?.id || null;
+          }
+          // Update the session title so the TUI shows the current stage's
+          // agent. switchAgent changes the session.agent field (used by the
+          // TUI's agent indicator) but does NOT touch the title — without
+          // this update the title would still show the previous stage's name
+          // (e.g. "aet-design - AET-DESIGN Stage" after switching to
+          // aet-implement), making it hard for the user to tell which agent
+          // is currently running.
+          if (newSessionID) {
+            try {
+              await session.update({
+                sessionID: newSessionID,
+                title: `${stage.agent_id} - ${stage.agent_id.toUpperCase().replace('-AGENT', '')} Stage`,
+              });
+            } catch (updateErr) {
+              // Title update is best-effort — the workflow still works
+              // without it, the TUI just shows a stale title.
+              console.error('[AET] session.update (title) failed:', updateErr?.message || updateErr);
+            }
+          }
+          // Compact the context so the new agent starts from a summary of
+          // the previous stage's work rather than the full transcript.
+          if (newSessionID) {
+            try {
+              await session.compact({ sessionID: newSessionID });
+            } catch (compactErr) {
+              // Compaction is best-effort — if it fails, the new agent
+              // runs with the full previous transcript. Log and continue.
+              console.error('[AET] session.compact failed (continuing with full context):', compactErr?.message || compactErr);
+            }
+          }
+        } else {
+          const createResult = await session.create({
+            title: `${stage.agent_id} - ${stage.agent_id.toUpperCase().replace('-AGENT', '')} Stage`,
+            agent: stage.agent_id,
+          });
+          newSessionID = createResult?.id;
+        }
 
         if (newSessionID) {
           // 在 CheckpointManager 中记录 execution
@@ -943,9 +1062,19 @@ export default Plugin.define({
             }
           }
 
-          // 直接执行
+          // 直接执行：初始 prompt = 需求上下文 + 当前 step 任务体（含推进协议）
+          let initialPrompt = actualPrompt;
+          const stageAgentConfig = configManager.getAgentConfig(stage.agent_id);
+          if (stageAgentConfig?.workflow && stageAgentConfig.workflow.length > 0 && newExecution?.currentStep) {
+            const firstStepConfig = stageAgentConfig.workflow.find(
+              s => (s.step_id || s.name) === newExecution.currentStep
+            );
+            if (firstStepConfig) {
+              initialPrompt = `${actualPrompt}\n\n${buildStepTaskBody(firstStepConfig, stage.agent_id)}`;
+            }
+          }
           startSessionCheckpoint(newSessionID);
-          await session.prompt({ sessionID: newSessionID, text: actualPrompt });
+          await session.prompt({ sessionID: newSessionID, text: initialPrompt });
         }
       } catch (e) {
         console.error('[AET] executeStageHandover error:', e.message);
@@ -1002,6 +1131,7 @@ export default Plugin.define({
           required: [],
           additionalProperties: false,
         },
+        options: { codemode: true },
         async execute(input) {
           const scenarios = configManager.getScenarios();
 
@@ -1044,6 +1174,7 @@ export default Plugin.define({
           required: [],
           additionalProperties: false,
         },
+        options: { codemode: true },
         async execute(input) {
           if (!checkpointManager) {
             return { content: JSON.stringify({ error: 'CheckpointManager not initialized' }, null, 2) };
@@ -1085,6 +1216,7 @@ export default Plugin.define({
           required: ['name'],
           additionalProperties: false,
         },
+        options: { codemode: true },
         async execute(input, toolContext) {
           const { name } = input;
           const rawDesc = input.context;
@@ -1136,8 +1268,31 @@ export default Plugin.define({
           }
           currentCheckpointID = checkpointID;
           const stageToStart = isScenario ? firstStage : { agent_id: targetAgent, stage_id: targetAgent };
-          await executeStageHandover(stageToStart, desc, checkpointID, null, toolContext?.sessionID);
-          return { content: JSON.stringify({ success: true, mode: 'new-session', checkpointID, stage: stageToStart.stage_id || stageToStart.agent_id }, null, 2) };
+          // [修复3] workflow_start should REUSE the caller's session when
+          // available — pass toolContext?.sessionID as fromSessionId so
+          // executeStageHandover takes the "switchAgent" branch instead of the
+          // "session.create" branch. This keeps the workflow in the user's
+          // focused TUI session (no new session, no TUI jump); only the
+          // session's agent is switched to the first stage's agent.
+          //
+          // Previously fromSessionId was always null, which forced a new
+          // session to be created. This orphaned the workflow from the user's
+          // focused session — the TUI jumped to the new session, and the
+          // router's session was left idle.
+          //
+          // Fallback: when toolContext?.sessionID is unavailable (no current
+          // session), executeStageHandover still creates a new session as
+          // before (fromSessionId=null/undefined → session.create branch).
+          //
+          // Note on the old "flip back and forth" concern: the router agent is
+          // designed to stop after calling workflow_start (its prompt says
+          // "Router 职责到此结束"), so the caller's turn ends naturally and
+          // the target stage agent takes over without conflict. This mirrors
+          // how checkpoint_resume (line 1332-1338) already reuses the caller's
+          // session with the same pattern.
+          await executeStageHandover(stageToStart, desc, checkpointID, null, sessionID || null);
+          const handoverMode = sessionID ? 'reused-session' : 'new-session';
+          return { content: JSON.stringify({ success: true, mode: handoverMode, checkpointID, stage: stageToStart.stage_id || stageToStart.agent_id }, null, 2) };
         },
       });
 
@@ -1155,6 +1310,7 @@ export default Plugin.define({
           required: [],
           additionalProperties: false,
         },
+        options: { codemode: true },
         async execute(input, toolContext) {
           if (!checkpointManager) {
             return { content: JSON.stringify({ success: false, error: 'CheckpointManager not initialized' }, null, 2) };
@@ -1257,6 +1413,7 @@ export default Plugin.define({
           required: ['context'],
           additionalProperties: false,
         },
+        options: { codemode: true },
         async execute(input, toolContext) {
           const ctx_ = input.context;
           if (!ctx_ || ctx_.trim().length === 0) {
@@ -1266,19 +1423,30 @@ export default Plugin.define({
             }, null, 2) };
           }
 
-          if (!currentCheckpointID || !checkpointManager) {
+          // V1-style stateless resolution: read active checkpoint from disk,
+          // not from the plugin's in-memory `currentCheckpointID` (which is
+          // lost on server restart and would break handover mid-workflow).
+          // Keep `currentCheckpointID` in sync for other plugin internals.
+          if (!checkpointManager) {
+            return { content: JSON.stringify({ success: false, error: 'CheckpointManager not initialized' }, null, 2) };
+          }
+          let activeCheckpointID = resolveActiveCheckpointID(toolContext?.sessionID);
+          if (!activeCheckpointID) {
             return { content: JSON.stringify({ success: false, error: 'No active workflow' }, null, 2) };
           }
+          if (currentCheckpointID !== activeCheckpointID) {
+            currentCheckpointID = activeCheckpointID;
+          }
 
-          ensureCheckpointRunning(currentCheckpointID);
+          ensureCheckpointRunning(activeCheckpointID);
 
-          const checkpoint = checkpointManager.getCheckpoint(currentCheckpointID);
+          const checkpoint = checkpointManager.getCheckpoint(activeCheckpointID);
           if (!checkpoint) {
             return { content: JSON.stringify({ success: false, error: 'No active checkpoint' }, null, 2) };
           }
 
           if (checkpoint.workflow.currentStage) {
-            checkpointManager.completeExecution(currentCheckpointID, checkpoint.workflow.currentStage, ctx_);
+            checkpointManager.completeExecution(activeCheckpointID, checkpoint.workflow.currentStage, ctx_);
           }
 
           const stages = workflowEngine.getScenarioWorkflow(checkpoint.workflow.name);
@@ -1295,13 +1463,13 @@ export default Plugin.define({
           }
 
           if (!nextStage) {
-            checkpointManager.completeCheckpoint(currentCheckpointID);
+            checkpointManager.completeCheckpoint(activeCheckpointID);
             currentCheckpointID = null;
             collaborationId = null;
             return { content: JSON.stringify({ success: true, done: true, message: 'Workflow completed' }, null, 2) };
           }
 
-          await executeStageHandover(nextStage, ctx_, currentCheckpointID, null, toolContext?.sessionID);
+          await executeStageHandover(nextStage, ctx_, activeCheckpointID, null, toolContext?.sessionID);
 
           return { content: JSON.stringify({ success: true, stage: nextStage.stage_id || nextStage.agent_id }, null, 2) };
         },
@@ -1331,75 +1499,108 @@ export default Plugin.define({
           required: ['context'],
           additionalProperties: false,
         },
+        options: { codemode: true },
         async execute(input, toolContext) {
-          const ctx_ = input.context;
-          const end = input.end;
-          if (!ctx_ || ctx_.trim().length === 0) {
+          try {
+            const ctx_ = input.context;
+            const end = input.end;
+            if (!ctx_ || ctx_.trim().length === 0) {
+              return { content: JSON.stringify({
+                success: false,
+                error: 'context is required. Please provide a summary of the current step work.'
+              }, null, 2) };
+            }
+
+            // V1-style stateless resolution: read active checkpoint from disk,
+            // not from the plugin's in-memory `currentCheckpointID` (which is
+            // lost on server restart and would break handover mid-workflow).
+            // Keep `currentCheckpointID` in sync for other plugin internals.
+            if (!checkpointManager) {
+              return { content: JSON.stringify({ success: false, error: 'CheckpointManager not initialized' }, null, 2) };
+            }
+            let activeCheckpointID = resolveActiveCheckpointID(toolContext?.sessionID);
+            if (!activeCheckpointID) {
+              return { content: JSON.stringify({ success: false, error: 'No active workflow' }, null, 2) };
+            }
+            if (currentCheckpointID !== activeCheckpointID) {
+              currentCheckpointID = activeCheckpointID;
+            }
+
+            ensureCheckpointRunning(activeCheckpointID);
+
+            const sessionID = toolContext.sessionID;
+            const sessionAgent = resolveSessionAgent(sessionID, null);
+
+            const checkpoint = checkpointManager.getCheckpoint(activeCheckpointID);
+            if (!checkpoint || !checkpoint.workflow.currentStage) {
+              return { content: JSON.stringify({ success: false, error: 'No active stage' }, null, 2) };
+            }
+
+            // [修复5] agentConfig 必须与 stage 同源：stage 取自
+            // checkpoint.workflow.currentStage，agentId 就取该 stage 的 execution。
+            // 旧逻辑用 resolveSessionAgent(sessionID) 反查 agentId，来源与 stage 不同源，
+            // 可能命中旧 stage（如 aet-design）→ agentConfig.workflow 里找不到当前
+            // stepId → findIndex = -1 → 退化成 stepConfigs[0] = 别的 stage 的第一步
+            // （跨阶段漂移：开发完成后被拉回「需求分析」）。
+            // 取 currentStage 的 execution.agentId 后，两者恒定一致。
+            const stageAgentId = resolveStageAgentId(activeCheckpointID).agentId || sessionAgent;
+            const agentConfig = configManager.getAgentConfig(stageAgentId);
+            if (!agentConfig?.workflow || agentConfig.workflow.length === 0) {
+              return { content: JSON.stringify({ success: false, error: 'Current agent has no steps configured' }, null, 2) };
+            }
+
+            let handoverContext = {};
+            try {
+              handoverContext = JSON.parse(ctx_);
+            } catch {
+              handoverContext = { summary: ctx_ };
+            }
+
+            if (end) {
+              checkpointManager.completeExecution(activeCheckpointID, checkpoint.workflow.currentStage, ctx_);
+              checkpointManager.skipRemainingSteps(activeCheckpointID, checkpoint.workflow.currentStage);
+              checkpointManager.completeCheckpoint(activeCheckpointID);
+              currentCheckpointID = null;
+              return { content: JSON.stringify({
+                success: true,
+                done: true,
+                endedEarly: true,
+                message: 'Workflow ended early. Remaining steps skipped and checkpoint archived.',
+              }, null, 2) };
+            }
+
+            if (input.step) {
+              const exists = agentConfig.workflow.some(s => (s.step_id || s.name) === input.step);
+              if (!exists) {
+                const avail = agentConfig.workflow.map(s => s.step_id || s.name).join(', ');
+                return { content: JSON.stringify({ success: false, error: `step "${input.step}" not found. Available: ${avail}` }, null, 2) };
+              }
+            }
+
+            await advanceToNextStep(sessionID, stageAgentId, agentConfig, activeCheckpointID, checkpoint.workflow.currentStage, handoverContext, input.step || null);
+
+            const currentStepInfo = checkpointManager.getCurrentStep(activeCheckpointID, checkpoint.workflow.currentStage);
+            if (!currentStepInfo) {
+              return { content: JSON.stringify({
+                success: true,
+                done: true,
+                message: 'All steps completed'
+              }, null, 2) };
+            }
+
+            return { content: JSON.stringify({ success: true }, null, 2) };
+          } catch (err) {
+            // CRITICAL: without this catch, any error in advanceToNextStep or
+            // checkpointManager calls rejects the execute promise silently.
+            // Code Mode then returns an EMPTY string to the agent, which
+            // believes step_handover succeeded and stops — the workflow stalls.
+            console.error('[AET] step_handover execute error:', err?.stack || err?.message || err);
             return { content: JSON.stringify({
               success: false,
-              error: 'context is required. Please provide a summary of the current step work.'
+              error: 'step_handover internal error: ' + (err?.message || String(err)),
+              stack: err?.stack,
             }, null, 2) };
           }
-
-          if (!currentCheckpointID || !checkpointManager) {
-            return { content: JSON.stringify({ success: false, error: 'No active workflow' }, null, 2) };
-          }
-
-          ensureCheckpointRunning(currentCheckpointID);
-
-          const sessionID = toolContext.sessionID;
-          const sessionAgent = resolveSessionAgent(sessionID, null);
-
-          const checkpoint = checkpointManager.getCheckpoint(currentCheckpointID);
-          if (!checkpoint || !checkpoint.workflow.currentStage) {
-            return { content: JSON.stringify({ success: false, error: 'No active stage' }, null, 2) };
-          }
-
-          const agentConfig = configManager.getAgentConfig(sessionAgent);
-          if (!agentConfig?.workflow || agentConfig.workflow.length === 0) {
-            return { content: JSON.stringify({ success: false, error: 'Current agent has no steps configured' }, null, 2) };
-          }
-
-          let handoverContext = {};
-          try {
-            handoverContext = JSON.parse(ctx_);
-          } catch {
-            handoverContext = { summary: ctx_ };
-          }
-
-          if (end) {
-            checkpointManager.completeExecution(currentCheckpointID, checkpoint.workflow.currentStage, ctx_);
-            checkpointManager.skipRemainingSteps(currentCheckpointID, checkpoint.workflow.currentStage);
-            checkpointManager.completeCheckpoint(currentCheckpointID);
-            currentCheckpointID = null;
-            return { content: JSON.stringify({
-              success: true,
-              done: true,
-              endedEarly: true,
-              message: 'Workflow ended early. Remaining steps skipped and checkpoint archived.',
-            }, null, 2) };
-          }
-
-          if (input.step) {
-            const exists = agentConfig.workflow.some(s => (s.step_id || s.name) === input.step);
-            if (!exists) {
-              const avail = agentConfig.workflow.map(s => s.step_id || s.name).join(', ');
-              return { content: JSON.stringify({ success: false, error: `step "${input.step}" not found. Available: ${avail}` }, null, 2) };
-            }
-          }
-
-          await advanceToNextStep(sessionID, sessionAgent, agentConfig, currentCheckpointID, checkpoint.workflow.currentStage, handoverContext, input.step || null);
-
-          const currentStepInfo = checkpointManager.getCurrentStep(currentCheckpointID, checkpoint.workflow.currentStage);
-          if (!currentStepInfo) {
-            return { content: JSON.stringify({
-              success: true,
-              done: true,
-              message: 'All steps completed'
-            }, null, 2) };
-          }
-
-          return { content: JSON.stringify({ success: true }, null, 2) };
         },
       });
 
@@ -1413,6 +1614,7 @@ export default Plugin.define({
           required: [],
           additionalProperties: false,
         },
+        options: { codemode: true },
         async execute(input) {
           const globalConfigPath = path.join(os.homedir(), '.aet', 'config.json');
           try {
@@ -1450,6 +1652,7 @@ export default Plugin.define({
           required: [],
           additionalProperties: false,
         },
+        options: { codemode: true },
         async execute(input) {
           const globalConfigPath = path.join(os.homedir(), '.aet', 'config.json');
           try {
@@ -1486,6 +1689,7 @@ export default Plugin.define({
           required: [],
           additionalProperties: false,
         },
+        options: { codemode: true },
         async execute(input) {
           const enabled = configManager.isTraceEnabled();
           const globalConfig = configManager.getGlobalConfig();
@@ -1560,6 +1764,18 @@ export default Plugin.define({
           } catch (err) {
             console.error('[AET] switchAgent error:', err.message);
           }
+          // Update the session title to match the new agent. switchAgent does
+          // NOT touch the title (see comment in executeStageHandover, ~line 913),
+          // so without this the TUI would show the previous agent's title
+          // (e.g. "aet-implement - AET-IMPLEMENT Stage" after /aet-design).
+          try {
+            await ctx.session.update({
+              sessionID,
+              title: `${agentId} - ${agentId.toUpperCase().replace('-AGENT', '')} Stage`,
+            });
+          } catch (updateErr) {
+            console.error('[AET] session.update (title) failed:', updateErr?.message || updateErr);
+          }
           try {
             const desc = (pending.arguments || '').trim();
             const candidates = listAgentResumableCheckpoints(agentId);
@@ -1597,6 +1813,18 @@ export default Plugin.define({
       if (workflowAgent) {
         try {
           await ctx.session.switchAgent({ sessionID, agent: workflowAgent });
+          // Update the session title to match the new workflow stage's agent.
+          // switchAgent does NOT touch the title (see comment in
+          // executeStageHandover, ~line 913), so without this the TUI would
+          // show the previous stage's title after a stage handover.
+          try {
+            await ctx.session.update({
+              sessionID,
+              title: `${workflowAgent} - ${workflowAgent.toUpperCase().replace('-AGENT', '')} Stage`,
+            });
+          } catch (updateErr) {
+            console.error('[AET] session.update (title) failed:', updateErr?.message || updateErr);
+          }
         } catch (err) {
           console.error('[AET] switchAgent workflow error:', err.message);
         }
@@ -1606,35 +1834,12 @@ export default Plugin.define({
       closeSessionCheckpoint(sessionID);
       startSessionCheckpoint(sessionID);
 
-      // 检查是否从中断恢复
-      let targetCheckpointID = currentCheckpointID;
-      if (!targetCheckpointID && checkpointManager) {
-        targetCheckpointID = checkpointManager.findCheckpointBySessionID(sessionID);
-        if (targetCheckpointID) {
-          currentCheckpointID = targetCheckpointID;
-        }
-      }
-      if (targetCheckpointID) {
-        ensureCheckpointRunning(targetCheckpointID);
-      }
-
-      // 追踪当前 agent
-      const finalAgent = workflowAgent || resolveSessionAgent(sessionID, null);
-      if (finalAgent) {
-        currentAgentId = finalAgent;
-      }
-
-      // 如果是第一条消息且有 active checkpoint，注入当前 step 信息
-      try {
-        const msgs = await ctx.session.context({ sessionID });
-        const msgCount = msgs?.length || 0;
-        if (msgCount <= 1 && finalAgent && targetCheckpointID) {
-          const stepText = takeCurrentStepText(targetCheckpointID);
-          if (stepText) appendPromptText(event, `\n\n${stepText}`);
-        }
-      } catch (err) {
-        console.error('[AET] prompt hook context error:', err.message);
-      }
+      // [改动1] 删除 prompt 钩子里的自动恢复 + finalAgent 追踪 + step 注入。
+      // 原逻辑（已删）：!currentCheckpointID 时 findCheckpointBySessionID(sessionID)
+      //   读磁盘 → 静默恢复 currentCheckpointID → ensureCheckpointRunning 改状态
+      //   → 第一条消息注入 step 文本。违反"用户没显式触发就不该读 checkpoint"。
+      // 恢复改由 session.step.ended 处理（改动2）：只在 agent 干完一步需推进时恢复。
+      // currentCheckpointID 的恢复不影响 session agent 身份（OpenCode 创建时定）。
     });
 
     // ============================================
@@ -1688,12 +1893,31 @@ export default Plugin.define({
     // ============================================
     // event hook → ctx.event.subscribe（D-004）
     // AbortController 用于在 cleanup 时中止 async-iterator 订阅。
+    //
+    // RECONNECT LOOP: V2's ctx.event.subscribe AsyncIterable is NOT
+    // auto-reconnecting. A single "event stream stalled" / ECONNRESET
+    // blip (very common in long-lived servers; observed repeatedly in
+    // opencode.log) throws inside the for-await, the iterator ends,
+    // and the plugin never receives another event. The two-phase idle
+    // protocol (settleStepIdleRun → triggerStepAfterHook) depends on
+    // session.status:idle events; when the subscription dies, step
+    // completion is silently swallowed and the workflow stalls at the
+    // current step forever.
+    //
+    // Wrap the for-await in an outer reconnect loop with exponential
+    // backoff. Only abort on cleanup (abortController.signal).
     // ============================================
     const abortController = new AbortController();
     (async () => {
-      for await (const event of ctx.event.subscribe({ signal: abortController.signal })) {
+      let reconnectDelayMs = 1000;
+      const MAX_RECONNECT_DELAY_MS = 30000;
+      while (!abortController.signal.aborted) {
         try {
-          // V1 message.updated + MessageAbortedError → V2 session.execution.interrupted
+          for await (const event of ctx.event.subscribe({ signal: abortController.signal })) {
+            // Successful event → reset backoff
+            reconnectDelayMs = 1000;
+            try {
+              // V1 message.updated + MessageAbortedError → V2 session.execution.interrupted
           if (event.type === 'session.execution.interrupted') {
             const sessionID = event.data?.sessionID;
             if (sessionID) {
@@ -1705,104 +1929,152 @@ export default Plugin.define({
             continue;
           }
 
-          // session.status: idle / busy 推进
-          if (event.type === 'session.status') {
+          // ── Idle detection: V2 uses `session.step.ended` with finish="stop"
+          // to signal that the agent's turn ended naturally (no pending tool
+          // call). V2 does NOT emit `session.status` events (the V1-era event
+          // type this code used to listen for); listening for session.status
+          // was dead code on V2 — the workflow stalled whenever the agent
+          // went idle, until the user sent another message (which re-entered
+          // via the prompt hook's resume path).
+          //
+          // finish="stop"        → natural completion (idle) → advance
+          // finish="tool-calls"   → agent will continue after tool result → skip
+          // finish="length"       → token-limit stop → treat as idle (agent can't continue)
+          // finish="error"        → errored stop → skip (don't interfere with error handling)
+          // finish="content-filter" → filtered → skip
+          //
+          // Note: `session.idle` also exists in V2 but is ephemeral and not
+          // always delivered by ctx.event.subscribe. `session.step.ended`
+          // is durable and reliably delivered.
+          if (event.type === 'session.step.ended') {
             const sessionID = event.data?.sessionID;
-            const status = event.data?.status;
-            if (!sessionID || !status) continue;
+            const finish = event.data?.finish;
+            if (!sessionID || !finish) continue;
+
+            // Only treat natural completion (stop) and token-limit (length) as idle.
+            // tool-calls means the agent will continue after the tool result — not idle.
+            if (finish !== 'stop' && finish !== 'length') continue;
 
             const sessionAgent = resolveSessionAgent(sessionID, null);
             const sessionCheckpoint = getCurrentSessionCheckpoint(sessionID);
 
-            if (status.type === 'idle') {
-              if (sessionCheckpoint?.state === SessionCheckpointState.INTERRUPTED) {
+            if (sessionCheckpoint?.state === SessionCheckpointState.INTERRUPTED) {
+              closeSessionCheckpoint(sessionID);
+              continue;
+            }
+
+            // [改动2] reload-recovery: plugin 重启导致 currentCheckpointID 内存丢失时，
+            // 用 sessionID 反查恢复。仅在 agent 干完一步需推进 workflow 时触发，
+            // 不在每条用户消息（prompt 钩子）时触发。这样普通消息不会静默恢复 stale workflow，
+            // 但 workflow 自动推进不会因 reload 断链。
+            if (!currentCheckpointID && checkpointManager && sessionID) {
+              const resolved = checkpointManager.findCheckpointBySessionID(sessionID);
+              if (resolved) {
+                currentCheckpointID = resolved;
+                ensureCheckpointRunning(currentCheckpointID);
+              }
+            }
+
+            if (currentCheckpointID && checkpointManager) {
+              const checkpoint = checkpointManager.getCheckpoint(currentCheckpointID);
+              if (checkpoint?.workflow?.status === 'interrupted') {
                 closeSessionCheckpoint(sessionID);
                 continue;
               }
-
-              if (currentCheckpointID && checkpointManager) {
-                const checkpoint = checkpointManager.getCheckpoint(currentCheckpointID);
-                if (checkpoint?.workflow?.status === 'interrupted') {
-                  closeSessionCheckpoint(sessionID);
-                  continue;
-                }
-                const execution = checkpointManager.getCurrentExecution(checkpoint, checkpoint.workflow.currentStage);
-                if (execution?.status === 'interrupted') {
-                  closeSessionCheckpoint(sessionID);
-                  continue;
-                }
+              const execution = checkpointManager.getCurrentExecution(checkpoint, checkpoint.workflow.currentStage);
+              if (execution?.status === 'interrupted') {
+                closeSessionCheckpoint(sessionID);
+                continue;
               }
+            }
 
-              if (currentCheckpointID && checkpointManager) {
-                const checkpoint = checkpointManager.getCheckpoint(currentCheckpointID);
-                if (checkpoint && checkpoint.workflow.currentStage) {
-                  const execution = checkpointManager.getCurrentExecution(checkpoint, checkpoint.workflow.currentStage);
-                  if (execution && execution.sessionID === sessionID) {
-                    const agentConfig = configManager.getAgentConfig(sessionAgent);
-                    const hasSteps = agentConfig?.workflow && agentConfig.workflow.length > 0;
-                    const currentStepInfo = checkpointManager.getCurrentStep(currentCheckpointID, checkpoint.workflow.currentStage);
+            if (currentCheckpointID && checkpointManager) {
+              const checkpoint = checkpointManager.getCheckpoint(currentCheckpointID);
+              if (checkpoint && checkpoint.workflow.currentStage) {
+                const execution = checkpointManager.getCurrentExecution(checkpoint, checkpoint.workflow.currentStage);
+                if (execution && execution.sessionID === sessionID) {
+                  // [修复5] 与 step_handover 同源：agentConfig 取当前 stage 的 execution.agentId，
+                  // 而不是按 session 反查（来源不同源 → 可能拿到旧 stage 的 agent）。
+                  const stageAgentId = resolveStageAgentId(currentCheckpointID).agentId || execution.agentId || sessionAgent;
+                  const agentConfig = configManager.getAgentConfig(stageAgentId);
+                  const hasSteps = agentConfig?.workflow && agentConfig.workflow.length > 0;
+                  const currentStepInfo = checkpointManager.getCurrentStep(currentCheckpointID, checkpoint.workflow.currentStage);
 
-                    const hasMoreSteps = currentStepInfo && agentConfig.workflow.findIndex(s => (s.step_id || s.name) === currentStepInfo.stepId) < agentConfig.workflow.length - 1;
+                  // [修复6] hasMoreSteps 判定：findIndex 返回 -1 表示「当前 step 不在这个
+                  // agentConfig 的 workflow 里」（配置不匹配），不能当成「还有后续」。
+                  // 旧公式 `-1 < length - 1` 恒为 true → 明明是最后一个 step 也被判为
+                  // 还有后续 → 强行 advanceToNextStep → 跨阶段漂移；且 triggerStepAfterHook
+                  // 找不到 stepConfig 时静默 return，导致该 step 永远不被标记完成、
+                  // after hook 永不触发 → workflow 静默卡死。
+                  const stepIdx = currentStepInfo
+                    ? agentConfig.workflow.findIndex(s => (s.step_id || s.name) === currentStepInfo.stepId)
+                    : -1;
+                  const hasMoreSteps = stepIdx !== -1 && stepIdx < agentConfig.workflow.length - 1;
 
-                    if (sessionCheckpoint?.state === SessionCheckpointState.RUNNING) {
-                      sessionCheckpoint.state = SessionCheckpointState.PENDING_IDLE;
-                      const expectedCheckpointID = sessionCheckpoint.checkpointID;
-                      if (hasSteps && hasMoreSteps) {
-                        void settleStepIdleRun(sessionID, expectedCheckpointID, sessionAgent, agentConfig, currentCheckpointID, checkpoint.workflow.currentStage);
-                      } else {
-                        checkpointManager.completeExecution(currentCheckpointID, checkpoint.workflow.currentStage, 'Stage completed');
-                        const stages = workflowEngine.getScenarioWorkflow(checkpoint.workflow.name);
-                        const fullStageConfig = stages.find(s => (s.stage_id || s.agent_id) === checkpoint.workflow.currentStage);
-                        void settleIdleRun(sessionID, expectedCheckpointID, fullStageConfig || { agent_id: sessionAgent, stage_id: checkpoint.workflow.currentStage }, currentCheckpointID);
-                      }
+                  if (sessionCheckpoint?.state === SessionCheckpointState.RUNNING) {
+                    sessionCheckpoint.state = SessionCheckpointState.PENDING_IDLE;
+                    const expectedCheckpointID = sessionCheckpoint.checkpointID;
+                    if (hasSteps && hasMoreSteps) {
+                      void settleStepIdleRun(sessionID, expectedCheckpointID, stageAgentId, agentConfig, currentCheckpointID, checkpoint.workflow.currentStage);
+                    } else {
+                      checkpointManager.completeExecution(currentCheckpointID, checkpoint.workflow.currentStage, 'Stage completed');
+                      const stages = workflowEngine.getScenarioWorkflow(checkpoint.workflow.name);
+                      const fullStageConfig = stages.find(s => (s.stage_id || s.agent_id) === checkpoint.workflow.currentStage);
+                      void settleIdleRun(sessionID, expectedCheckpointID, fullStageConfig || { agent_id: stageAgentId, stage_id: checkpoint.workflow.currentStage }, currentCheckpointID);
+                    }
+                    continue;
+                  }
+
+                  if (sessionCheckpoint?.state === SessionCheckpointState.PENDING_IDLE) {
+                    const expectedCheckpointID = sessionCheckpoint.checkpointID;
+                    if (sessionCheckpoint.state === SessionCheckpointState.INTERRUPTED) {
+                      closeSessionCheckpoint(sessionID);
                       continue;
                     }
-
-                    if (sessionCheckpoint?.state === SessionCheckpointState.PENDING_IDLE) {
-                      const expectedCheckpointID = sessionCheckpoint.checkpointID;
-                      if (sessionCheckpoint.state === SessionCheckpointState.INTERRUPTED) {
-                        closeSessionCheckpoint(sessionID);
-                        continue;
-                      }
-                      sessionCheckpoint.state = SessionCheckpointState.COMPLETED;
-                      closeSessionCheckpoint(sessionID);
-                      if (hasSteps && hasMoreSteps) {
-                        await triggerStepAfterHook(sessionID, sessionAgent, agentConfig, currentCheckpointID, checkpoint.workflow.currentStage);
+                    sessionCheckpoint.state = SessionCheckpointState.COMPLETED;
+                    closeSessionCheckpoint(sessionID);
+                    if (hasSteps && hasMoreSteps) {
+                      await triggerStepAfterHook(sessionID, stageAgentId, agentConfig, currentCheckpointID, checkpoint.workflow.currentStage);
+                    } else {
+                      const stages = workflowEngine.getScenarioWorkflow(checkpoint.workflow.name);
+                      const fullStageConfig = stages.find(s => (s.stage_id || s.agent_id) === checkpoint.workflow.currentStage);
+                      const currentIdx = stages.findIndex(s => (s.stage_id || s.agent_id) === checkpoint.workflow.currentStage);
+                      const nextStage = stages[currentIdx + 1];
+                      if (!nextStage) {
+                        checkpointManager.completeCheckpoint(currentCheckpointID);
+                        currentCheckpointID = null;
+                        collaborationId = null;
                       } else {
-                        const stages = workflowEngine.getScenarioWorkflow(checkpoint.workflow.name);
-                        const fullStageConfig = stages.find(s => (s.stage_id || s.agent_id) === checkpoint.workflow.currentStage);
-                        const currentIdx = stages.findIndex(s => (s.stage_id || s.agent_id) === checkpoint.workflow.currentStage);
-                        const nextStage = stages[currentIdx + 1];
-                        if (!nextStage) {
-                          checkpointManager.completeCheckpoint(currentCheckpointID);
-                          currentCheckpointID = null;
-                          collaborationId = null;
-                        } else {
-                          await triggerAfterHook(sessionID, fullStageConfig || { agent_id: sessionAgent, stage_id: checkpoint.workflow.currentStage }, currentCheckpointID);
-                        }
+                        await triggerAfterHook(sessionID, fullStageConfig || { agent_id: stageAgentId, stage_id: checkpoint.workflow.currentStage }, currentCheckpointID);
                       }
                     }
                     continue;
                   }
                 }
               }
-
-              // 不在 workflow 中，单独 agent 执行
-              const agentConfig = configManager.getAgentConfig(sessionAgent);
-              if (agentConfig?.workflow && agentConfig.workflow.length > 0) {
-                // TODO: 处理单独 agent 的 step workflow
-              }
-
-              closeSessionCheckpoint(sessionID);
-            } else if (status.type === 'busy') {
-              if (sessionCheckpoint?.state === SessionCheckpointState.PENDING_IDLE) {
-                sessionCheckpoint.state = SessionCheckpointState.RUNNING;
-              }
             }
+
+            // 不在 workflow 中，单独 agent 执行
+            const agentConfig = configManager.getAgentConfig(sessionAgent);
+            if (agentConfig?.workflow && agentConfig.workflow.length > 0) {
+              // TODO: 处理单独 agent 的 step workflow
+            }
+
+            closeSessionCheckpoint(sessionID);
           }
         } catch (err) {
           console.error('[AET] event handler error:', err?.message || err);
         }
+          }
+          // for-await exited — either normally (stream end) or via a thrown
+          // stream error. Catch the stream error here and reconnect either way.
+        } catch (streamErr) {
+          console.warn('[AET] event stream error:', streamErr?.message || streamErr);
+        }
+        if (abortController.signal.aborted) break;
+        console.warn('[AET] event stream ended; reconnecting in', reconnectDelayMs, 'ms');
+        await new Promise(r => setTimeout(r, reconnectDelayMs));
+        reconnectDelayMs = Math.min(reconnectDelayMs * 2, MAX_RECONNECT_DELAY_MS);
       }
     })().catch(err => console.error('[AET] event subscribe error:', err));
 

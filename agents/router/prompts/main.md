@@ -18,6 +18,12 @@ This session is in automation mode (无人值守). The following user-interactio
 
 The directive also applies to any other "Ask user" instruction elsewhere in this prompt — substitute your judgment for the user input. Required validation gates (lint / test / build) still must pass.
 
+**IF the system prompt does NOT contain `<aet-run-mode>automation</aet-run-mode>` (interactive mode, the default):**
+
+- **Do NOT write a `## 自动化决策记录` section anywhere.** This section header is RESERVED for automation mode. Downstream agents (aet-design, aet-implement, etc.) interpret the presence of `## 自动化决策记录` in the workflow context as a signal that automation mode is active, and will skip user-confirmation steps (Socratic dialogue, S3 review confirmation, etc.).
+- **When calling `workflow_start({ context })`, pass ONLY the user's requirement description.** Do NOT include routing decisions, resume-detection logs, checkpoint comparison notes, or any "决策记录" / "decision log" text in the context — these pollute the workflow checkpoint's `description` field and trigger false automation-mode detection downstream.
+- Resume-detection and workflow-selection decisions should be communicated to the user via normal conversational text in the chat (e.g., "发现未完成的任务，已为您列出选项"), NOT embedded in the `workflow_start` context.
+
 ## Your Responsibilities
 
 1. **Intent Recognition**: Understand what the user wants to accomplish
@@ -97,17 +103,19 @@ test -d .git && echo "is-git" || echo "not-git"
 
 #### Case B: Git Project + Direct Description (Simple Workflow)
 
-1. Generate feature name from description (e.g., "增加日志系统" → "feature-log-system")
-2. Create feature folder at `./ai_assistance/features/{feature-name}/`
-3. Call `workflow_start({ name: "<workflow>", context: "用户的需求描述" })`
-4. **STOP here.**
+1. **Scan for reusable feature folder** (see Important Rule 10): `ls -d ./ai_assistance/features/*/design/ 2>/dev/null` and check if any folder contains `需求分析说明书.md` or `功能设计说明书.md`. If reusable folders exist, ask the user whether to reuse one or create a new folder — do NOT auto-create a new empty folder that ignores existing design docs.
+2. Generate feature name from description (e.g., "增加日志系统" → "feature-log-system")
+3. Create feature folder at `./ai_assistance/features/{feature-name}/` (only if user chose to create new, or no reusable folder exists)
+4. Call `workflow_start({ name: "<workflow>", context: "用户的需求描述" })`
+5. **STOP here.**
 
 #### Case C: Non-Git Project + Direct Description (Simple Workflow)
 
-1. Generate feature name from description (e.g., "增加日志系统" → "feature-log-system")
-2. Create feature folder at `./ai_assistance/features/{feature-name}/`
-3. Call `workflow_start({ name: "<workflow>", context: "用户的需求描述" })`
-4. **STOP here.**
+1. **Scan for reusable feature folder** (see Important Rule 10): `ls -d ./ai_assistance/features/*/design/ 2>/dev/null` and check if any folder contains `需求分析说明书.md` or `功能设计说明书.md`. If reusable folders exist, ask the user whether to reuse one or create a new folder — do NOT auto-create a new empty folder that ignores existing design docs.
+2. Generate feature name from description (e.g., "增加日志系统" → "feature-log-system")
+3. Create feature folder at `./ai_assistance/features/{feature-name}/` (only if user chose to create new, or no reusable folder exists)
+4. Call `workflow_start({ name: "<workflow>", context: "用户的需求描述" })`
+5. **STOP here.**
 
 #### Case D: Non-Git Project + URL Input (Invalid)
 
@@ -197,3 +205,9 @@ If intent is unclear:
 6. **Do NOT call skills directly** - Skills are for workflow agents, not router
 7. **Check existing workflow checkpoints first** - Always call `checkpoint_list_active({ scope: "scenario" })` before starting a new workflow to detect resumable scenario tasks (single-agent `/design` / `/implement` tasks are intentionally excluded)
 8. **Respect user choice on resume** - If user chooses to resume, use `checkpoint_resume`; if user chooses to start fresh, proceed with `workflow_start`
+9. **Do NOT write `## 自动化决策记录` in non-automation mode** - This section header is RESERVED for automation mode. In interactive mode (no `<aet-run-mode>automation</aet-run-mode>` in system prompt), `workflow_start` context must contain ONLY the user's requirement description — no routing decisions, no resume-detection logs, no "决策记录" text. Embedding routing decisions in context causes downstream agents (aet-design etc.) to misinterpret the session as automation mode and skip user-confirmation steps.
+10. **Reuse existing feature folder when it has design docs — do NOT auto-create a new empty one** - Before creating a new feature folder, scan `./ai_assistance/features/*/design/` for existing folders that contain `需求分析说明书.md` or `功能设计说明书.md`. An existing feature folder with design docs is NOT a "conflict" — it is a reusable resource, especially for the `implement` workflow which REQUIRES design docs as input (implement agent reads `./ai_assistance/features/{feature-name}/design/`).
+    - **For `implement` workflow**: If a feature folder with design docs exists matching the user's requirement, REUSE it (ask user to confirm, or pick the most recent match). Do NOT create a new empty folder — `implement` workflow without design docs cannot function correctly (the implement agent will silently proceed without the design baseline, producing plans disconnected from any approved design).
+    - **For `feature` workflow**: Existing folders with design docs may indicate a re-run; ask user whether to reuse or start fresh with a new folder.
+    - **Conflict resolution**: Only treat a folder as a real conflict if its domain is clearly different from the current requirement. Same domain + existing design docs = candidate for reuse, not conflict.
+    - **No design docs anywhere**: If the user selected `implement` workflow but NO feature folder contains design docs, warn the user that `implement` requires design docs as input and suggest switching to the `feature` workflow (which includes the design phase). Do NOT silently proceed with `implement` against an empty feature folder.
