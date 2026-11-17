@@ -29,7 +29,6 @@ import { ConfigManager } from '../../.platform/utils/config-manager.js';
 import { CheckpointManager } from '../../.platform/utils/checkpoint-manager.js';
 import { WorkflowEngine } from '../../.platform/utils/workflow-engine.js';
 import { TraceLogger, TRACE_DIR } from '../../.platform/utils/trace-logger.js';
-import { AgentInsightClient, generateCollaborationId, generateEventId } from '../../.platform/utils/agent-insight-client.js';
 import {
   ensureStringPath,
   detectProjectAnalysisFolder,
@@ -375,11 +374,7 @@ export default Plugin.define({
     }));
     traceLogger.install();
 
-    const agentInsightClient = new AgentInsightClient(configManager.getAgentInsightConfig?.() ?? configManager.getAgentInsightConfig());
-
     let currentCheckpointID = null;
-    let collaborationId = null;
-    let currentAgentId = null;
     let lastAutomationSessionID = null;
 
     // 斜杠命令 + session 生命周期合并状态（D-003）
@@ -723,8 +718,7 @@ export default Plugin.define({
     // `question` tool calls inside the spawned session never rendered a
     // popup in the user's TUI, blocking the workflow.
     //
-    // This function is now a no-op for session creation; it only records
-    // the (same-session) transition for agent-insight and keeps the
+    // This function is now a no-op for session creation; it only keeps the
     // checkpoint's execution.sessionID bound to the existing session.
     async function sendStepPrompt(sessionID, agentId, checkpointID, stage, stepConfig) {
       if (!checkpointManager || !checkpointID) return;
@@ -962,27 +956,6 @@ export default Plugin.define({
           const currentStageExecution = checkpointManager.getCurrentExecution(checkpoint, checkpoint.workflow.currentStage);
           const currentStageSteps = currentStageExecution?.steps || null;
           const currentStageCurrentStep = currentStageExecution?.currentStep || null;
-
-          // 上传跨 Session 协作关系到 agent-insight 平台
-          if (agentInsightClient?.enabled) {
-            if (!collaborationId) {
-              collaborationId = generateCollaborationId();
-            }
-            const eventId = generateEventId();
-            const fromSession = fromSessionId || 'root';
-            const fromAgent = currentAgentId || 'Build';
-            const toAgent = stage.agent_id;
-            const desc = `${fromAgent} → ${toAgent}: ${stageName} 阶段启动`;
-            await agentInsightClient.uploadEvent({
-              collaborationId,
-              eventId,
-              fromSessionId: fromSession,
-              toSessionId: newSessionID,
-              description: desc,
-              observedAt: new Date().toISOString(),
-            });
-            currentAgentId = toAgent;
-          }
 
           const targetStageExecution = checkpointManager.getCurrentExecution(checkpoint, stageName);
           const targetStageSteps = targetStageExecution?.steps || null;
@@ -1446,7 +1419,6 @@ export default Plugin.define({
           if (!nextStage) {
             checkpointManager.completeCheckpoint(activeCheckpointID);
             currentCheckpointID = null;
-            collaborationId = null;
             return { content: JSON.stringify({ success: true, done: true, message: 'Workflow completed' }, null, 2) };
           }
 
@@ -2000,7 +1972,6 @@ export default Plugin.define({
                       if (!nextStage) {
                         checkpointManager.completeCheckpoint(currentCheckpointID);
                         currentCheckpointID = null;
-                        collaborationId = null;
                       } else {
                         await triggerAfterHook(sessionID, fullStageConfig || { agent_id: stageAgentId, stage_id: checkpoint.workflow.currentStage }, currentCheckpointID);
                       }
