@@ -16,7 +16,7 @@ GITCODE_TOKEN=""
 GITHUB_TOKEN=""
 GITLAB_TOKEN=""
 TOKEN_PROVIDED=false  # 标记是否通过参数提供了 token
-TRACE_ENABLED=""  # 空字符串表示未选择，将使用默认值 true
+TRACE_ENABLED="false"  # 默认不启用 LLM 追踪日志；用户可随时通过 ~/.aet/config.json 或 trace_enable 工具打开
 
 # 检查 gum 是否安装
 check_gum() {
@@ -294,40 +294,8 @@ interactive_ask() {
         log_success "Token 配置完成"
     fi
 
-    # 询问是否启用 LLM 追踪日志
-    if [ "$TRACE_ENABLED" = "" ]; then
-        echo ""
-        log_info "是否启用 LLM 请求/响应追踪日志？"
-        echo -e "  追踪日志记录所有 LLM API 请求和响应到 ~/.aet/log/trace/"
-        echo -e "  用于调试、性能分析和用量统计。可随时通过修改 ~/.aet/config.json 或调用工具开关。"
-        echo ""
-
-        if [ "$USE_GUM" = true ]; then
-            trace_choice=$(gum choose \
-                --header "请选择：" \
-                --cursor.foreground 4 \
-                --selected.foreground 2 \
-                "启用追踪（推荐）" \
-                "禁用追踪")
-
-            if [ "$trace_choice" = "启用追踪（推荐）" ]; then
-                TRACE_ENABLED="true"
-            else
-                TRACE_ENABLED="false"
-            fi
-        else
-            echo -e "${YELLOW}选项:${NC}"
-            echo -e "  1. 启用追踪（推荐）"
-            echo -e "  2. 禁用追踪"
-            echo ""
-            safe_read "请选择 (1/2): " trace_num
-            if [ "$trace_num" = "2" ]; then
-                TRACE_ENABLED="false"
-            else
-                TRACE_ENABLED="true"
-            fi
-        fi
-    fi
+    # LLM 追踪日志默认不启用（TRACE_ENABLED="false"）；用户可通过 ~/.aet/config.json
+    # 或运行时 trace_enable 工具按需打开，不在安装向导中提示。
 }
 
 # 配置指定平台的 Token
@@ -591,7 +559,7 @@ generate_config() {
             jq --arg gitcode_token "$GITCODE_TOKEN" \
                --arg github_token "$GITHUB_TOKEN" \
                --arg gitlab_token "$GITLAB_TOKEN" \
-               --argjson trace_enabled "${TRACE_ENABLED:-true}" \
+               --argjson trace_enabled "${TRACE_ENABLED:-false}" \
                '.codePlatform.platforms.gitcode.token = $gitcode_token |
                 .codePlatform.platforms.github.token = $github_token |
                 .codePlatform.platforms.gitlab.token = $gitlab_token |
@@ -603,7 +571,7 @@ generate_config() {
             GEN_GITCODE_TOKEN="$GITCODE_TOKEN" \
             GEN_GITHUB_TOKEN="$GITHUB_TOKEN" \
             GEN_GITLAB_TOKEN="$GITLAB_TOKEN" \
-            GEN_TRACE_ENABLED="${TRACE_ENABLED:-true}" \
+            GEN_TRACE_ENABLED="${TRACE_ENABLED:-false}" \
             node -e '
                 let s = "";
                 process.stdin.on("data", d => s += d);
@@ -619,7 +587,7 @@ generate_config() {
                     p.github.token = process.env.GEN_GITHUB_TOKEN || "";
                     p.gitlab.token = process.env.GEN_GITLAB_TOKEN || "";
                     c.trace = c.trace || {};
-                    c.trace.enabled = process.env.GEN_TRACE_ENABLED === "true" || process.env.GEN_TRACE_ENABLED === undefined;
+                    c.trace.enabled = process.env.GEN_TRACE_ENABLED === "true";
                     process.stdout.write(JSON.stringify(c, null, 2) + "\n");
                 });
             ')
