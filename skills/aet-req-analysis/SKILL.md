@@ -135,12 +135,8 @@ All user-facing prompts must be in the user's locale language. If user locale is
 
 ### [S1.0] Environment Setup
 
-- Load the `aet-design-env` skill to obtain its script path.
-- Detect available libraries and their paths:
-  ```
-  node <aet-design-env path>/aet-design-env/scripts/aet-design-env.mjs context scenario-lib function-lib sdr-lib
-  ```
-- Interpret the detected library metadata (scenario-lib / function-lib / sdr-lib presence + paths) from the command's stdout.
+- No external library probing required. Proceed directly to codebase scan.
+- Project knowledge libraries (scenario / function / sdr / fmea / arch-element) are not required for requirements analysis; if absent, analysis proceeds based on the user requirement description and the project codebase.
 
 ### [S1.1] Lightweight Codebase Scan
 
@@ -207,7 +203,7 @@ Load `workflows/sop-generation.md` and execute the document generation workflow.
 - NEVER ask the user implementation-related questions (technology selection, architecture, module partitioning).
 - Load relevant SOPs on demand; only those pertinent to the current stage.
 - Explore the codebase directly without delegating to subagents; reach conclusions at minimal cost.
-- NEVER read template or library source files directly — access them only through the `aet-design-env` subcommands (`template`/`checklist`/`library`) wired into this skill's workflows.
+- Template and component files under `references/_templates/` MAY be read directly as structure and content references; skip any component whose frontmatter declares `condition: <library>=Generate, missing=Skip` when the corresponding library is absent.
 
 </constraint>
 

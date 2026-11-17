@@ -26,23 +26,6 @@ The fundamental purpose is to **support capability derivation**: by exhaustively
 - **Alternative Paths**: Different behaviors under different conditions (e.g., VIP user discount). Users easily overlook such paths.
 - **Critical Errors & Exception Handling**: How the system must react under invalid input, timeouts, or dependency failures.
 
-#### Tiered Library Browsing
-
-Run the `aet-design-env` `library` subcommand via the `bash` tool to browse the scenario library, expanding directory nodes progressively as needed. The first argument must be the **exact path** to the scenario library YAML file:
-
-```bash
-# Root-level browsing (directory nodes collapsed, displaying sub-content previews only)
-node <aet-design-env path>/aet-design-env/scripts/aet-design-env.mjs library <xxx/scenario-library.yml>
-
-# Batch expand multiple directory nodes
-node <aet-design-env path>/aet-design-env/scripts/aet-design-env.mjs library <xxx/scenario-library.yml> <id1> <id2> <id3>
-
-# Search nodes by keyword (scoped to the whole library or to an expanded sub-tree)
-# NOTE: `-s` keyword search is auxiliary only — it cannot replace tiered browsing and risks missing nodes.
-#       Use at most 3 keyword searches; then always fall back to expanding the tree from the root.
-node <aet-design-env path>/aet-design-env/scripts/aet-design-env.mjs library <xxx/scenario-library.yml> -s <keyword>
-```
-
 </guideline>
 
 <instruct>
@@ -51,7 +34,7 @@ node <aet-design-env path>/aet-design-env/scripts/aet-design-env.mjs library <xx
 
 This step is **mandatory** if scenario library data is provided in the context.
 
-Progressively expand the tree using the script, following the localization sequence: **Deconstruct the business essence first, then inspect the tree.**
+Progressively browse the library tree, following the localization sequence: **Deconstruct the business essence first, then inspect the tree.**
 
 #### Grasping the Essence
 
@@ -62,7 +45,7 @@ Briefly output the final conclusions.
 
 #### Breadth Search
 
-1. Execute the root-level browsing script to review top-level categories and their sub-content previews.
+1. Inspect the scenario library YAML file's root-level categories and their sub-content.
 2. Using the **Actor + Business Problem** as an anchor, identify all potentially relevant directory nodes and expand them in batches (do not match literally by keyword).
 3. **Scan broadly across sub-categories**; do not halt investigation at the first seemingly relevant directory. Ensure comprehensive coverage before selecting the optimal match.
 4. Converge progressively down to the leaf node (**scene**), which will serve as the use case mounting point.
@@ -93,11 +76,9 @@ For each identified scenario, define the Happy Path, Alternative Paths, and Crit
 
 <constraint>
 
-- DO NOT describe library contents from memory—always execute the script to inspect the actual data.
-- DO NOT rely on `-s` keyword search to cover the library on its own — tiered tree expansion is the primary method. Cap `-s` searches at 3 keyword combinations, then always fall back to expanding from the root.
+- DO NOT describe library contents from memory—always inspect the actual library data.
 - DO NOT match scenarios purely by literal keyword proximity. Keyword similarity $\neq$ business alignment. Anchor by Actor and business problem first, and rigorously re-verify "instant matches".
-- DO NOT read the raw library file directly; the file is too long and its structural hierarchy is prone to introducing noise.
-- DO NOT use reading tools to view the `aet-design-env.mjs` source code—execute the `library` subcommand directly via bash.
+- If the scenario library YAML file exists, it MAY be read directly; treat its directory tree structure carefully to avoid introducing noise.
 
 </constraint>
 

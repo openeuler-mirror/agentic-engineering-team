@@ -100,7 +100,7 @@ flowchart TB
    - 避免干扰与约束冲突：不同执行阶段的方法论互不叠加；
    - 提升稳定性：单条 SOP 出问题只影响一个阶段，可独立修复。
 
-3. **脚本构建为无依赖 mjs**：所有工具脚本（`aet-design-env.mjs`、用户评审 bootstrap）由 `scripts/src/*.ts` 经 `build.mjs` 构建为**零第三方依赖的单文件 mjs**。
+3. **脚本构建为无依赖 mjs**：工具脚本（用户评审 bootstrap 等）由 `scripts/src/*.ts` 经 `build.mjs` 构建为**零第三方依赖的单文件 mjs**。
    - 主机无需联网装库即可运行；
    - 单一执行入口，路径稳定（`skills/<skill>/scripts/*.mjs`）；
    - bundle 是编译产物，源码可读可测（vitest 覆盖）。
@@ -137,7 +137,6 @@ flowchart BT
         SK_FMEA["aet-fmea-analysis<br/>FMEA 分析"]
         SK_REV["aet-req-review<br/>评审门禁"]
         SK_UREV["aet-req-user-review<br/>用户评审"]
-        SK_ENV["aet-design-env<br/>通用设计工具"]
     end
     subgraph L5["L5 工作流（端到端时序）"]
         direction LR
@@ -184,7 +183,7 @@ flowchart BT
 - **L4 Skills**：本特性的七个技能，各自持有一到多个片段的 SOP；
 - **L5 工作流**：`需求分析 → 评审 → 功能设计 → 评审` 的阶段链，产出物（IR → SDD）作为阶段间契约。
 
-**分层不变量**：下层是真理源与确定性协议，上层是编排与消费；改动下层协议时上层无需变化（如 SDR 库拆安全/可靠性，`context sdr-lib` 输出结构变化但下游仍读 `<sdr>` 块；`aet-sdr-analysis` 的 A0 自动发现类型，新增类型无需改技能代码）。
+**分层不变量**：下层是真理源与确定性协议，上层是编排与消费；改动下层协议时上层无需变化（如 SDR 库拆安全/可靠性，`aet-sdr-analysis` 的 A0 自动发现类型，新增类型无需改技能代码）。
 
 #### 1.3.2 进程视图
 
@@ -245,7 +244,6 @@ sequenceDiagram
 | 功能设计 SOP | `skills/aet-req-design/workflows/sop-{exploration,design,verification,generation,load-template,review}.md` | 解剖、四问设计框架、红队验证（仅 High）、生成、评审 |
 | 评审门禁 | `skills/aet-req-review/SKILL.md` | pipeline(5)：A1 子代理门禁 → A2 修订 → A3 用户门禁 → A4 复审 → A5 结束；>2 轮熔断 |
 | 用户评审 | `skills/aet-req-user-review/SKILL.md` | pipeline(4)：prepare（快照）→ guide → finalize（毁快照）→ process hunk；Node bootstrap |
-| 通用设计工具 | `skills/aet-design-env/SKILL.md` + `scripts/aet-design-env.mjs` | tool-wrapper；6 子命令 `setup / context / template / checklist / library / check`；无依赖 bundle |
 | SDR 影响分析 | `skills/aet-sdr-analysis/SKILL.md` + `scripts/cli.mjs` | pipeline(5+1)：A0 类型发现 → A1 候选提取（按类型）→ A2 规范级详情 → A3 状态传播 → A4 报告生成 → A5 全局检查；每种 SDR 类型独立执行 A1-A4；CLI 子命令 `analyze / index / analyze-obj / detail / report`；无依赖 bundle |
 | FMEA 分析 | `skills/aet-fmea-analysis/SKILL.md` | pipeline(3)：准备 → 四维遍历 → 报告；`assets/output.md` 输出模板 |
 | 需求分析模板集 | `references/_templates/req-analysis/{artifact,checklist,components/}` | 骨架 + 占位符 + 可插拔组件 + 组件内嵌 `checklist:` |
@@ -261,7 +259,7 @@ sequenceDiagram
 | 部署件 | 说明 |
 |---|---|
 | 编码 Agent 宿主 | Skills 以目录形态装入 OpenCode / Claude Code / xiaoo 等宿主；`/aet:design` 由宿主插件注入命令 |
-| Node.js 运行时 | ≥ 18；执行 `aet-design-env.mjs`、`bootstrap.mjs` 等无依赖 bundle |
+| Node.js 运行时 | ≥ 18；执行 `bootstrap.mjs` 等无依赖 bundle |
 | Git 仓库 | 提供代码真理、`base_commit` 基线（供后续漂移检测） |
 | 盘上资产库 | `.aet/*_library.yml`（scenario / function / sdr_security / sdr_reliability / security_spec / fmea）与 `.aet/project-analysis/`（可选） |
 | 输出落盘 | `ai_assistance/features/{feature-name}/design/` 或 `.aet/{task-id}/design/`，命名 `{YYYYMMDD-HHMMSS}-{description}.md` |
@@ -270,8 +268,8 @@ sequenceDiagram
 
 | 场景 | 行为 | 架构为之做出的取舍 |
 |---|---|---|
-| S1 有场景库 → 场景化需求分析 | `context scenario-lib` 存在 → 进入 S1.3 场景化分支；用 `library` 逐级展开，`Actor + 业务问题`锚定，不字面匹配关键词 | 存在性条件分支 + 逐级展开协议 |
-| S2 无 FMEA 库 → 跳过可靠性分析 | `context fmea-lib` 缺失 → A2.1 FMEA 流程跳过；但 `FMEA 库存在时必做且与 Effort 无关` | 条件注入二分支；"有库才分析" |
+| S1 有场景库 → 场景化需求分析 | 场景库存在 → 进入 S1.3 场景化分支；按 `Actor + 业务问题`锚定浏览库，不字面匹配关键词 | 存在性条件分支 + 逐级展开协议 |
+| S2 无 FMEA 库 → 跳过可靠性分析 | FMEA 库缺失 → A2.1 FMEA 流程跳过；但 `FMEA 库存在时必做且与 Effort 无关` | 条件注入二分支；"有库才分析" |
 | S3 复杂任务（Effort=High） | S1.4 评估 High → A2.2 必须红队验证、模板全量、评审完整（子代理门禁 + 用户门禁 + 可选复审） | Effort 驱动分级验证与评审力度 |
 | S4 用户批注修订 | A3 用户门禁通过快照机制引导用户在文档内批注，A4 按 hunk 链式一致性处理并全局扫描 | 快照安全机制 + 链式影响修订 |
 | S5 模板定制（中软/RTOS 体例） | 项目 `.aet/design/` 插件覆盖基线组件；`shield` 屏蔽；`plugin` 激活链 | 插件分层查找 + 屏蔽 + 激活四机制 |
@@ -285,7 +283,7 @@ sequenceDiagram
 | # | 步骤 | 执行内容 | 对应实现 | 输入 | 输出 | 用户交互 |
 |---|---|---|---|---|---|---|
 | 1 | 启动需求分析 | 用户以自然语言输入**原始需求（RR）**，执行 `/aet:design` 进入设计 Agent 并触发需求分析 | `commands/design.md` → `agents/aet-design` | RR（Issue / 口头 / 会议纪要 / 工单） | 任务上下文 | ✅ 用户发起 |
-| 2 | 领域知识感知与代码库探索 | 感知四库 + 项目分析存在性（`context`），对代码库做**轻量扫描**（广度优先，只建立初步技术上下文，不深度探索） | A1.0 `context scenario-lib function-lib sdr-lib` + A1.1 轻量扫描 | 设计库、代码库 | XML 库元数据 → 条件分支路由；初步技术上下文 | ❌ |
+| 2 | 领域知识感知与代码库探索 | 感知四库 + 项目分析存在性，对代码库做**轻量扫描**（广度优先，只建立初步技术上下文，不深度探索） | A1.0 检查库存在性 + A1.1 轻量扫描 | 设计库、代码库 | 条件分支路由；初步技术上下文 | ❌ |
 | 3 | **需求澄清** | Agent 主导**多轮追问**：先陈述"已理解"与"仍不明确"清单，单批给出选项化问题，直至**所有歧义消除且用户确认**；绝不带着未澄清的假设进入下一步 | S1.2 `sop-elicitation`（Inversion） | 用户对问题的回答 | 澄清记录（`clarification-records`）、明确的需求边界 | ✅ 多轮问答 |
 | 4 | 场景分析 | 基于**业务本质**识别场景并映射用例，逐级展开场景库对齐粒度，挖掘易被忽略的备选/异常/边界行为 | S1.3 `sop-scenario-analysis` | 澄清后的需求、场景库 | 场景-用例清单（含主成功/备选/异常） | ✅ 场景选择与用例确认 |
 | 5 | 需求分解与功能影响 | 基于场景分解需求，**判定功能 vs 规格**，按 EARS 约束输出 FR/NFR/破坏性变更，评估复杂度（Effort）；**按场景驱动**分析功能树受影响的 Add/Delete/Modify 增量 | S1.4 `sop-requirement-decomposition` + S1.5 `sop-functional-impact` | 场景用例、功能库 | FR / NFR / Breaking changes、Effort 评估、功能影响表 | ✅ FR/NFR/复杂度/功能影响确认 |
@@ -299,7 +297,7 @@ sequenceDiagram
 
 | # | 步骤 | 执行内容 | 对应实现 | 输入 | 输出 | 用户交互 |
 |---|---|---|---|---|---|---|
-| 0 | 自动流转进入功能设计 | 承接上一阶段 IR（设计流水线输入**必须** IR + 代码库）；确认设计材料齐备，缺料**单批索要** | A1.0 `context fmea-lib` + A1.1 材料确认 | IR、代码库 | 材料确认清单 | ✅ 缺料时补交 |
+| 0 | 自动流转进入功能设计 | 承接上一阶段 IR（设计流水线输入**必须** IR + 代码库）；确认设计材料齐备，缺料**单批索要** | A1.0 检查库存在性 + A1.1 材料确认 | IR、代码库 | 材料确认清单 | ✅ 缺料时补交 |
 | 1 | 代码仓库探索 | **深度解剖**代码库（每个相关模块内部直至原语操作），代码为唯一真理；项目分析文档/需求文档仅是加速材料 | A1.2 `sop-exploration`（SubAgent ≤4，按复杂度委派） | 代码库、`project-analysis/` | 探索结论（`Key: Value` 高密度摘要） | ❌ |
 | 2 | 故障模式分析 | 对照 FMEA 库四维评估（影响/原因/措施/新增），产出可靠性分析，供可靠性与 DFx 设计引用 | A2.1 `aet-fmea-analysis`（fmea-lib 存在则**必做**，与 Effort 无关） | FMEA 库、功能影响 | FMEA 可靠性分析报告 | ❌ |
 | 3 | 初稿设计 | 四问框架（Codebase Grounding / Requirements Mapping / Architecture Design / Runtime Analysis）完成设计草案，不产出文档 | A2.2 `sop-design` | 探索结论 + IR | 设计草案（内存态） | ❌ |
@@ -609,14 +607,14 @@ sequenceDiagram
 - **方法论 ↔ 实际输出 ↔ 检查项关联**：同一组件文件的正文（方法论）、组装后章节（输出）、`checklist:`（评分项）三份内容围着一个组件演化，评审时按组件逐项打分，评分粒度对齐生成内容；
 - **占位符约定**：`[[PH:id | rec:值 | why:理由]]` 兜住一切无来源数值；`<!-- condition: -->` 按 Effort 裁剪章节；`<!-- xxx -->` 指令禁止进入最终文档。
 
-**实现设计**（`aet-design-env` `template` / `checklist` 子命令 + `sop-load-template` / `sop-review`）：
+**实现设计**（`sop-load-template` / `sop-review`，agent 直读模板骨架 + 组件）：
 
 ```
-组装模板（生成）：node aet-design-env.mjs template <template-set-path>        # 走 artifact.md
-组装清单（审查）：node aet-design-env.mjs checklist <template-set-path>        # 走 checklist.md
+组装模板（生成）：read artifact.md + components/*.aet.md        # 在 {{component}} 处内联
+组装清单（审查）：read checklist.md + components/*.aet.md        # frontmatter checklist 字段在 {{component}} 处内联
 约束：
   - 未加载模板禁止生成任何文档
-  - 禁止直接 read 模板组件文件，一律经子命令组装（统一编号/层级/剥离注释）
+  - 跳过 frontmatter 中 condition: <library>=Generate, missing=Skip 的组件（当对应库缺失时）
   - checklist 组装只允许在评审 SubAgent 中执行（主 Agent 不读，防上下文污染）
 ```
 
@@ -889,7 +887,7 @@ flowchart TD
   完成标准：全部功能点完成四维判定（不涉及/涉及/新增），每条对齐到具体字段与变更点
 [A3] 输出：读取 assets/output.md 模板 → 填充 → 落盘唯一 Markdown 报告
 约束：
-  - 严禁直读 FMEA YAML（必须 library 子命令）
+  - 严禁直读 FMEA YAML（库存在时按目录树结构浏览，避免引入噪声）
   - 严禁编造节点 ID / 内容；新增内容显式标注"新增"
 ```
 

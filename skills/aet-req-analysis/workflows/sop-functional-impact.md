@@ -20,23 +20,6 @@
 
 **Granularity Alignment**: Mapping affected functions must rely strictly on actual function library data to maintain precise granularity alignment. Fabrication is strictly prohibited.
 
-#### Tiered Library Browsing
-
-Run the `aet-design-env` `library` subcommand via the `bash` tool to browse the function library, progressively expanding directory nodes as required. The first argument must be the **exact path** to the library file:
-
-```bash
-# Root-level browsing (directory nodes collapsed, displaying sub-content previews only)
-node <aet-design-env path>/aet-design-env/scripts/aet-design-env.mjs library <function_library.yml>
-
-# Batch expand multiple directory nodes
-node <aet-design-env path>/aet-design-env/scripts/aet-design-env.mjs library <function_library.yml> <id1> <id2> <id3>
-
-# Search nodes by keyword (scoped to the whole library or to an expanded sub-tree)
-# NOTE: `-s` keyword search is auxiliary only — it cannot replace tiered browsing and risks missing nodes.
-#       Use at most 3 keyword searches; then always fall back to expanding the tree from the root.
-node <aet-design-env path>/aet-design-env/scripts/aet-design-env.mjs library <function_library.yml> -s <keyword>
-```
-
 </guideline>
 
 <instruct>
@@ -50,8 +33,8 @@ Analyze the current requirement's impact on existing capabilities using a scenar
 This step is **mandatory** if function library data is provided in the context.
 
 1. **Anchor by Scenario**: Use the identified scenarios, their happy paths, and extension/exception paths as the baseline to trace which nodes in the function tree are intersected by these behavioral paths.
-2. Execute root-level browsing to review top-level functional domains and their sub-content previews.
-3. **Scan broadly across sub-functions** to compare alternatives before expanding downwards—do not settle prematurely on the first superficially similar domain.
+2. Inspect the function library YAML file's root-level functional domains and their sub-content.
+3. **Scan broadly across sub-functions** to compare alternatives before converging downwards—do not settle prematurely on the first superficially similar domain.
 4. Converge systematically to the affected `function` node. Expand its child nodes (`function_spec` / `function_constraint` / `function_point`) to audit the baseline state for subsequent impact delta analysis.
 
 ### [A2] Impact Analysis & Confirmation
@@ -82,10 +65,8 @@ This step is **mandatory** if function library data is provided in the context.
 <constraint>
 
 - DO NOT modify the function library file directly. The library represents immutable baseline knowledge; updates must go through separate maintenance workflows. Record impacts solely within the design documentation.
-- DO NOT rely on `-s` keyword search to cover the library on its own — tiered tree expansion is the primary method. Cap `-s` searches at 3 keyword combinations, then always fall back to expanding from the root.
 - DO NOT defaults to classifying all functions as "Add" due to the absence of a library. Assess Add/Delete/Modify based on actual system existence.
-- DO NOT read the raw function library file directly; the file is too long and its structural hierarchy is prone to introducing noise.
-- DO NOT use reading tools to view the `aet-design-env.mjs` source code—execute the `library` subcommand directly via bash.
+- If the function library YAML file exists, it MAY be read directly; treat its directory tree structure carefully to avoid introducing noise.
 
 </constraint>
 

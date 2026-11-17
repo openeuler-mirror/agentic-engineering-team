@@ -87,7 +87,7 @@ flowchart TB
 
 1. **Skill 分层建模**（`<>` 包裹）：每个 SKILL.md 用 `<role>` / `<policy>` / `<guideline>` / `<instruct>` / `<constraint>` / `<condition>` 等标签分离"角色、目标、边界、步骤、红线、路由"。分析主体（图谱构建 / 视图分析师 / 模块剖析 / 评审员）彼此独立，生成偏好发散、评审偏好收敛；改进角色不动步骤，改约束不动流程。
 2. **SOP 拆分、按需加载**：SKILL.md 只保留编排骨架（阶段序列与完成标准），具体执行步骤拆到 `workflows/sop-*.md`，**每阶段执行时才加载对应 SOP**。主上下文常驻的只有骨架，细则用完即弃，互不叠加。
-3. **脚本构建为可移植执行件**：Node 工具脚本（`aet-design-env.mjs`）由 `scripts/src/*.ts` 构建为**零第三方依赖单文件 mjs**；图谱脚本为**单文件 python**（`graphify_analysis.py`），自动检测 `~/.aet/venv`，未装则降级到 find/grep 兜底。
+3. **脚本构建为可移植执行件**：Node 工具脚本由 `scripts/src/*.ts` 构建为**零第三方依赖单文件 mjs**；图谱脚本为**单文件 python**（`graphify_analysis.py`），自动检测 `~/.aet/venv`，未装则降级到 find/grep 兜底。
 4. **先划分、后探索；先元数据、后详情**（本特性特有的分级不变量）：① 模块划分必须以**社区聚类**为先导、以用户确认为终点，禁止跳过划分直接盲目探索；② 对下游只暴露**元数据摘要 + 详细路径**，模型按需载入各模块与准则的详情，杜绝整库 / 整文件进入主上下文。
 
 ### 1.3 架构设计（4+1 视图）
@@ -116,7 +116,6 @@ flowchart BT
     subgraph L4["L4 Skills（能力编排）"]
         direction LR
         SK_PA["aet-project-analysis<br/>项目分析（pipeline）"]
-        SK_ENV["aet-design-env<br/>通用设计工具（tool-wrapper）"]
     end
     subgraph L5["L5 工作流（端到端时序）"]
         direction LR
@@ -154,8 +153,8 @@ flowchart BT
 
 - **L1 设计库 + 架构上下文**：唯一持久化真理源，只读不写；设计库由 `context` 探测存在性、`library` 逐级浏览；架构上下文产物是本特性**一手写盘**、下游只读资产。
 - **L2 Agent 运行时**：最终消费方；接收注入的"摘要 + 路径"，详情按需载入；**永不直读整库**。
-- **L3 插件 / 脚本**：把"上下文渐进式注入插件（`system_transform`）、代码图谱生成与社区聚类脚本（`graphify_analysis.py`）、设计库浏览/搜索/转换脚本（`library`）、架构上下文读取脚本（`context`）"固化为确定性脚本协议，Agent 通过 bash 调用并读 stdout，而非靠提示词劝说。
-- **L4 Skills**：`aet-project-analysis` 编排整个分析流水线，`aet-design-env` 提供通用工具能力。
+- **L3 插件 / 脚本**：把"上下文渐进式注入插件（`system_transform`）、代码图谱生成与社区聚类脚本（`graphify_analysis.py`）"固化为确定性脚本协议，Agent 通过 bash 调用并读 stdout，而非靠提示词劝说。
+- **L4 Skills**：`aet-project-analysis` 编排整个分析流水线。
 - **L5 工作流**：`设计资产感知 → 图谱与社区划分 → 全局架构视图 → 模块架构视图 → 审查` 的阶段链，产物（graph.json → 全局视图 → components/principles）作为阶段间契约。
 
 **分层不变量**：下层是真理源与确定性协议，上层是编排与消费；改动下层协议时上层无需变化（如 graphify 换成其它图谱引擎，`graph.json` 的 communities 输出结构变化但 L4/L5 仍读同一 schema）。
@@ -204,20 +203,19 @@ sequenceDiagram
 | 图谱脚本 | `skills/aet-project-analysis/script/graphify_analysis.py` | graphify 驱动（venv 自动切换），输出 `graph.json` + 社区聚类结果 |
 | 图谱 schema | `skills/aet-project-analysis/assets/graph-schema.md` | `graph.json` 结构说明（nodes / edges / communities / cohesion） |
 | 模板集 | `skills/aet-project-analysis/references/_templates/project-analysis/` | `overview-template.md` · `architecture-template.md` · `modules-template.md` · `module-detail-template.md` · `principles-template.md` |
-| 通用设计工具 | `skills/aet-design-env/SKILL.md` + `scripts/aet-design-env.mjs` | tool-wrapper；`context / template / checklist / library` 6 子命令；无依赖 bundle |
 | 架构上下文注入 | `src/plugins/opencode/hooks/system_transform.ts` · `.platform/utils/project-analysis.js` | 元数据注入（Architecture/Modules 全文；components/principles 仅 path+description） |
 | 入口 Agent | `commands/project-analysis.md` → `agents/project-analysis/prompts/main.md`（待建） | `/aet:project-analysis` 命令路由到 aet-project-analysis agent |
 | 工作流注册 | `src/config/workflow.json` → `project-analysis` | stages：`graph-build` / `global-views` / `module-analysis` / `review` |
 | 红队 / 校验 | `skills/aet-project-analysis/references/deliverable-review.md`（复用 `references/deliverable-review.md`） | 产物事实核查与计分 |
 
-**模板 / 清单同源**：`overview-template.md` 等（生成骨架）与 checklist（审查项）共用组件，组件 frontmatter 的 `checklist:` 字段与正文**共址演化** —— 生成时组装骨架，审查时组装清单，避免"模板一套检查项另一套"的漂移（复用 `aet-design-env` `template` / `checklist` 子命令）。
+**模板 / 清单同源**：`overview-template.md` 等（生成骨架）与 checklist（审查项）共用组件，组件 frontmatter 的 `checklist:` 字段与正文**共址演化** —— 生成时组装骨架，审查时组装清单，避免"模板一套检查项另一套"的漂移（agent 直读模板骨架 + 组件 frontmatter `checklist` 字段）。
 
 #### 1.3.4 物理视图（部署形态）
 
 | 部署件 | 说明 |
 |---|---|
 | 编码 Agent 宿主 | Skills 以目录形态装入 OpenCode / Claude Code / xiaoo 等宿主；`/aet:project-analysis` 由宿主插件注入命令 |
-| Node.js 运行时 | ≥ 18；执行 `aet-design-env.mjs` 等无依赖 bundle |
+| Node.js 运行时 | ≥ 18；执行无依赖 bundle |
 | Python 运行时 | 执行 `graphify_analysis.py`；优先 `~/.aet/venv`（install.sh 预装 graphify），缺失自动回退系统 python / 兜底 find+grep |
 | Git 仓库 | 提供代码真理、`base_commit` 基线（供后续漂移检测） |
 | 盘上资产库 | `.aet/*_library.yml`（scenario / function / security_sdr / reliability_sdr / fmea，可选） |
@@ -227,7 +225,7 @@ sequenceDiagram
 
 | 场景 | 行为 | 架构为之做出的取舍 |
 |---|---|---|
-| S1 有设计库 → 资产指导划分 | `context scenario-lib/function-lib` 存在 → 社区映射候选模块时**对照功能库 / 场景库校准边界**，语义锚定，不字面匹配 | 存在性条件分支 + 逐级展开协议 |
+| S1 有设计库 → 资产指导划分 | 设计库存在 → 社区映射候选模块时**对照功能库 / 场景库校准边界**，语义锚定，不字面匹配 | 存在性条件分支 + 逐级展开协议 |
 | S2 无设计库 → 纯图谱驱动 | 库缺失 → 跳过资产感知阶段，社区聚类直接作为模块划分候选，标记"纯图谱驱动" | 条件注入二分支；"无库不放水但降级" |
 | S3 大型项目 | 图谱先划分全部社区 → 用户确认重点范围 → 仅对进入范围内的社区逐个深度探索，避免盲目 | 先划分后探索；探索 SubAgent ≤4 + 密度约束 |
 | S4 关注模块选择 | Modules.md 生成后由用户选择关注模块，**无须全量分析**，未选模块仅保留全局层描述 | 模块级按需加载；组件详情景象由用户选择触发 |
@@ -359,7 +357,7 @@ flowchart TD
 
 **实现思路**：
 - **探索先于生成（Be Realistic）**：所有缺失项未探索确认前禁止生成，不得靠推测；探索委派 4 类并行 SubAgent（入口与配置 / 核心业务流 / 系统边界与跨切面 / 模块结构与依赖），图谱结果显式传给子代理做导航；
-- **模板组装**：经 `aet-design-env template` 组装（统一编号 / 层级 / 剥离指令注释），禁止直读模板文件手动拼装；
+- **模板组装**：agent 直读模板骨架（`artifact.md`）+ 组件（`components/*.aet.md`）组装（统一编号 / 层级 / 剥离指令注释），跳过 condition=missing 的组件；
 - **自检清单内置**：每份文档带自检项（边界参与者齐全、分层反映真实代码、核心流程 ≥3 且含触发与状态流转、依赖矩阵与代码一致）；
 - **图是导航不是结论**：Graphify 的 God Nodes / Surprising Connections 用于辅助定位，不直接照抄进文档；模块细分仅在父模块确实臃肿时进行。
 
@@ -386,7 +384,7 @@ sequenceDiagram
     participant S2 as SubAgent·核心业务流
     participant S3 as SubAgent·边界跨切面
     participant S4 as SubAgent·模块依赖
-    participant T as aet-design-env template
+    participant T as Agent·模板组装
 
     Note over A,S4: 传递图谱结果（God Nodes / Communities）做导航
     par 并行探索

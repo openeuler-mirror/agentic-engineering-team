@@ -35,7 +35,7 @@ Proactively identify cascading impacts beyond what the user explicitly mentioned
 
 ### [A1.3] Document Change
 
-1. Run `node skills/aet-design-env/scripts/aet-design-env.mjs template skills/aet-req-analysis/references/_templates/req-analysis` via bash (do NOT read template files directly) to assemble and output the requirements analysis template, which describes the generation structure and conventions (the original document follows this template).
+1. Read `skills/aet-req-analysis/references/_templates/req-analysis/artifact.md` (the document skeleton) and inline each `*.aet.md` component under `components/` at its `{{component}}` placeholder to assemble the requirements analysis template, which describes the generation structure and conventions (the original document follows this template). Skip components whose frontmatter declares `condition: <library>=Generate, missing=Skip` when the corresponding library is absent.
 2. Copy the original requirements analysis specification to a `.refine` suffixed file (e.g., `FR001-xxx.md.refine`).
 3. Modify the `.refine` copy — DO NOT modify the original file.
 4. DO NOT modify metadata (frontmatter) unless required by the change.

@@ -76,12 +76,8 @@ An AR is a functional or non-functional requirement decomposed from an SR and al
 
 ### [A1.0] Environment Setup
 
-- Load the `aet-design-env` skill to obtain its script path.
-- Detect available libraries and their paths:
-  ```
-  node <aet-design-env path>/aet-design-env/scripts/aet-design-env.mjs context arch-element-lib function-lib fmea-lib
-  ```
-- Interpret the detected library metadata (architecture-element-library / function-library / fmea-lib presence + paths) from the command's stdout.
+- No external library probing required. Proceed directly to material confirmation.
+- Project knowledge libraries (architecture-element / function / fmea / scenario / sdr) are not required for requirements design; if absent, design proceeds based on the requirements analysis specification and the project codebase.
 
 ### [A1.1] Confirm Design Materials
 
@@ -161,8 +157,8 @@ Load `workflows/sop-generation.md` and execute the document generation workflow.
 - **Reference Project Codebase (Optional)**：External codebase that can be referenced to assist with the design.
 - **Reference Project Codebase Analysis Document (Optional)**：If available, this must be read to accelerate the exploration process.
 - **Domain Materials (Optional)**：Domain architecture analysis / Compliance requirements / Specific domain needs.
-- **FMEA 库 (Optional)**：Fault mode and effects analysis library (detected via `fmea-lib` in [A1.0]); feeds reliability-related design decisions (fault detection / isolation / recovery).
-- **架构元素库 (Optional)**：Architecture element library (detected via `arch-element-lib` in [A1.0]); describes the system's architecture elements (Domain / SubDomain / Component). When present, the "功能与系统元素关系管理" section MUST be generated in the design document, mapping affected functions to architecture elements; the 所属功能域 column is sourced from the 功能库 (function_library.yml).
+- **FMEA 库 (Optional)**：Fault mode and effects analysis library; feeds reliability-related design decisions (fault detection / isolation / recovery). Currently not provided; reliability analysis falls back to the `aet-fmea-analysis` skill's own knowledge base.
+- **架构元素库 (Optional)**：Architecture element library describing the system's architecture elements (Domain / SubDomain / Component). Currently not provided; the "功能与系统元素关系管理" section is therefore skipped.
 - **Design References (Optional)**：Existing system design specifications / Modules.
 
 </input>
@@ -182,7 +178,7 @@ Requirements Design Specification (SDD-style document)
 - Execution precedence: Mandatory prechecks → Stage sequence (A1→A2→A3→A4) → Allowed exceptions (effort-based skip of verification, user skip of A4).
 - Effort thresholds: Low skips verification; Medium skips verification; High requires A2.2 load verification skill.
 - IF the `FMAE library` is available and the `aet-fmea-analysis` skill is accessible, THEN load that skill and perform a failure‑mode‑based reliability analysis. Otherwise, skip reliability analysis.
-- IF the 架构元素库 (architecture_element_library.yml) is available (detected via `arch-element-lib` in [A1.0]) AND the assembled template contains the "功能与系统元素关系管理" section, THEN generate that section by browsing the architecture element library for the 架构元素 column and the 功能库 (function_library.yml) for the 所属功能域 column. Otherwise (library missing OR template section absent), skip the section entirely.
+- IF the 架构元素库 (architecture_element_library.yml) is available AND the assembled template contains the "功能与系统元素关系管理" section, THEN generate that section by reading the architecture element library for the 架构元素 column and the 功能库 (function_library.yml) for the 所属功能域 column. Otherwise (library missing OR template section absent), skip the section entirely. (Currently the architecture element library is not provided, so this section is skipped.)
 
 </condition>
 
