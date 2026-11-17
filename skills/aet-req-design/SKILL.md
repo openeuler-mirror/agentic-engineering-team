@@ -99,10 +99,6 @@ Read the mandatory inputs (Requirements Analysis Specification and Project Codeb
 
 ## [A2] Draft Design and Verification
 
-### [A2.1] Reliability Analysis
-
-Completion criteria: Output the reliability analysis results document.
-
 ### [A2.2] Design and Verification
 
 Load `workflows/sop-design.md` (MUST)

@@ -269,7 +269,6 @@ sequenceDiagram
 | 场景 | 行为 | 架构为之做出的取舍 |
 |---|---|---|
 | S1 有场景库 → 场景化需求分析 | 场景库存在 → 进入 S1.3 场景化分支；按 `Actor + 业务问题`锚定浏览库，不字面匹配关键词 | 存在性条件分支 + 逐级展开协议 |
-| S2 无 FMEA 库 → 跳过可靠性分析 | FMEA 库缺失 → A2.1 FMEA 流程跳过；但 `FMEA 库存在时必做且与 Effort 无关` | 条件注入二分支；"有库才分析" |
 | S3 复杂任务（Effort=High） | S1.4 评估 High → A2.2 必须红队验证、模板全量、评审完整（子代理门禁 + 用户门禁 + 可选复审） | Effort 驱动分级验证与评审力度 |
 | S4 用户批注修订 | A3 用户门禁通过快照机制引导用户在文档内批注，A4 按 hunk 链式一致性处理并全局扫描 | 快照安全机制 + 链式影响修订 |
 | S5 模板定制（中软/RTOS 体例） | 项目 `.aet/design/` 插件覆盖基线组件；`shield` 屏蔽；`plugin` 激活链 | 插件分层查找 + 屏蔽 + 激活四机制 |
@@ -299,12 +298,11 @@ sequenceDiagram
 |---|---|---|---|---|---|---|
 | 0 | 自动流转进入功能设计 | 承接上一阶段 IR（设计流水线输入**必须** IR + 代码库）；确认设计材料齐备，缺料**单批索要** | A1.0 检查库存在性 + A1.1 材料确认 | IR、代码库 | 材料确认清单 | ✅ 缺料时补交 |
 | 1 | 代码仓库探索 | **深度解剖**代码库（每个相关模块内部直至原语操作），代码为唯一真理；项目分析文档/需求文档仅是加速材料 | A1.2 `sop-exploration`（SubAgent ≤4，按复杂度委派） | 代码库、`project-analysis/` | 探索结论（`Key: Value` 高密度摘要） | ❌ |
-| 2 | 故障模式分析 | 对照 FMEA 库四维评估（影响/原因/措施/新增），产出可靠性分析，供可靠性与 DFx 设计引用 | A2.1 `aet-fmea-analysis`（fmea-lib 存在则**必做**，与 Effort 无关） | FMEA 库、功能影响 | FMEA 可靠性分析报告 | ❌ |
-| 3 | 初稿设计 | 四问框架（Codebase Grounding / Requirements Mapping / Architecture Design / Runtime Analysis）完成设计草案，不产出文档 | A2.2 `sop-design` | 探索结论 + IR | 设计草案（内存态） | ❌ |
-| 4 | 设计方案对抗性评审 | 草案委派**红队 SubAgent** 按 `feasibility-checklist` 四维攻击（Fact/Omission/Feasibility/Alternatives），只修订一次，修复目标是最终方案 | A2.2 `sop-verification`（**仅 Effort=High**；Low/Medium 跳过） | 设计草案 + `feasibility-checklist.md` | 验证结论（Pass/Conditional/Failed）+ 修订后的方案 | ❌（SubAgent 执行，主 Agent 不读清单） |
+| 2 | 初稿设计 | 四问框架（Codebase Grounding / Requirements Mapping / Architecture Design / Runtime Analysis）完成设计草案，不产出文档 | A2.2 `sop-design` | 探索结论 + IR | 设计草案（内存态） | ❌ |
+| 3 | 设计方案对抗性评审 | 草案委派**红队 SubAgent** 按 `feasibility-checklist` 四维攻击（Fact/Omission/Feasibility/Alternatives），只修订一次，修复目标是最终方案 | A2.2 `sop-verification`（**仅 Effort=High**；Low/Medium 跳过） | 设计草案 + `feasibility-checklist.md` | 验证结论（Pass/Conditional/Failed）+ 修订后的方案 | ❌（SubAgent 执行，主 Agent 不读清单） |
 | — | 设计方案用户确认 | 总结最终设计思路，征询用户同意 | A2.3 | 修订后的方案 | 用户确认 | ✅ |
-| 5 | 生成功能设计说明书 | 模板组装填充，输出 SDD 文档 | A3 `sop-load-template` + `sop-generation` | 组装模板 + 设计内容 | **SDD 功能设计说明书**（`type: design`） | ❌ |
-| 6 | Agent 评审 + 人工评审（可选） | 同需求分析：先按动态 checklist 自动评审，再用户批注修订（快照机制） | A4 → `aet-req-review`（A1-A5 门禁） | SDD、`deliverable-review.md`、动态 checklist | 修订后的 SDD | ✅ 可选参与 |
+| 4 | 生成功能设计说明书 | 模板组装填充，输出 SDD 文档 | A3 `sop-load-template` + `sop-generation` | 组装模板 + 设计内容 | **SDD 功能设计说明书**（`type: design`） | ❌ |
+| 5 | Agent 评审 + 人工评审（可选） | 同需求分析：先按动态 checklist 自动评审，再用户批注修订（快照机制） | A4 → `aet-req-review`（A1-A5 门禁） | SDD、`deliverable-review.md`、动态 checklist | 修订后的 SDD | ✅ 可选参与 |
 
 #### 1.4.3 两阶段输入输出汇总
 
@@ -866,7 +864,7 @@ flowchart TD
 
 ### 3.10 FMEA 故障模式库分析
 
-**功能概述**：对照故障模式库，识别新增需求所影响功能点相关的故障模式，判断故障影响/原因/改进措施是否需要补充、是否需要新增故障模式。输入需求简介 + 功能影响分析 + FMEA 库，输出对齐库结构的 FMEA 可靠性报告，供设计参考。`fmea-lib` 存在时在 A2.1 **必做，与 Effort 无关**。
+**功能概述**：对照故障模式库，识别新增需求所影响功能点相关的故障模式，判断故障影响/原因/改进措施是否需要补充、是否需要新增故障模式。输入需求简介 + 功能影响分析 + FMEA 库，输出对齐库结构的 FMEA 可靠性报告，供设计参考。该 skill 作为独立工具保留，可在设计阶段按需手动调用。
 
 **实现思路**：
 - **四维评估**：既有效果描述（effects）是否覆盖变更后的新后果；既有触发路径（causes）是否含新增业务逻辑/接口变动；既有检测/隔离/恢复手段（improvements）是否生效；仅当现有库彻底无法归类该失效机制才**新增故障模式**（小概率，保持审慎）；
