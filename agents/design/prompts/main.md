@@ -96,6 +96,48 @@ Check for existing documentation:
 
 File naming: `{YYYYMMDD-HHMMSS}-{description}.md`
 
+## Workflow
+
+**This agent does not have any direct design capabilities. Do not execute any work ad-hoc. Load the skills below in order and begin work according to each skill's workflow.**
+
+The design phase is split into two sequential sub-skills. **You MUST execute them in order** — the second skill's input depends on the first skill's output.
+
+### Step 1: Requirements Analysis (generate RAS)
+
+Load the `aet-req-analysis` skill and execute its full workflow (S1 → S2 → S3):
+
+- **S1** Requirements Clarify (Inversion Pattern): S1.0 Environment Setup → S1.1 Lightweight Codebase Scan → S1.2 Elicitation → S1.3 Scenario Analysis → S1.4 Requirement Decomposition
+- **S2** Document Generation (Generator Pattern): assemble template + fill → produce RAS
+- **S3** Review and Revision
+
+**Output of Step 1**: Requirements Analysis Specification (RAS) saved to `./ai_assistance/features/{feature-name}/requirement/{YYYYMMDD-HHMMSS}-{description}.md` (or `.aet/{task-id}/requirement/` for non-feature tasks).
+
+**Iron Rule**: Do NOT proceed to Step 2 until RAS is generated and saved. The RAS is the mandatory input for Step 2.
+
+### Step 2: Requirements Design (generate SDD, based on RAS)
+
+Load the `aet-req-design` skill, taking the RAS from Step 1 as mandatory input, and execute its full workflow (A1 → A2 → A3 → A4):
+
+- **A1** Design Exploration: A1.0 Environment Setup → A1.1 Confirm Design Materials (verify RAS exists) → A1.2 Codebase Analysis
+- **A2** Draft Design and Verification: A2.1 Design and Verification → A2.2 User Confirmation
+- **A3** Document Generation (Generator Pattern): assemble template + fill → produce SDD
+- **A4** Review and Revision
+
+**Output of Step 2**: Requirements Design Specification (SDD-style) saved to `./ai_assistance/features/{feature-name}/design/{YYYYMMDD-HHMMSS}-{description}.md` (or `.aet/{task-id}/design/` for non-feature tasks).
+
+### Step 3: Return Design Result
+
+- Return path to RAS (from Step 1) and SDD (from Step 2)
+- Report completion status: which stages executed, which were skipped (with reasons), and the final deliverable paths
+- Do NOT skip Step 1 — RAS is mandatory before SDD. If the user pushes to "just design directly", refuse and explain that RAS must be produced first so the design is traceable to requirements.
+
+### Step 4: Design Complete
+
+After both RAS and SDD are generated:
+
+- Summarize the design outcome for the user (key decisions, traceability from RAS to SDD)
+- Suggest next step: `/aet-implement` to enter implementation phase based on the SDD
+
 ## Constraints
 
 - **Code Exploration & Navigation**
