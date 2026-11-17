@@ -15,13 +15,13 @@
 #### 使用 curl
 
 ```bash
-curl -fsSL https://raw.atomgit.com/openeuler/agentic-engineering-team/raw/master/scripts/install.sh | bash
+curl -fsSL https://raw.atomgit.com/openeuler/agentic-engineering-team/raw/dev-campus/scripts/install.sh | bash
 ```
 
 #### 使用 wget
 
 ```bash
-wget -qO- https://raw.atomgit.com/openeuler/agentic-engineering-team/raw/master/scripts/install.sh | bash
+wget -qO- https://raw.atomgit.com/openeuler/agentic-engineering-team/raw/dev-campus/scripts/install.sh | bash
 ```
 
 #### 手动安装
@@ -37,7 +37,7 @@ chmod +x install.sh
 
 ```powershell
 # 一行安装（推荐）
-iex (irm "https://raw.atomgit.com/openeuler/agentic-engineering-team/raw/master/scripts/install.ps1")
+iex (irm "https://raw.atomgit.com/openeuler/agentic-engineering-team/raw/dev-campus/scripts/install.ps1")
 
 # 默认远程安装
 powershell -ExecutionPolicy Bypass -File scripts\install.ps1
@@ -50,10 +50,10 @@ powershell -ExecutionPolicy Bypass -File scripts\install.ps1 -Local
 
 ```cmd
 :: 一行安装（curl + 执行，Windows 10+）
-curl -fsSL https://raw.atomgit.com/openeuler/agentic-engineering-team/raw/master/scripts/install.cmd -o %TEMP%\install.cmd && %TEMP%\install.cmd
+curl -fsSL https://raw.atomgit.com/openeuler/agentic-engineering-team/raw/dev-campus/scripts/install.cmd -o %TEMP%\install.cmd && %TEMP%\install.cmd
 
 :: 一行安装（certutil + 执行，Win7+）
-certutil -urlcache -split -f https://raw.atomgit.com/openeuler/agentic-engineering-team/raw/master/scripts/install.cmd %TEMP%\install.cmd >nul && %TEMP%\install.cmd
+certutil -urlcache -split -f https://raw.atomgit.com/openeuler/agentic-engineering-team/raw/dev-campus/scripts/install.cmd %TEMP%\install.cmd >nul && %TEMP%\install.cmd
 
 :: 默认远程安装
 scripts\install.cmd
