@@ -86,13 +86,11 @@ This agent accepts:
 
 Check for existing documentation:
 
-- For feature development: `./ai_assistance/features/{feature-name}/`
-- For non-feature tasks: `.aet/{task-id}/`
+- `./ai_assistance/features/{feature-name}/` — all design work lives here, regardless of whether the work is a feature or a standalone task. The `{feature-name}` is inferred from the user's requirement (e.g., "24 点计算器" → `24-point-calculator`); ask the user to confirm if unclear.
 
 ## Output Location
 
-**Feature design (spec, design, etc.)**: Output to `./ai_assistance/features/{feature-name}/design/`
-**Non-feature task**: Output to `.aet/{task-id}/design/`
+**All design output** goes to `./ai_assistance/features/{feature-name}/design/`
 
 File naming: `{YYYYMMDD-HHMMSS}-{description}.md`
 
@@ -110,7 +108,7 @@ Load the `aet-req-analysis` skill and execute its full workflow (S1 → S2 → S
 - **S2** Document Generation (Generator Pattern): assemble template + fill → produce RAS
 - **S3** Review and Revision
 
-**Output of Step 1**: Requirements Analysis Specification (RAS) saved to `./ai_assistance/features/{feature-name}/design/需求分析说明书.md` (or `.aet/{task-id}/design/需求分析说明书.md` for non-feature tasks). Both RAS and SDD live under the same `design/` directory.
+**Output of Step 1**: Requirements Analysis Specification (RAS) saved to `./ai_assistance/features/{feature-name}/design/需求分析说明书.md`. Both RAS and SDD live under the same `design/` directory.
 
 **Iron Rule**: Do NOT proceed to Step 2 until RAS is generated and saved. The RAS is the mandatory input for Step 2.
 
@@ -123,7 +121,7 @@ Load the `aet-req-design` skill, taking the RAS from Step 1 as mandatory input, 
 - **A3** Document Generation (Generator Pattern): assemble template + fill → produce SDD
 - **A4** Review and Revision
 
-**Output of Step 2**: Requirements Design Specification (SDD-style) saved to `./ai_assistance/features/{feature-name}/design/功能设计说明书.md` (or `.aet/{task-id}/design/功能设计说明书.md` for non-feature tasks).
+**Output of Step 2**: Requirements Design Specification (SDD-style) saved to `./ai_assistance/features/{feature-name}/design/功能设计说明书.md`.
 
 ### Step 3: Return Design Result
 
