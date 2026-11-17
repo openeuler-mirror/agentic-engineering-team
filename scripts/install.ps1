@@ -32,7 +32,7 @@ function show_help {
     Write-Host "示例:"
     Write-Host "  powershell -File install.ps1                        # 从远程仓库安装"
     Write-Host "  powershell -File install.ps1 -Local                 # 使用本地代码安装（开发模式）"
-    Write-Host "  iex (irm https://raw.atomgit.com/openeuler/agentic-engineering-team/raw/master/scripts/install.ps1)           # 一行安装（Windows）"
+    Write-Host "  iex (irm https://raw.atomgit.com/openeuler/agentic-engineering-team/raw/dev-campus/scripts/install.ps1)           # 一行安装（Windows）"
     exit 0
 }
 
@@ -83,13 +83,14 @@ function install_graphify {
 
 # 下载源代码（远程安装）
 function download_source {
-    log_info "下载源代码..."
+    $branch = "dev-campus"
+    log_info "下载源代码（branch: $branch）..."
     if (Test-Path $AET_DIR) {
         log_info "目录已存在，删除旧目录..."
         Remove-Item -Recurse -Force $AET_DIR
     }
-    log_info "克隆仓库..."
-    git clone "https://atomgit.com/openeuler/agentic-engineering-team.git" $AET_DIR
+    log_info "克隆仓库（branch: $branch）..."
+    git clone --branch $branch "https://atomgit.com/openeuler/agentic-engineering-team.git" $AET_DIR
     if (-not $?) { log_error "克隆仓库失败" }
     log_success "源代码下载完成"
 }

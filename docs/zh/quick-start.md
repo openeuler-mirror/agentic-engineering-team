@@ -28,7 +28,7 @@ npm --version
 在终端执行：
 
 ```bash
-curl -fsSL https://raw.atomgit.com/openeuler/agentic-engineering-team/raw/master/scripts/install.sh | bash
+curl -fsSL https://raw.atomgit.com/openeuler/agentic-engineering-team/raw/dev-campus/scripts/install.sh | bash
 ```
 
 安装脚本自动完成：下载源码 → 创建插件 → 复制技能 → 安装依赖 → 可选安装知识图谱工具 → 配置 Token（可选）。

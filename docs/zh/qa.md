@@ -168,9 +168,9 @@ Aet-Implement 按顺序执行 5 步：
 3 种方法：
 
 1. **一键安装（推荐）**
-   - Linux/macOS: `curl -fsSL https://raw.atomgit.com/openeuler/agentic-engineering-team/raw/master/scripts/install.sh | bash`（或用 `wget`）
-   - Windows PowerShell: `iex (irm "https://raw.atomgit.com/openeuler/agentic-engineering-team/raw/master/scripts/install.ps1")`
-   - Windows CMD: `curl -fsSL --ssl-no-revoke https://raw.atomgit.com/openeuler/agentic-engineering-team/raw/master/scripts/install.cmd -o %TEMP%\install.cmd && %TEMP%\install.cmd`
+   - Linux/macOS: `curl -fsSL https://raw.atomgit.com/openeuler/agentic-engineering-team/raw/dev-campus/scripts/install.sh | bash`（或用 `wget`）
+   - Windows PowerShell: `iex (irm "https://raw.atomgit.com/openeuler/agentic-engineering-team/raw/dev-campus/scripts/install.ps1")`
+   - Windows CMD: `curl -fsSL --ssl-no-revoke https://raw.atomgit.com/openeuler/agentic-engineering-team/raw/dev-campus/scripts/install.cmd -o %TEMP%\install.cmd && %TEMP%\install.cmd`
 2. **AI 助手安装** — 在 OpenCode 会话中告诉 AI「帮我安装 AET」，AI 自动执行一键安装脚本。
 3. **源码安装（开发模式）** — `git clone https://atomgit.com/openeuler/agentic-engineering-team.git ~/.config/opencode/aet` 后手动创建符号链接；或在项目目录运行 `./scripts/install.sh --local`（`--local` / `-Local` / `/local` 使用符号链接而非复制，修改源码无需重装）。
 

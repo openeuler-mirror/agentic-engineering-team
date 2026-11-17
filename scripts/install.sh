@@ -134,20 +134,26 @@ resolve_repo_url() {
     echo "https://atomgit.com/openeuler/agentic-engineering-team.git"
 }
 
+# 安装使用的分支（dev-campus 是裁剪后的稳定分支）
+resolve_repo_branch() {
+    echo "dev-campus"
+}
+
 download_source() {
     local repo="$(resolve_repo_url)"
     local target="$(resolve_aet_target)"
+    local branch="$(resolve_repo_branch)"
 
-    log_info "下载源代码..."
+    log_info "下载源代码（branch: ${branch}）..."
 
     if [ -d "${target}" ] && [ ! -L "${target}" ]; then
         log_info "目录已存在，拉取更新..."
-        cd "${target}" && git pull || log_warn "git pull 失败，继续使用现有代码"
+        cd "${target}" && git fetch origin "${branch}" && git checkout "${branch}" && git pull origin "${branch}" || log_warn "git 更新失败，继续使用现有代码"
     else
-        log_info "克隆仓库到 ${target}..."
+        log_info "克隆仓库到 ${target}（branch: ${branch}）..."
         mkdir -p "$(dirname "${target}")"
         rm -rf "${target}"
-        git clone "${repo}" "${target}" || log_error "克隆仓库失败"
+        git clone --branch "${branch}" "${repo}" "${target}" || log_error "克隆仓库失败"
     fi
 
     log_success "源代码下载完成"

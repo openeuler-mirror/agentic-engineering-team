@@ -39,8 +39,8 @@ if /i "%INSTALL_MODE%"=="local" (
 ) else (
     echo [INFO] mode: remote install
     if exist "%AET_DIR%" rmdir /s /q "%AET_DIR%"
-    echo [INFO] cloning repo...
-    git clone https://atomgit.com/openeuler/agentic-engineering-team.git "%AET_DIR%"
+    echo [INFO] cloning repo (branch: dev-campus)...
+    git clone --branch dev-campus https://atomgit.com/openeuler/agentic-engineering-team.git "%AET_DIR%"
     if %errorlevel% neq 0 ( echo [ERROR] clone failed & exit /b 1 )
     echo [SUCCESS] source downloaded
 )
@@ -109,10 +109,10 @@ echo   /local      Install from local source [dev mode]
 echo   /h          Show this help
 echo.
 echo One-liner (curl, Win10+):
-echo   curl -fsSL --ssl-no-revoke https://raw.atomgit.com/openeuler/agentic-engineering-team/raw/master/scripts/install.cmd -o %%TEMP%%\install.cmd ^&^& %%TEMP%%\install.cmd
+echo   curl -fsSL --ssl-no-revoke https://raw.atomgit.com/openeuler/agentic-engineering-team/raw/dev-campus/scripts/install.cmd -o %%TEMP%%\install.cmd ^&^& %%TEMP%%\install.cmd
 echo.
 echo One-liner (certutil, Win7+):
-echo   certutil -urlcache -split -f https://raw.atomgit.com/openeuler/agentic-engineering-team/raw/master/scripts/install.cmd %%TEMP%%\install.cmd ^>nul ^&^& %%TEMP%%\install.cmd
+echo   certutil -urlcache -split -f https://raw.atomgit.com/openeuler/agentic-engineering-team/raw/dev-campus/scripts/install.cmd %%TEMP%%\install.cmd ^>nul ^&^& %%TEMP%%\install.cmd
 echo.
 echo Examples:
 echo   install.cmd                                                  Remote install

@@ -62,7 +62,7 @@ cargo install --path apps/serverside # 安装 daemon (xiaoo-daemon)
 在 AET 源码目录下执行安装脚本：
 
 ```bash
-curl -fsSL https://raw.atomgit.com/openeuler/agentic-engineering-team/raw/master/scripts/install.sh | bash
+curl -fsSL https://raw.atomgit.com/openeuler/agentic-engineering-team/raw/dev-campus/scripts/install.sh | bash
 ```
 
 安装时会提示平台选择，选择平台时输入 **2**（xiaoO）：

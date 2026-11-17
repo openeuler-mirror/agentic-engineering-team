@@ -90,7 +90,7 @@ AET 采用四层分层架构，依赖方向严格自上而下：
 ### 一键安装
 
 ```bash
-curl -fsSL https://raw.atomgit.com/openeuler/agentic-engineering-team/raw/master/scripts/install.sh | bash
+curl -fsSL https://raw.atomgit.com/openeuler/agentic-engineering-team/raw/dev-campus/scripts/install.sh | bash
 ```
 
 安装脚本自动完成以下步骤：

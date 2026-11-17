@@ -64,25 +64,25 @@ Token 可在安装过程中交互式配置，也可稍后手动配置。
 #### Linux / macOS
 
 ```bash
-curl -fsSL https://raw.atomgit.com/openeuler/agentic-engineering-team/raw/master/scripts/install.sh | bash
+curl -fsSL https://raw.atomgit.com/openeuler/agentic-engineering-team/raw/dev-campus/scripts/install.sh | bash
 ```
 
 或使用 wget：
 
 ```bash
-wget -qO- https://raw.atomgit.com/openeuler/agentic-engineering-team/raw/master/scripts/install.sh | bash
+wget -qO- https://raw.atomgit.com/openeuler/agentic-engineering-team/raw/dev-campus/scripts/install.sh | bash
 ```
 
 #### Windows PowerShell
 
 ```powershell
-iex (irm "https://raw.atomgit.com/openeuler/agentic-engineering-team/raw/master/scripts/install.ps1")
+iex (irm "https://raw.atomgit.com/openeuler/agentic-engineering-team/raw/dev-campus/scripts/install.ps1")
 ```
 
 #### Windows CMD
 
 ```cmd
-curl -fsSL --ssl-no-revoke https://raw.atomgit.com/openeuler/agentic-engineering-team/raw/master/scripts/install.cmd -o %TEMP%\install.cmd && %TEMP%\install.cmd
+curl -fsSL --ssl-no-revoke https://raw.atomgit.com/openeuler/agentic-engineering-team/raw/dev-campus/scripts/install.cmd -o %TEMP%\install.cmd && %TEMP%\install.cmd
 ```
 
 安装脚本会自动完成以下操作：
@@ -179,7 +179,7 @@ ls -la ~/.config/opencode/commands/aet-*.md
 重新运行一键安装脚本会自动覆盖安装到最新版本：
 
 ```bash
-curl -fsSL https://raw.atomgit.com/openeuler/agentic-engineering-team/raw/master/scripts/install.sh | bash
+curl -fsSL https://raw.atomgit.com/openeuler/agentic-engineering-team/raw/dev-campus/scripts/install.sh | bash
 ```
 
 > **Note：** 升级不会影响已有的全局配置 `~/.aet/config.json` 和项目配置 `.aet/config.json`。
