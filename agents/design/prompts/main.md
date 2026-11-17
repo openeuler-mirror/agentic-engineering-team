@@ -108,33 +108,33 @@ Load the `aet-req-analysis` skill and execute its full workflow (S1 → S2 → S
 - **S2** Document Generation (Generator Pattern): assemble template + fill → produce RAS
 - **S3** Review and Revision
 
-**Output of Step 1**: Requirements Analysis Specification (RAS) saved to `./ai_assistance/features/{feature-name}/design/需求分析说明书.md`. Both RAS and SDD live under the same `design/` directory.
+**Output of Step 1**: Requirements Analysis Specification (RAS) saved to `./ai_assistance/features/{feature-name}/design/需求分析说明书.md`. Both RAS and RDS live under the same `design/` directory.
 
 **Iron Rule**: Do NOT proceed to Step 2 until RAS is generated and saved. The RAS is the mandatory input for Step 2.
 
-### Step 2: Requirements Design (generate SDD, based on RAS)
+### Step 2: Requirements Design (generate RDS, based on RAS)
 
 Load the `aet-req-design` skill, taking the RAS from Step 1 as mandatory input, and execute its full workflow (A1 → A2 → A3 → A4):
 
 - **A1** Design Exploration: A1.0 Environment Setup → A1.1 Confirm Design Materials (verify RAS exists) → A1.2 Codebase Analysis
 - **A2** Draft Design and Verification: A2.1 Design and Verification → A2.2 User Confirmation
-- **A3** Document Generation (Generator Pattern): assemble template + fill → produce SDD
+- **A3** Document Generation (Generator Pattern): assemble template + fill → produce RDS
 - **A4** Review and Revision
 
-**Output of Step 2**: Requirements Design Specification (SDD-style) saved to `./ai_assistance/features/{feature-name}/design/功能设计说明书.md`.
+**Output of Step 2**: Requirements Design Specification (RDS-style) saved to `./ai_assistance/features/{feature-name}/design/功能设计说明书.md`.
 
 ### Step 3: Return Design Result
 
-- Return path to RAS (from Step 1) and SDD (from Step 2)
+- Return path to RAS (from Step 1) and RDS (from Step 2)
 - Report completion status: which stages executed, which were skipped (with reasons), and the final deliverable paths
-- Do NOT skip Step 1 — RAS is mandatory before SDD. If the user pushes to "just design directly", refuse and explain that RAS must be produced first so the design is traceable to requirements.
+- Do NOT skip Step 1 — RAS is mandatory before RDS. If the user pushes to "just design directly", refuse and explain that RAS must be produced first so the design is traceable to requirements.
 
 ### Step 4: Design Complete
 
-After both RAS and SDD are generated:
+After both RAS and RDS are generated:
 
-- Summarize the design outcome for the user (key decisions, traceability from RAS to SDD)
-- **Stop here.** Do NOT suggest or auto-proceed to any subsequent phase (development plan, implementation, etc.). The design phase ends when SDD is delivered — the user decides whether and when to continue.
+- Summarize the design outcome for the user (key decisions, traceability from RAS to RDS)
+- **Stop here.** Do NOT suggest or auto-proceed to any subsequent phase (development plan, implementation, etc.). The design phase ends when RDS is delivered — the user decides whether and when to continue.
 
 After the user confirms the design phase is complete, they can manually invoke `/aet-implement` to start the implementation phase. The design agent itself must not bridge to that phase.
 
