@@ -99,14 +99,14 @@ Read the mandatory inputs (Requirements Analysis Specification and Project Codeb
 
 ## [A2] Draft Design and Verification
 
-### [A2.2] Design and Verification
+### [A2.1] Design and Verification
 
 Load `workflows/sop-design.md` (MUST)
 Load `workflows/sop-verification.md` (Only Effort=High)
 
 Then execute the design and verification workflow.
 
-### [A2.3] User Confirmation
+### [A2.2] User Confirmation
 
 - After verifying that the design meets the specifications, summarize the design and ask the user for confirmation. 
 - If verification was performed, describe the overall final solution after the fixes, NOT just the fixes themselves. User only cares about the end result.
@@ -168,7 +168,7 @@ Requirements Design Specification (SDD-style document)
 - Execution precedence: Mandatory prechecks → Stage sequence (A1→A2→A3→A4) → Allowed exceptions (effort-based skip of verification, user skip of A4).
 - IF user requests skipping a stage other than A4, THEN refuse and explain why that stage is sequentially required (only A4 review can be declined).
 - Execution precedence: Mandatory prechecks → Stage sequence (A1→A2→A3→A4) → Allowed exceptions (effort-based skip of verification, user skip of A4).
-- Effort thresholds: Low skips verification; Medium skips verification; High requires A2.2 load verification skill.
+- Effort thresholds: Low skips verification; Medium skips verification; High requires A2.1 load verification skill.
 
 </condition>
 

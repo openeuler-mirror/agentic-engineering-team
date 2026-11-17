@@ -222,7 +222,7 @@ sequenceDiagram
     RD->>FMA: 2. 故障模式分析（fmea-lib 存在时）
     FMA-->>RD: FMEA 可靠性报告
     RD->>RD: 4. 对抗式审查（仅 Effort=High，SubAgent 红队）
-    RD->>U: A2.3 设计方案确认
+    RD->>U: A2.2 设计方案确认
     U-->>RD: 同意 / 反馈
     RD->>RD: 5. 模板组装 → 生成 SDD
     RD->>REV: 6. Agent 评审门禁（可选）+ 用户批注
@@ -269,7 +269,7 @@ sequenceDiagram
 | 场景 | 行为 | 架构为之做出的取舍 |
 |---|---|---|
 | S1 有场景库 → 场景化需求分析 | 场景库存在 → 进入 S1.3 场景化分支；按 `Actor + 业务问题`锚定浏览库，不字面匹配关键词 | 存在性条件分支 + 逐级展开协议 |
-| S3 复杂任务（Effort=High） | S1.4 评估 High → A2.2 必须红队验证、模板全量、评审完整（子代理门禁 + 用户门禁 + 可选复审） | Effort 驱动分级验证与评审力度 |
+| S3 复杂任务（Effort=High） | S1.4 评估 High → A2.1 必须红队验证、模板全量、评审完整（子代理门禁 + 用户门禁 + 可选复审） | Effort 驱动分级验证与评审力度 |
 | S4 用户批注修订 | A3 用户门禁通过快照机制引导用户在文档内批注，A4 按 hunk 链式一致性处理并全局扫描 | 快照安全机制 + 链式影响修订 |
 | S5 模板定制（中软/RTOS 体例） | 项目 `.aet/design/` 插件覆盖基线组件；`shield` 屏蔽；`plugin` 激活链 | 插件分层查找 + 屏蔽 + 激活四机制 |
 
@@ -298,9 +298,9 @@ sequenceDiagram
 |---|---|---|---|---|---|---|
 | 0 | 自动流转进入功能设计 | 承接上一阶段 IR（设计流水线输入**必须** IR + 代码库）；确认设计材料齐备，缺料**单批索要** | A1.0 检查库存在性 + A1.1 材料确认 | IR、代码库 | 材料确认清单 | ✅ 缺料时补交 |
 | 1 | 代码仓库探索 | **深度解剖**代码库（每个相关模块内部直至原语操作），代码为唯一真理；项目分析文档/需求文档仅是加速材料 | A1.2 `sop-exploration`（SubAgent ≤4，按复杂度委派） | 代码库、`project-analysis/` | 探索结论（`Key: Value` 高密度摘要） | ❌ |
-| 2 | 初稿设计 | 四问框架（Codebase Grounding / Requirements Mapping / Architecture Design / Runtime Analysis）完成设计草案，不产出文档 | A2.2 `sop-design` | 探索结论 + IR | 设计草案（内存态） | ❌ |
-| 3 | 设计方案对抗性评审 | 草案委派**红队 SubAgent** 按 `feasibility-checklist` 四维攻击（Fact/Omission/Feasibility/Alternatives），只修订一次，修复目标是最终方案 | A2.2 `sop-verification`（**仅 Effort=High**；Low/Medium 跳过） | 设计草案 + `feasibility-checklist.md` | 验证结论（Pass/Conditional/Failed）+ 修订后的方案 | ❌（SubAgent 执行，主 Agent 不读清单） |
-| — | 设计方案用户确认 | 总结最终设计思路，征询用户同意 | A2.3 | 修订后的方案 | 用户确认 | ✅ |
+| 2 | 初稿设计 | 四问框架（Codebase Grounding / Requirements Mapping / Architecture Design / Runtime Analysis）完成设计草案，不产出文档 | A2.1 `sop-design` | 探索结论 + IR | 设计草案（内存态） | ❌ |
+| 3 | 设计方案对抗性评审 | 草案委派**红队 SubAgent** 按 `feasibility-checklist` 四维攻击（Fact/Omission/Feasibility/Alternatives），只修订一次，修复目标是最终方案 | A2.1 `sop-verification`（**仅 Effort=High**；Low/Medium 跳过） | 设计草案 + `feasibility-checklist.md` | 验证结论（Pass/Conditional/Failed）+ 修订后的方案 | ❌（SubAgent 执行，主 Agent 不读清单） |
+| — | 设计方案用户确认 | 总结最终设计思路，征询用户同意 | A2.2 | 修订后的方案 | 用户确认 | ✅ |
 | 4 | 生成功能设计说明书 | 模板组装填充，输出 SDD 文档 | A3 `sop-load-template` + `sop-generation` | 组装模板 + 设计内容 | **SDD 功能设计说明书**（`type: design`） | ❌ |
 | 5 | Agent 评审 + 人工评审（可选） | 同需求分析：先按动态 checklist 自动评审，再用户批注修订（快照机制） | A4 → `aet-req-review`（A1-A5 门禁） | SDD、`deliverable-review.md`、动态 checklist | 修订后的 SDD | ✅ 可选参与 |
 
@@ -785,13 +785,13 @@ sequenceDiagram
         R->>R: 四维攻击面评估<br/>Fact / Omission / Feasibility / Alternatives
         R-->>A: Conclusion≥档位 + Core Issue<br/>排序问题清单(每类≤5) + KeyAttentions(≤3)
         A->>A: 只修订一次（以最终方案为目标）
-        A->>A: 修订稿于 A2.3 提交用户确认
+        A->>A: 修订稿于 A2.2 提交用户确认
     else Effort Low/Medium
         Note over A: 跳过红队验证（弹性触达，防流程冗余）
     end
 ```
 
-- **用户交互**：无直接交互（SubAgent 执行）；但修订后的最终方案在 A2.3 提交用户确认。
+- **用户交互**：无直接交互（SubAgent 执行）；但修订后的最终方案在 A2.2 提交用户确认。
 
 ### 3.9 架构围栏（Fence）
 
