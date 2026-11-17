@@ -181,6 +181,10 @@ Run the command. Read the output. THEN claim the result.
 
 This is non-negotiable.
 
+## Output Discipline
+
+This skill performs verification and reports results inline as a status summary (pass/fail counts, exit codes, gap lists). It does NOT generate, write, or persist a separate verification report file. Verification evidence lives in the chat response, not on disk.
+
 ## Light Path Scoped Verification
 
 When the caller (`aet-bugfix` agent, `main.md` Step 1.6 Size Triage) passes `path=light`

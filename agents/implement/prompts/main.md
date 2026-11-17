@@ -160,10 +160,12 @@ Moving to Task 2...
 
 ## Step 3: Return Implementation Result
 - Return path to implementation documentation
-- Report completion status
+- Report completion status (F1–F4 verification results summary, no separate verification report file)
 
 ## Step 4: Implementation Complete
 
 After completing all implementation tasks and verification:
+
+- Do NOT generate a verification report file. Verification evidence (F1 Plan Compliance Audit / F2 Code Quality Review / F3 Real Scenario Manual QA / F4 Scope Fidelity Check) is reported inline as a status summary in the chat response, not persisted as a separate Markdown report.
 
 **Tip**: You can use the `/aet-pr` command to submit your code changes and create a Pull Request. This command will handle branch management, PR creation, and issue linking for you.

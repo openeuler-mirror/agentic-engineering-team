@@ -209,7 +209,7 @@ AET 强制 AI 输出结构化文档（RAS → RDS → DPS），将设计方法�
 各阶段产出物固化为 Markdown 文件，直接作为下一阶段的基础上下文：
 
 ```
-Issue → RAS（需求分析）→ RDS（需求设计）→ DPS（开发计划）→ 实现代码 → 验证报告
+Issue → RAS（需求分析）→ RDS（需求设计）→ DPS（开发计划）→ 实现代码 → 验证完成
 ```
 
 ## 设计原则
@@ -239,7 +239,6 @@ AET 在项目中创建以下目录结构：
 │   │       ├── issue.md         # Issue 内容副本
 │   │       ├── design/          # 设计文档（RAS、RDS）
 │   │       ├── implementation/  # 实现产物（开发计划 dev-plan、代码、测试）
-│   │       ├── verification/    # 验证报告
 │   │       └── tests/           # 测试代码
 │   ├── project-analysis/        # 项目分析输出
 │   └── templates/               # 工作流模板
