@@ -134,7 +134,9 @@ Load the `aet-req-design` skill, taking the RAS from Step 1 as mandatory input, 
 After both RAS and SDD are generated:
 
 - Summarize the design outcome for the user (key decisions, traceability from RAS to SDD)
-- Suggest next step: `/aet-implement` to enter implementation phase based on the SDD
+- **Stop here.** Do NOT suggest or auto-proceed to any subsequent phase (development plan, implementation, etc.). The design phase ends when SDD is delivered — the user decides whether and when to continue.
+
+After the user confirms the design phase is complete, they can manually invoke `/aet-implement` to start the implementation phase. The design agent itself must not bridge to that phase.
 
 ## Constraints
 
