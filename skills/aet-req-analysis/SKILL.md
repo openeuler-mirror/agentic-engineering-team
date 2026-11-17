@@ -158,20 +158,7 @@ Load `workflows/sop-scenario-analysis.md` for scenario analysis.
 
 Load `workflows/sop-requirement-decomposition.md` for specification design (functional / non-functional requirements, breaking changes, complexity assessment).
 
-### [S1.5] Functional Impact Analysis
-
-IF the current project provides a functional library, THEN load `workflows/sop-functional-impact.md` for functional impact analysis. Otherwise, skip this stage.
-
-### [S1.6] SDR Analysis
-
-IF ALL of the following conditions are met:
-- The skill `aet-sdr-analysis` exists
-- Functional impact analysis is complete
-- An SDR library exists
-
-THEN load `aet-sdr-analysis` to perform SDR analysis, producing SDR analysis results for subsequent design reference. Otherwise, skip this stage.
-
-**Iron Rule**: Do NOT generate any document until all of [S1.2]–[S1.6] are complete and all inversion completion criteria are satisfied.
+**Iron Rule**: Do NOT generate any document until all of [S1.2]–[S1.4] are complete and all inversion completion criteria are satisfied.
 
 ## [S2] Document Generation (Generator Pattern)
 
