@@ -149,10 +149,11 @@ entirely is **not** permitted in light path — only the commit granularity is r
 ## Step 3: Return Implementation Result
 
 - Return path to implementation documentation
-- Report completion status (F1–F4 verification results summary, no separate verification report file)
+- Report completion status as an inline summary (pass/fail counts, exit codes, gap lists). Do NOT persist a separate verification report file — verification evidence lives in the chat response.
 
 ## Step 4: Implementation Complete
 
 After completing all implementation tasks and verification:
 
-- Do NOT generate a verification report file. Verification evidence (F1 Plan Compliance Audit / F2 Code Quality Review / F3 Real Scenario Manual QA / F4 Scope Fidelity Check) is reported inline as a status summary in the chat response, not persisted as a separate Markdown report.
+- If the development plan includes a **Phase FINAL** with F1–F4 quality gates (F1 Plan Compliance Audit / F2 Code Quality Review / F3 Real Scenario Manual QA / F4 Scope Fidelity Check), report F1–F4 results inline as a status summary. Not all implementation tasks have a Phase FINAL — only report F1–F4 when the plan actually defines them.
+- Do NOT generate a verification report file. All verification evidence is reported inline as a status summary in the chat response, not persisted as a separate Markdown report.
