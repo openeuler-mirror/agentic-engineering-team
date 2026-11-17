@@ -934,25 +934,6 @@ export default Plugin.define({
             });
             newSessionID = createResult?.id || null;
           }
-          // Update the session title so the TUI shows the current stage's
-          // agent. switchAgent changes the session.agent field (used by the
-          // TUI's agent indicator) but does NOT touch the title — without
-          // this update the title would still show the previous stage's name
-          // (e.g. "aet-design - AET-DESIGN Stage" after switching to
-          // aet-implement), making it hard for the user to tell which agent
-          // is currently running.
-          if (newSessionID) {
-            try {
-              await session.update({
-                sessionID: newSessionID,
-                title: `${stage.agent_id} - ${stage.agent_id.toUpperCase().replace('-AGENT', '')} Stage`,
-              });
-            } catch (updateErr) {
-              // Title update is best-effort — the workflow still works
-              // without it, the TUI just shows a stale title.
-              console.error('[AET] session.update (title) failed:', updateErr?.message || updateErr);
-            }
-          }
           // Compact the context so the new agent starts from a summary of
           // the previous stage's work rather than the full transcript.
           if (newSessionID) {
@@ -1764,18 +1745,6 @@ export default Plugin.define({
           } catch (err) {
             console.error('[AET] switchAgent error:', err.message);
           }
-          // Update the session title to match the new agent. switchAgent does
-          // NOT touch the title (see comment in executeStageHandover, ~line 913),
-          // so without this the TUI would show the previous agent's title
-          // (e.g. "aet-implement - AET-IMPLEMENT Stage" after /aet-design).
-          try {
-            await ctx.session.update({
-              sessionID,
-              title: `${agentId} - ${agentId.toUpperCase().replace('-AGENT', '')} Stage`,
-            });
-          } catch (updateErr) {
-            console.error('[AET] session.update (title) failed:', updateErr?.message || updateErr);
-          }
           try {
             const desc = (pending.arguments || '').trim();
             const candidates = listAgentResumableCheckpoints(agentId);
@@ -1813,18 +1782,6 @@ export default Plugin.define({
       if (workflowAgent) {
         try {
           await ctx.session.switchAgent({ sessionID, agent: workflowAgent });
-          // Update the session title to match the new workflow stage's agent.
-          // switchAgent does NOT touch the title (see comment in
-          // executeStageHandover, ~line 913), so without this the TUI would
-          // show the previous stage's title after a stage handover.
-          try {
-            await ctx.session.update({
-              sessionID,
-              title: `${workflowAgent} - ${workflowAgent.toUpperCase().replace('-AGENT', '')} Stage`,
-            });
-          } catch (updateErr) {
-            console.error('[AET] session.update (title) failed:', updateErr?.message || updateErr);
-          }
         } catch (err) {
           console.error('[AET] switchAgent workflow error:', err.message);
         }
