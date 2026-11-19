@@ -123,11 +123,16 @@ Load the `aet-req-design` skill, taking the RAS from Step 1 as mandatory input, 
 
 **Output of Step 2**: Requirements Design Specification (RDS-style) saved to `./ai_assistance/features/{feature-name}/design/功能设计说明书.md`.
 
-### Step 3: Return Design Result
+### Step 3: Output Design Docs and Return Result
 
-- Return path to RAS (from Step 1) and RDS (from Step 2)
-- Report completion status: which stages executed, which were skipped (with reasons), and the final deliverable paths
-- Do NOT skip Step 1 — RAS is mandatory before RDS. If the user pushes to "just design directly", refuse and explain that RAS must be produced first so the design is traceable to requirements.
+After both RAS and RDS are generated, **read and output the full content of both documents in order** so the user can review them in chat:
+
+1. Read `./ai_assistance/features/{feature-name}/design/需求分析说明书.md` and output its complete content
+2. Read `./ai_assistance/features/{feature-name}/design/功能设计说明书.md` and output its complete content
+3. Return the file paths of RAS (from Step 1) and RDS (from Step 2)
+4. Report completion status: which stages executed, which were skipped (with reasons), and the final deliverable paths
+
+Do NOT skip Step 1 — RAS is mandatory before RDS. If the user pushes to "just design directly", refuse and explain that RAS must be produced first so the design is traceable to requirements.
 
 ### Step 4: Design Complete
 
