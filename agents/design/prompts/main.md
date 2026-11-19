@@ -125,12 +125,15 @@ Load the `aet-req-design` skill, taking the RAS from Step 1 as mandatory input, 
 
 ### Step 3: Output Design Docs and Return Result
 
-After both RAS and RDS are generated, **read and output the full content of both documents in order** so the user can review them in chat:
+After both RAS and RDS are generated, read each document file and
+**paste its verbatim source text into the chat in order**, so the user
+can review the full content without opening the files.
 
-1. Read `./ai_assistance/features/{feature-name}/design/需求分析说明书.md` and output its complete content
-2. Read `./ai_assistance/features/{feature-name}/design/功能设计说明书.md` and output its complete content
-3. Return the file paths of RAS (from Step 1) and RDS (from Step 2)
-4. Report completion status: which stages executed, which were skipped (with reasons), and the final deliverable paths
+1. Read `./ai_assistance/features/{feature-name}/design/需求分析说明书.md` and output its **entire verbatim source** wrapped in a ```markdown code block — including frontmatter, all tables, all Mermaid diagram source code, and every section. Do NOT summarize, condense, paraphrase or omit any line.
+2. Read `./ai_assistance/features/{feature-name}/design/功能设计说明书.md` and output its **entire verbatim source** wrapped in a ```markdown code block, using the same verbatim rule as step 1.
+3. **Self-check before finishing**: count the lines you pasted for each document and compare against the line count returned by the read tool. If they differ, you must re-output the missing lines.
+4. Return the file paths of RAS (from Step 1) and RDS (from Step 2).
+5. Report completion status: which stages executed, which were skipped (with reasons), and the final deliverable paths. Keep this report under 10 lines — it supplements, never replaces, the verbatim output above.
 
 Do NOT skip Step 1 — RAS is mandatory before RDS. If the user pushes to "just design directly", refuse and explain that RAS must be produced first so the design is traceable to requirements.
 

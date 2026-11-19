@@ -209,7 +209,7 @@
         {
           "step_id": "output_design_docs",
           "name": "输出设计文档",
-          "description": "读取设计文档，并将完整内容输出展示给用户\n\n## Input\n\n- `./ai_assistance/features/{feature-name}/design/需求分析说明书.md`\n\n- `./ai_assistance/features/{feature-name}/design/功能设计说明书.md`\n\n## Output\n\n将上述文档的完整内容依次输出给用户",
+          "description": "读取并输出设计阶段两份文档的【完整原文】到对话界面\n\n## Input\n\n- `./ai_assistance/features/{feature-name}/design/需求分析说明书.md`\n\n- `./ai_assistance/features/{feature-name}/design/功能设计说明书.md`\n\n## Output\n\n将上述文档的完整内容依次输出给用户",
           "before": null,
           "after": null
         }
